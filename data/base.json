@@ -1,0 +1,16 @@
+{
+  "fecha": "2025-12-29",
+  "count": 71,
+  "registros": [
+    {
+      "id": "xabia_about",
+      "type": "knowledge",
+      "title": "¿Qué es Xabia?",
+      "text": "Xabia es un asistente inteligente para WordPress.",
+      "content": {
+        "short": "Xabia es un asistente inteligente modular para WordPress.",
+        "long": "Xabia es un asistente agentic diseñado para WordPress que permite responder preguntas, mostrar información estructurada, lanzar acciones (reservas, llamadas, enlaces) y trabajar con múltiples fuentes de datos como CSV, base de datos o contenido web. Está pensado para turismo, cultura y servicios, y funciona de forma local, privada y modular."
+      }
+    }
+  ]
+}

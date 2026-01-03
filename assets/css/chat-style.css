@@ -1,0 +1,80 @@
+#xabia-chat-app {
+    max-width: 800px;
+    margin: 20px auto;
+    border: 1px solid #e1e1e1;
+    border-radius: 12px;
+    background: #ffffff;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    box-shadow: 0 10px 25px rgba(0,0,0,0.08);
+    height: 600px;
+}
+
+.xabia-chat-header {
+    background: #000;
+    color: #fff;
+    padding: 15px 20px;
+    font-weight: bold;
+    display: flex;
+    justify-content: space-between;
+}
+
+.xabia-chat-messages {
+    flex-grow: 1;
+    padding: 20px;
+    overflow-y: auto;
+    background: #f8f9fa;
+    display: flex;
+    flex-direction: column;
+    gap: 15px;
+}
+
+.xabia-msg {
+    max-width: 85%;
+    padding: 12px 16px;
+    border-radius: 15px;
+    font-size: 14px;
+    line-height: 1.5;
+}
+
+.xabia-msg.user {
+    align-self: flex-end;
+    background: #0073aa;
+    color: white;
+    border-bottom-right-radius: 2px;
+}
+
+.xabia-msg.ai {
+    align-self: flex-start;
+    background: white;
+    color: #333;
+    border: 1px solid #e1e1e1;
+    border-bottom-left-radius: 2px;
+}
+
+.xabia-chat-input-area {
+    padding: 15px;
+    border-top: 1px solid #eee;
+    display: flex;
+    gap: 10px;
+    background: white;
+}
+
+.xabia-chat-input-area input {
+    flex-grow: 1;
+    border: 1px solid #ddd;
+    border-radius: 25px;
+    padding: 10px 20px;
+    outline: none;
+}
+
+.xabia-chat-input-area button {
+    background: #000;
+    color: white;
+    border: none;
+    padding: 10px 20px;
+    border-radius: 25px;
+    cursor: pointer;
+    font-weight: 600;
+}
