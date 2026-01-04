@@ -1,0 +1,16 @@
+# Ignorar archivos de sistema y temporales
+.DS_Store
+Thumbs.db
+
+# IGNORAR DATOS PRIVADOS DEL CLIENTE (Crítico)
+# No queremos que los CSV con precios o datos internos acaben en GitHub
+/uploads/xabia/*
+!/uploads/xabia/.gitkeep
+
+# Ignorar logs de errores de PHP
+error_log
+php_error.log
+
+# Ignorar configuración de IDEs locales
+.vscode/
+.idea/
