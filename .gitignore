@@ -18,3 +18,9 @@ php_error.log
 # GCP credentials (never commit)
 google-key.json
 **/google-key.json
+.env
+.env.local
+node_modules/
+vendor/
+build/
+xabia-agent-plugins/dist/

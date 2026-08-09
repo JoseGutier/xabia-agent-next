@@ -1,0 +1,8 @@
+{
+  "name": "xabia-agent-next",
+  "private": true,
+  "type": "module",
+  "devDependencies": {
+    "puppeteer-core": "^24.29.1"
+  }
+}
