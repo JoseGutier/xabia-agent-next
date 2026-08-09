@@ -1,0 +1,709 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Manual de usuario — Xabia MEC</title>
+<style>
+/**
+ * Estilos HTML / impresión / PDF — Manual de usuario Xabia
+ * Acento principal: azul marca (#2170b0). Grises tipo Material.
+ */
+
+@page {
+  margin: 16mm 17mm 18mm 17mm;
+}
+
+html {
+  font-size: 10.5pt;
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
+}
+
+body {
+  font-family:
+    -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  color: #202124;
+  line-height: 1.55;
+  max-width: 100%;
+  margin: 0;
+  padding: 0;
+}
+
+/* Marca — barra superior en la primera página vía h1 */
+h1 {
+  font-size: 1.85rem;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  color: #2170b0;
+  margin: 0 0 0.75rem;
+  padding: 0.85rem 0 0.65rem;
+  border-top: 6px solid #2170b0;
+  border-bottom: 2px solid #e8f0fe;
+  page-break-after: avoid;
+}
+
+h2 {
+  font-size: 1.28rem;
+  font-weight: 600;
+  color: #185a94;
+  margin: 1.6rem 0 0.65rem;
+  padding: 0.35rem 0 0.35rem 0.65rem;
+  border-left: 4px solid #2170b0;
+  background: linear-gradient(90deg, #e3f0fa 0%, transparent 100%);
+  page-break-after: avoid;
+}
+
+h3 {
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: #144a78;
+  margin: 1.25rem 0 0.5rem;
+  page-break-after: avoid;
+}
+
+h4,
+h5,
+h6 {
+  font-size: 1rem;
+  font-weight: 600;
+  color: #3c4043;
+  margin: 1rem 0 0.35rem;
+  page-break-after: avoid;
+}
+
+p {
+  margin: 0.5rem 0 0.65rem;
+  orphans: 3;
+  widows: 3;
+}
+
+strong {
+  color: #144a78;
+  font-weight: 600;
+}
+
+hr {
+  border: none;
+  height: 1px;
+  background: linear-gradient(90deg, #2170b0, #64b5f6, #e8eaed);
+  margin: 1.75rem 0;
+  opacity: 0.9;
+}
+
+ul,
+ol {
+  margin: 0.5rem 0 0.75rem;
+  padding-left: 1.35rem;
+}
+
+li {
+  margin: 0.25rem 0;
+}
+
+li::marker {
+  color: #2170b0;
+}
+
+blockquote {
+  margin: 1rem 0;
+  padding: 0.65rem 1rem;
+  border-left: 4px solid #2170b0;
+  background: #e8f4fc;
+  color: #3c4043;
+  font-size: 0.98em;
+}
+
+blockquote p {
+  margin: 0.35rem 0;
+}
+
+code {
+  font-family: ui-monospace, "Cascadia Code", "SF Mono", Menlo, Consolas, monospace;
+  font-size: 0.88em;
+  background: #e8f4fc;
+  border: 1px solid #c5dae8;
+  border-radius: 4px;
+  padding: 0.12em 0.4em;
+  color: #144a78;
+}
+
+pre {
+  font-family: ui-monospace, "Cascadia Code", "SF Mono", Menlo, Consolas, monospace;
+  font-size: 0.82rem;
+  line-height: 1.45;
+  background: #fafafa;
+  border: 1px solid #dadce0;
+  border-radius: 8px;
+  padding: 12px 14px;
+  overflow-x: auto;
+  page-break-inside: avoid;
+}
+
+pre code {
+  background: none;
+  border: none;
+  padding: 0;
+  color: #202124;
+  font-size: inherit;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 1rem 0;
+  font-size: 0.95rem;
+  page-break-inside: avoid;
+}
+
+th,
+td {
+  border: 1px solid #dadce0;
+  padding: 8px 10px;
+  text-align: left;
+  vertical-align: top;
+}
+
+th {
+  background: #e3f0fa;
+  color: #144a78;
+  font-weight: 600;
+}
+
+tr:nth-child(even) td {
+  background: #fafafa;
+}
+
+a {
+  color: #2170b0;
+  text-decoration: none;
+}
+
+a:hover {
+  text-decoration: underline;
+}
+
+@media print {
+  a[href^="http"]::after {
+    content: "";
+  }
+
+  a[href]::after {
+    content: none !important;
+  }
+}
+
+img {
+  max-width: 100%;
+  height: auto;
+  border-radius: 6px;
+}
+
+img[alt="Xabia"] {
+  height: 42px;
+  width: auto;
+  margin: 0 0 1rem;
+  display: block;
+}
+
+/* Cierre institucional (bloque final acordado) */
+.manual-pdf-cierre {
+  margin-top: 2rem;
+  padding: 1.25rem 1.1rem;
+  border: 1px solid #c5dae8;
+  border-radius: 8px;
+  border-top: 4px solid #2170b0;
+  background: linear-gradient(180deg, #f4f9fc 0%, #fff 45%);
+  page-break-before: always;
+}
+
+.manual-pdf-cierre h2 {
+  margin-top: 0;
+  color: #2170b0;
+  border-left-color: #2170b0;
+  background: linear-gradient(90deg, #e3f0fa 0%, transparent 100%);
+}
+</style>
+</head>
+<body>
+<h1>Manual de usuario — Xabia Modern Events Calendar (addon MEC)</h1>
+<blockquote>
+<p><strong>Addon:</strong> Xabia MEC <strong>v1.0.3</strong> · <strong>Core requerido:</strong> <strong>≥ 1.0.166</strong> (recomendado)</p>
+</blockquote>
+<h2>Guía rápida de instalación</h2>
+<ol>
+<li>Instale y active <strong>Xabia Agent Core</strong> (<code>v1.0.166</code> o superior recomendado).</li>
+<li>Instale y active el ZIP <strong>Xabia MEC</strong> (<code>xabia-mec-1.0.3.zip</code>) desde <strong>Plugins → Añadir nuevo → Subir plugin</strong>.</li>
+<li>En <strong>Xabia Agent → Addons</strong>, active o sincronice la suscripción <strong>xabia-mec</strong> hasta ver <strong>Hub Polar: activa</strong>.</li>
+<li>Si los eventos están en el mismo WordPress, active también <strong>Modern Events Calendar</strong> y publique eventos <code>mec-events</code>.</li>
+<li>Si los eventos están en otra web, no hace falta MEC local: rellene las credenciales SQL remotas en el agente y use <strong>Fuente de información → Addon nativo → MEC</strong>.</li>
+<li>Pulse <strong>Conectar y Mapear</strong>, revise el preset de columnas y guarde el agente.</li>
+<li>Pulse <strong>Sincronizar datos</strong> y, si usa búsqueda vectorial, <strong>Entrenar IA</strong>.</li>
+<li>Pruebe preguntas como “¿qué eventos hay este fin de semana?” en <strong>Playground</strong> antes de publicar el shortcode.</li>
+</ol>
+<p><strong>Asistente CPT (≥ Core 1.0.162):</strong> con fuente addon MEC lista solo <code>mec-events</code> (valida en SQL remoto si hay host). <strong>Remoto híbrido (≥ 1.0.163):</strong> si configura host SQL, el catálogo se trata como remoto aunque MEC esté instalado localmente (evita mezclar IDs). Deep schema incluye plazas <code>mec_available_slots</code> y etiquetas <code>mec_*</code>.</p>
+<hr>
+<h2>Parte 1 — Qué es y para qué sirve</h2>
+<h3>1.1 Definición breve</h3>
+<p><strong>Xabia MEC</strong> es un <strong>complemento</strong> (plugin independiente) que se instala junto a <strong>Xabia Agent Core</strong>. Conecta su asistente (por ejemplo <strong>Izar</strong> u otro agente configurado) con <strong>Modern Events Calendar (MEC)</strong> para:</p>
+<ul>
+<li><strong>Sincronizar</strong> el calendario de eventos del sitio hacia la <strong>base de conocimiento</strong> del agente (texto y, si lo configura, vectores para búsqueda semántica).</li>
+<li>Responder con <strong>fechas, lugares, precios, categorías</strong> y textos tomados de los eventos publicados.</li>
+<li>Mostrar <strong>plazas libres</strong> cuando MEC tiene definida capacidad y reservas registradas (campo calculado <code>mec_available_slots</code>).</li>
+<li>Ofrecer <strong>botones de reserva</strong> (<code>[ACTION:BOOK]</code>) que llevan al visitante a la <strong>página del evento</strong> con ancla de reserva (<code>#book</code>) cuando el evento tiene <strong>reserva / entradas</strong> configuradas en MEC.</li>
+<li>Exponer opcionalmente un <strong>feed REST</strong> para <strong>federación</strong> (Xabia Central u otros nodos) con eventos publicados y metadatos alineados al conocimiento.</li>
+</ul>
+<p>No sustituye al panel de MEC ni a la configuración legal de precios, cancelaciones ni pasarelas de pago; es una <strong>capa de conversación e información</strong> sobre los datos que ya tiene en WordPress.</p>
+<h3>1.2 Qué problema resuelve</h3>
+<p>Sin este addon, un asistente solo puede <strong>inventar</strong> fechas o copiar texto estático. Con <strong>Xabia MEC</strong>, las respuestas pueden basarse en <strong>consultas SQL coordinadas</strong> a los posts <code>mec-events</code> y metadatos habituales de MEC, y en reglas de contexto que ayudan a la IA a interpretar preguntas como «¿qué hay este fin de semana?» o «¿quedan plazas?».</p>
+<h3>1.3 Identificación del producto (referencia útil)</h3>
+<ul>
+<li><strong>Checkout Polar (suscripción):</strong> <a href="https://buy.polar.sh/polar_cl_wEzwnqMvZIrPelny1I5HNIsdcVjGs1UO12Roj3zzxIm">https://buy.polar.sh/polar_cl_wEzwnqMvZIrPelny1I5HNIsdcVjGs1UO12Roj3zzxIm</a>  </li>
+<li><strong>ID de producto Polar (UUID):</strong> <code>8078756b-c566-4557-a55d-3712d8e47c44</code> — puede pedirlo a soporte si gestiona facturación o webhook en el Hub.</li>
+</ul>
+<h3>1.4 Requisitos imprescindibles</h3>
+<table>
+<thead>
+<tr>
+<th>Requisito</th>
+<th>Qué significa para usted</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><strong>WordPress</strong> funcionando</td>
+<td>El Core y Xabia MEC son plugins de WordPress.</td>
+</tr>
+<tr>
+<td><strong>Xabia Agent Core</strong> v <strong>1.0.57 o superior recomendado</strong> instalado y <strong>activo</strong></td>
+<td>Sin el Core, el plugin <strong>Xabia MEC</strong> muestra un aviso y <strong>no carga</strong> la integración.</td>
+</tr>
+<tr>
+<td><strong>Plugin Xabia MEC</strong> instalado y <strong>activo</strong></td>
+<td>El conector SQL, el enriquecimiento de filas y el menú <strong>Puente MEC</strong> viven en este plugin (ya <strong>no</strong> van dentro del ZIP del Core).</td>
+</tr>
+<tr>
+<td><strong>Modern Events Calendar (Lite o Pro)</strong> activo y con tipo de contenido <strong>mec-events</strong></td>
+<td>Necesario cuando los eventos están en el mismo WordPress. En escenario remoto, MEC puede estar solo en la web origen y Xabia MEC se conecta por SQL desde el sitio del chat.</td>
+</tr>
+<tr>
+<td><strong>Suscripción Polar / Hub</strong> para el slug <strong>xabia-mec</strong></td>
+<td>La sincronización del conector «premium» y el uso del motor de reservas en chat quedan validados contra el <strong>Hub</strong> desde <strong>Xabia Agent → Addons</strong>. Sin suscripción activa, puede ver <strong>«Hub Polar: inactiva»</strong> y el botón <strong>«Sincronizar datos»</strong> deshabilitado cuando el agente usa la fuente <strong>Addon MEC</strong>.</td>
+</tr>
+<tr>
+<td><strong>Opcional:</strong> add-on de <strong>reservas</strong> del Core (<code>integrations/reservas</code>)</td>
+<td>Para unificar reglas de intención de reserva y disponibilidad con MEC en el sistema de prompts.</td>
+</tr>
+</tbody></table>
+<hr>
+<h2>Parte 2 — Instalación paso a paso</h2>
+<h3>2.1 Antes de empezar</h3>
+<ol>
+<li>Tenga los <strong>ZIP</strong>: <strong>Xabia Agent Core</strong> y <strong>Xabia MEC</strong> (y MEC desde el repositorio oficial de Webnus si aún no lo tiene).</li>
+<li>Confirme que su hosting permite <strong>REST API</strong> (<code>/wp-json/</code>) si usará <strong>federación</strong> o integraciones cloud.</li>
+</ol>
+<h3>2.2 Orden recomendado de activación</h3>
+<ol>
+<li><strong>Xabia Agent Core</strong> → Activar.  </li>
+<li><strong>Modern Events Calendar</strong> → Activar.  </li>
+<li><strong>Xabia MEC</strong> → Activar <strong>después</strong> del Core.</li>
+</ol>
+<p>Si activa <strong>Xabia MEC</strong> sin el Core, verá un aviso en el escritorio: debe activar primero <strong>Xabia Agent Core</strong>.</p>
+<h3>2.3 Instalar Xabia MEC desde ZIP</h3>
+<ol>
+<li>Entre como <strong>administrador</strong>.  </li>
+<li><strong>Plugins → Añadir nuevo → Subir plugin</strong>.  </li>
+<li>Elija el ZIP de <strong>Xabia MEC</strong>.  </li>
+<li><strong>Instalar ahora</strong> → <strong>Activar plugin</strong>.</li>
+</ol>
+<h3>2.4 Comprobar que WordPress reconoce el plugin</h3>
+<p>En <strong>Plugins</strong> debe aparecer <strong>Xabia MEC</strong>. En <strong>Xabia Agent → Addons</strong>, la tarjeta <strong>«Xabia — Modern Events Calendar»</strong> debe mostrar el estado <strong>WordPress</strong> (activo / instalado / no instalado) junto al archivo <code>xabia-mec/xabia-mec.php</code>.</p>
+<hr>
+<h2>Parte 3 — Pantalla «Addons»: suscripción Polar y licencia</h2>
+<p>Abra <strong>Xabia Agent → Addons</strong>. Allí gestiona <strong>todas</strong> las opciones comerciales del addon MEC.</p>
+<h3>3.1 Textos generales de la pantalla</h3>
+<ul>
+<li><strong>Título «Addons»</strong> y subtítulo: explican que las insignias <strong>Hub Polar</strong> son la suscripción válida en el servidor Xabia, <strong>independientes</strong> de si el plugin está activo en WordPress.</li>
+<li><strong>Botón «Sincronizar licencias con el hub»</strong> (barra superior de la zona Polar): fuerza de nuevo la comprobación del Hub para <strong>todas</strong> las tarjetas de suscripción. Úselo tras pagar en Polar o pegar una clave nueva.</li>
+<li><strong>«Abrir plugins de WordPress»</strong>: acceso rápido a <strong>Plugins</strong> por si debe activar <strong>Xabia MEC</strong>.</li>
+</ul>
+<h3>3.2 Tarjeta de «Xabia — Modern Events Calendar» — cada elemento</h3>
+<table>
+<thead>
+<tr>
+<th>Elemento</th>
+<th>Qué es</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><strong>Insignia «Hub Polar: activa / inactiva»</strong></td>
+<td>Indica si su <strong>licencia</strong> incluye el addon <strong>xabia-mec</strong> según el Hub. No confundir con el estado del plugin WP.</td>
+</tr>
+<tr>
+<td><strong>Aviso de renovación</strong> (si aparece)</td>
+<td>Si la renovación está cerca, el sistema puede mostrar un <strong>banner</strong> con días restantes; use el enlace a <strong>Polar</strong> para renovar.</td>
+</tr>
+<tr>
+<td><strong>Icono y título</strong></td>
+<td>Identificación visual del producto.</td>
+</tr>
+<tr>
+<td><strong>Precio / tarifas</strong></td>
+<td>Texto orientativo; las tarifas vigentes están siempre en <strong><a href="https://xabia.ai/precio">xabia.ai/precio</a></strong> y el importe final lo confirma <strong>Polar</strong> en el checkout.</td>
+</tr>
+<tr>
+<td><strong>Descripción corta</strong></td>
+<td>Resumen comercial de funciones (eventos, plazas, reserva asistida).</td>
+</tr>
+<tr>
+<td><strong>«El plugin está activo… Hub Polar: inactiva»</strong></td>
+<td>Aviso de <strong>consistencia</strong>: el ZIP está activo pero el Hub aún no reconoce la suscripción — revise clave y pulse <strong>Sincronizar licencia</strong> en la tarjeta o el botón global del hub.</td>
+</tr>
+<tr>
+<td><strong>«Estado en WordPress:»</strong></td>
+<td><strong>activo</strong> / <strong>instalado (inactivo)</strong> / <strong>no instalado</strong>, más la ruta <code>xabia-mec/xabia-mec.php</code>.</td>
+</tr>
+<tr>
+<td><strong>Campo «Clave de licencia»</strong></td>
+<td>Pegue la <strong>misma clave</strong> que muestra Polar / el correo de compra (debe coincidir <strong>carácter a carácter</strong> con la licencia del sitio; suele ser la misma que en <strong>Conexión a la IA</strong>).</td>
+</tr>
+<tr>
+<td><strong>Texto de ayuda bajo la clave</strong></td>
+<td>Indica que el Hub activa el add-on sobre la licencia del sitio.</td>
+</tr>
+<tr>
+<td><strong>«Suscripción activa con la licencia principal del sitio»</strong></td>
+<td>Si el Hub validó el addon usando la <strong>licencia Core</strong> sin clave separada en el campo (según configuración del proveedor).</td>
+</tr>
+<tr>
+<td><strong>Bloque de estado</strong></td>
+<td>Muestra fechas de <strong>alta</strong> y <strong>vencimiento / renovación</strong> si el Hub las devuelve.</td>
+</tr>
+<tr>
+<td><strong>Botón «Sincronizar licencia»</strong> (fantasma):** vuelve a consultar el Hub <strong>solo</strong> para este addon.</td>
+<td></td>
+</tr>
+<tr>
+<td><strong>Botón «Activar» o «Actualizar suscripción»</strong>: guarda el formulario (nonce incluido) y <strong>persiste</strong> la clave en la base de datos del sitio.</td>
+<td></td>
+</tr>
+<tr>
+<td><strong>«Contratar suscripción»</strong> (si el Hub dice inactivo): abre el <strong>checkout Polar</strong> del producto MEC: <a href="https://buy.polar.sh/polar_cl_wEzwnqMvZIrPelny1I5HNIsdcVjGs1UO12Roj3zzxIm">enlace de compra</a>.</td>
+<td></td>
+</tr>
+<tr>
+<td><strong>«Gestionar en Polar»</strong> (si ya está activo): abre el <strong>portal de cliente</strong> configurado en el catálogo (gestión de suscripción, facturas, método de pago).</td>
+<td></td>
+</tr>
+</tbody></table>
+<h3>3.3 Después de comprar en Polar</h3>
+<ol>
+<li>Copie la <strong>clave de licencia</strong> que le entrega Polar.  </li>
+<li>En <strong>Addons</strong>, péguela en la tarjeta MEC y pulse <strong>Activar</strong> / <strong>Actualizar suscripción</strong>.  </li>
+<li>Pulse <strong>Sincronizar licencia</strong> o el <strong>Sincronizar licencias con el hub</strong> global.  </li>
+<li>Espere unos minutos si el Hub aplica la activación con retraso y vuelva a cargar la página <strong>Addons</strong>.</li>
+</ol>
+<hr>
+<h2>Parte 4 — Configuración del agente (fuente «Addon MEC»)</h2>
+<p>Entre en <strong>Xabia Agent</strong>, cree o <strong>edite</strong> el agente que debe conocer los eventos.</p>
+<h3>4.1 Seleccionar tipo de fuente</h3>
+<p>En <strong>«Fuente de información»</strong> (<code>source_type</code>):</p>
+<ul>
+<li>Elija <strong>«Addons Nativos (Conector externo)»</strong> solo si en su instalación el Core detecta <strong>conectores nativos</strong> activos (incluye <strong>Xabia MEC</strong> cuando la licencia Hub y MEC en WordPress son correctas).  </li>
+<li>Si no ve la opción habilitada, revise que <strong>Xabia MEC</strong> esté <strong>activo</strong> y que <strong>Addons</strong> muestre <strong>Hub Polar: activa</strong> para MEC.</li>
+</ul>
+<h3>4.2 Selector de addon (<code>addon_slug</code>)</h3>
+<p>En la sección que aparece al elegir <strong>Addon</strong>, despliegue la lista y seleccione la entrada cuyo nombre sea la de <strong>MEC — Modern Events Calendar</strong> (slug interno <strong><code>mec</code></strong>). Es el conector registrado por el plugin Xabia MEC.</p>
+<h3>4.3 Aviso informativo bajo el selector</h3>
+<p>Cuando <strong>MEC</strong> está elegido, verá el texto con icono:</p>
+<blockquote>
+<p><strong>MEC Add-on activo: Los campos de reserva y disponibilidad se sincronizan automáticamente.</strong></p>
+</blockquote>
+<p>Sirve para recordar que <strong>no</strong> tiene que inventar manualmente columnas de «plazas» si usa el preset estándar.</p>
+<h3>4.4 Botón <strong>«Conectar y Mapear»</strong></h3>
+<ol>
+<li>Pulse <strong>«Conectar y Mapear»</strong>.  </li>
+<li>El sistema ejecuta una <strong>consulta de prueba</strong> con el SQL del conector (hasta una fila) para listar <strong>columnas</strong> reales.  </li>
+<li>Si la licencia Hub <strong>no</strong> está activa para MEC, verá un <strong>error</strong> indicando que hace falta la suscripción; no podrá prefijar el mapeo hasta activarla.  </li>
+<li>Si todo va bien, recibe columnas y, para MEC, un <strong>preset</strong> de filas de mapeo (<code>fields</code>) que puede aplicar a la tabla de atributos.</li>
+</ol>
+<h3>4.5 Campos del preset de mapeo (catálogo oficial)</h3>
+<p>Cada fila del mapeo tiene: <strong>columna CSV/SQL</strong>, <strong>etiqueta legible</strong>, <strong>rol visual</strong>, <strong>ENTE</strong> (checkbox) e <strong>instrucción</strong>. El orden lógico del conector es:</p>
+<table>
+<thead>
+<tr>
+<th>Columna SQL</th>
+<th>Rol sugerido</th>
+<th>ENTÉ</th>
+<th>Para qué sirve</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><strong>ID</strong></td>
+<td>(ninguno especial)</td>
+<td>Sí — identidad del registro</td>
+<td>ID del post <code>mec-events</code>; imprescindible para <strong>reservas</strong> y deduplicación.</td>
+</tr>
+<tr>
+<td><strong>Evento</strong></td>
+<td>Título</td>
+<td>No</td>
+<td>Nombre del evento en chat y búsquedas.</td>
+</tr>
+<tr>
+<td><strong>Fecha</strong></td>
+<td>—</td>
+<td>No</td>
+<td>Fecha de inicio en formato <strong>Y-m-d</strong> (filtros «fin de semana», «próximos», etc.).</td>
+</tr>
+<tr>
+<td><strong>Hora</strong></td>
+<td>—</td>
+<td>No</td>
+<td>Texto compuesto de hora MEC (hora, minutos, AM/PM si aplica).</td>
+</tr>
+<tr>
+<td><strong>Lugar</strong></td>
+<td>—</td>
+<td>No</td>
+<td>Contenido de <code>mec_location</code>.</td>
+</tr>
+<tr>
+<td><strong>mec_available_slots</strong></td>
+<td>—</td>
+<td>No</td>
+<td><strong>Plazas libres</strong> calculadas (capacidad − reservas confirmadas); puede quedar vacío si no hay tope.</td>
+</tr>
+<tr>
+<td><strong>Link</strong></td>
+<td>URL</td>
+<td>No</td>
+<td>En la sincronización se sustituye por el <strong>permalink</strong> real y el filtro <code>#book</code> cuando corresponde.</td>
+</tr>
+<tr>
+<td><strong>Precio</strong></td>
+<td>—</td>
+<td>No</td>
+<td>Meta <code>mec_cost</code> o texto por defecto «Consultar».</td>
+</tr>
+<tr>
+<td><strong>Descripcion</strong></td>
+<td>—</td>
+<td>No</td>
+<td>Contenido del post (HTML se indexa según el pipeline del Core).</td>
+</tr>
+<tr>
+<td><strong>Categorias_Tags</strong></td>
+<td>—</td>
+<td>No</td>
+<td>Lista de términos unidos (taxonomías MEC).</td>
+</tr>
+<tr>
+<td><strong>Imagen_URL</strong></td>
+<td>Imagen</td>
+<td>No</td>
+<td>URL de la imagen destacada si existe.</td>
+</tr>
+</tbody></table>
+<p>Puede <strong>añadir</strong> columnas extra con <strong>Asistente CPT</strong> u otras herramientas del Core, pero el <strong>preset</strong> cubre el flujo estándar.</p>
+<h3>4.6 Conexión a base remota (host, SQL)</h3>
+<p>Xabia MEC sigue el mismo patrón que Xabia Woo: el agente puede usar <strong>Addon nativo → MEC</strong> aunque los eventos estén en otra web.</p>
+<p>Use este modo cuando:</p>
+<ul>
+<li>El sitio donde vive el chat tiene <strong>Xabia Agent Core</strong> y <strong>Xabia MEC</strong> activos.</li>
+<li>Los eventos reales están en una base de datos WordPress remota, por ejemplo <code>bilbaobizkaiapride.com</code>.</li>
+<li>Quiere conservar las reglas semánticas del addon MEC (fechas, lugares, categorías, disponibilidad cualitativa), pero leer los datos por SQL remoto.</li>
+</ul>
+<p>Pasos:</p>
+<ol>
+<li>En <strong>Fuente de información</strong>, seleccione <strong>Addon nativo (conector automático)</strong>.</li>
+<li>En el desplegable, elija <strong>Modern Events Calendar (MEC)</strong>.</li>
+<li>Rellene <strong>Host</strong>, <strong>DB</strong>, <strong>Usuario</strong>, <strong>Contraseña</strong> y, si procede, <strong>Prefijo</strong> (<code>wp_</code>, <code>wpdb_</code>, etc.).</li>
+<li>Pulse <strong>Conectar y Mapear</strong>.</li>
+<li>Guarde el agente, sincronice datos y entrene si usa vectores.</li>
+</ol>
+<p>Si el campo <strong>Prefijo</strong> se deja vacío, el Core intenta detectar el prefijo activo de la base remota y usa <code>wp_</code> como respaldo.</p>
+<h3>4.6.1 Alternativa: preset MEC remoto desde SQL puro</h3>
+<p>Si no va a instalar <strong>Xabia MEC</strong> en el sitio del chat, puede usar el Core directamente:</p>
+<ol>
+<li>Elija <strong>Base de Datos Externa (SQL Remoto)</strong>.</li>
+<li>Pulse <strong>Usar preset MEC remoto</strong>.</li>
+<li>Rellene credenciales SQL remotas y pruebe la consulta.</li>
+<li>Guarde, sincronice y entrene.</li>
+</ol>
+<p>Esta alternativa crea un catálogo de eventos vía SQL (<code>sql_preset = mec_remote</code>) y mapeo automático, pero no carga todas las capacidades del addon MEC. Para instalaciones comerciales con licencia activa, el flujo recomendado es <strong>Addon nativo → MEC</strong>.</p>
+<h3>4.7 Guardar el agente</h3>
+<p>Pulse <strong>«Guardar agente»</strong> (o el botón equivalente en su pantalla) para persistir <code>source_type</code>, <code>addon_slug</code>, mapeo y credenciales SQL.</p>
+<hr>
+<h2>Parte 5 — Barra lateral del agente: memoria, sincronización y playground</h2>
+<p>Cuando edita un agente <strong>ya creado</strong> (no en «nuevo» vacío), verá la columna lateral de <strong>memoria</strong>. Cada control hace lo siguiente:</p>
+<table>
+<thead>
+<tr>
+<th>Control</th>
+<th>Función</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><strong>«1. Sincronizar datos»</strong></td>
+<td>Lanza la <strong>ingesta</strong> desde la fuente configurada (en addon MEC, el SQL de eventos + enriquecimiento de plazas y enlace). Si <strong>Hub Polar: inactiva</strong> y la fuente es <strong>addon MEC</strong>, el botón puede estar <strong>deshabilitado</strong> y mostrar aviso <strong>«Requiere Licencia Premium…»</strong>.</td>
+</tr>
+<tr>
+<td><strong>«2. Entrenar IA»</strong></td>
+<td>Genera embeddings / entrenamiento local según la configuración del Core (vectores en la tabla de conocimiento).</td>
+</tr>
+<tr>
+<td><strong>«Sincronizar Cerebro con Xabia Cloud»</strong></td>
+<td>Envía el conocimiento al Hub cloud si usa <strong>Conexión Segura Xabia</strong> / modo cloud.</td>
+</tr>
+<tr>
+<td><strong>«Vista previa del conocimiento (esta base)»</strong></td>
+<td>Muestra recuentos y extractos de filas guardadas para ese <code>project_id</code>.</td>
+</tr>
+<tr>
+<td><strong>«Borrar memoria vectorial»</strong></td>
+<td>Elimina datos de conocimiento del agente (acción irreversible; pide confirmación).</td>
+</tr>
+<tr>
+<td><strong>Playground</strong></td>
+<td>Chat de prueba en el escritorio para validar respuestas antes de publicar el shortcode.</td>
+</tr>
+<tr>
+<td><strong>Mensaje de saldo / tokens</strong></td>
+<td>Si tiene <strong>Cartera</strong>, puede ver consumo; véase el <a href="./manual-usuario-xabia-core.md">Manual del Core</a>.</td>
+</tr>
+</tbody></table>
+<hr>
+<h2>Parte 6 — Cómo debe estar configurado <strong>Modern Events Calendar</strong> en WordPress</h2>
+<p>El addon <strong>lee</strong> lo que MEC ya guarda. Para que <strong>reservas</strong> y <strong>plazas</strong> tengan sentido:</p>
+<ol>
+<li>En <strong>M.E. Calendar → Ajustes → Reservas</strong>, active el <strong>módulo de reservas</strong> si usa la función de booking de MEC (según documentación Webnus / su edición Lite o Pro).  </li>
+<li>En cada <strong>evento</strong>, configure <strong>entradas / tickets</strong> o límites si quiere que exista un <strong>cupo</strong> calculable.  </li>
+<li>Publique o programe eventos (<code>publish</code> / <code>future</code>); el SQL del conector filtra fechas <strong>desde hoy</strong> y eventos <strong>raíz</strong> (<code>post_parent = 0</code>) para evitar duplicar ocurrencias hijas en el índice.</li>
+</ol>
+<p>Si un evento <strong>no</strong> tiene reserva online, el sistema puede <strong>omitir</strong> el botón <code>[ACTION:BOOK]</code> aunque la IA proponga texto informativo.</p>
+<hr>
+<h2>Parte 7 — Experiencia del visitante en el chat</h2>
+<h3>7.1 Preguntas que el contexto MEC ayuda a interpretar</h3>
+<p>Gracias a las <strong>reglas de búsqueda</strong> inyectadas en el router, el modelo tiende a usar bien:</p>
+<ul>
+<li><strong>Fechas</strong> y expresiones tipo <strong>«este fin de semana»</strong> (el sistema le sugiere filtrar por la columna <strong>Fecha</strong>).  </li>
+<li><strong>Plazas</strong> cuando existe <strong>mec_available_slots</strong> numérico.  </li>
+<li><strong>Lugar</strong> (<code>Lugar</code> / <code>mec_location</code>).  </li>
+<li><strong>Categorías y etiquetas</strong> unidas en <strong>Categorias_Tags</strong>.</li>
+</ul>
+<h3>7.2 Botón de reserva</h3>
+<p>Cuando el proyecto usa el motor de <strong>reservas MEC</strong> y el evento tiene <strong>booking</strong> habilitado, la respuesta puede incluir un <strong>enlace o botón</strong> que abre la página del evento (con ancla de reserva por defecto).</p>
+<p>En catálogos <strong>MEC remotos</strong> sin MEC local en el WordPress del chat, Xabia no genera el botón de reserva local porque no puede verificar el formulario de ese sitio. En su lugar, dirige al visitante al campo <strong>Link</strong> del evento remoto. Si el evento tiene reserva en la web origen, esa ficha remota será la que gestione el proceso.</p>
+<h3>7.3 Privacidad</h3>
+<p>El visitante solo ve lo que el <strong>plugin de chat</strong> muestre. Los mensajes se procesan según la configuración del Core (proveedor de IA, Hub, etc.). Consulte la política de privacidad de su sitio y el <a href="./manual-usuario-xabia-core.md">Manual del Core</a>.</p>
+<hr>
+<h2>Parte 8 — Puente de federación MEC (menú «Puente MEC»)</h2>
+<p>Cuando <strong>Xabia MEC</strong> está activo, en el menú de Xabia aparece <strong>«Puente MEC»</strong> (submenú bajo los ajustes del agente).</p>
+<h3>8.1 Qué muestra la pantalla</h3>
+<table>
+<thead>
+<tr>
+<th>Bloque</th>
+<th>Contenido</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><strong>Descripción superior</strong></td>
+<td>Explica que el feed es para <strong>nodos pull</strong> de Xabia Central, que requiere <strong>suscripción MEC</strong> en el Hub y cabecera <strong>X-Xabia-Key</strong> (salvo administrador con sesión).</td>
+</tr>
+<tr>
+<td><strong>Aviso de licencia</strong></td>
+<td>Si el Hub no tiene MEC activo, advierte que el endpoint devolverá <strong>403</strong> a clientes externos.</td>
+</tr>
+<tr>
+<td><strong>Aviso de clave de puente</strong></td>
+<td>Si no hay clave en <strong>Federación Nexus</strong>, las peticiones anónimas con cabecera fallarán.</td>
+</tr>
+<tr>
+<td><strong>URL del endpoint</strong></td>
+<td>Copiable; suele ser <code>…/wp-json/xabia/v1/federation-events</code>.</td>
+</tr>
+<tr>
+<td><strong>Instrucción de cabeceras</strong></td>
+<td><strong>X-Xabia-Key</strong> o <strong>X-Xabia-Fed-Key</strong> con el <strong>secreto del puente</strong> definido en <strong>Xabia Agent → Federación</strong>.</td>
+</tr>
+<tr>
+<td><strong>Mapeo sugerido (mapping_hint)</strong></td>
+<td>JSON con claves como <code>event_title</code>, <code>mec_start_date</code>, <code>mec_location</code>, <code>mec_cost</code>, <code>mec_available_slots</code>, <code>permalink</code>, más el <strong>hint</strong> visible: <em>«MEC Add-on activo: Los campos de reserva y disponibilidad se sincronizan automáticamente.»</em></td>
+</tr>
+<tr>
+<td><strong>Último acceso</strong></td>
+<td>Registro de IP, user-agent y fecha del <strong>último</strong> GET exitoso al endpoint (trazabilidad ligera).</td>
+</tr>
+</tbody></table>
+<h3>8.2 Parámetros del GET (API)</h3>
+<ul>
+<li><strong><code>per_page</code></strong> (1–200, por defecto 100).  </li>
+<li><strong><code>page</code></strong> (paginación).</li>
+</ul>
+<p>Solo eventos <strong><code>mec-events</code></strong> con estado <strong>publicado</strong> o <strong>programados</strong>, <strong>raíz</strong> (<code>post_parent = 0</code>), ordenados por <code>mec_start_date</code>.</p>
+<hr>
+<h2>Parte 9 — Recurrencia y una fila por serie</h2>
+<p>El conector está pensado para indexar <strong>un evento raíz por serie</strong> con la <strong>próxima fecha</strong> en metadatos MEC (no expande docenas de filas por cada repetición si MEC las representa como hijos). Si su caso usa solo eventos hijos, consulte con soporte o un integrador para ajustar SQL vía mantenimiento personalizado.</p>
+<hr>
+<h2>Parte 10 — Problemas frecuentes y checklist</h2>
+<table>
+<thead>
+<tr>
+<th>Síntoma</th>
+<th>Qué revisar</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><strong>«Hub Polar: inactiva»</strong> y sincronización bloqueada</td>
+<td>Clave en <strong>Addons</strong>, pago en <a href="https://buy.polar.sh/polar_cl_wEzwnqMvZIrPelny1I5HNIsdcVjGs1UO12Roj3zzxIm">Polar</a>, botón <strong>Sincronizar licencia</strong>.</td>
+</tr>
+<tr>
+<td><strong>Sin eventos en la vista previa</strong></td>
+<td>¿Hay eventos futuros en MEC? ¿Slug <code>mec-events</code> existe? ¿Prefijo SQL correcto en remoto?</td>
+</tr>
+<tr>
+<td><strong>Plazas siempre vacías</strong></td>
+<td>¿Tickets / límites en MEC? Sin capacidad definida el campo puede quedar vacío.</td>
+</tr>
+<tr>
+<td><strong>No aparece botón de reserva</strong></td>
+<td>¿Módulo de reservas MEC activo? ¿Tickets en el evento? El sistema <strong>oculta</strong> el botón si no detecta reserva.</td>
+</tr>
+<tr>
+<td><strong>403 en federación</strong></td>
+<td>Licencia MEC, clave de puente en Federación, o sesión de administrador.</td>
+</tr>
+<tr>
+<td><strong>Aviso «requiere Core»</strong> al activar MEC</td>
+<td>Active <strong>Xabia Agent Core</strong> primero.</td>
+</tr>
+</tbody></table>
+<p><strong>Checklist rápido:</strong> Core ≥ 1.0.24 → MEC activo → Xabia MEC activo → Hub <strong>activa</strong> → Fuente <strong>addon</strong> + <strong>mec</strong> → <strong>Conectar y Mapear</strong> → <strong>Guardar</strong> → <strong>Sincronizar datos</strong> → <strong>Entrenar</strong> (si aplica) → probar en <strong>Playground</strong>.</p>
+<hr>
+<h2>Parte 11 — Buenas prácticas</h2>
+<ul>
+<li>Mantenga <strong>MEC</strong> actualizado y revise <strong>eventos cancelados</strong> para no ofrecer fechas obsoletas hasta la próxima sincronización.  </li>
+<li>Use <strong>categorías</strong> claras para que el agente filtre bien desde <strong>Categorias_Tags</strong>.  </li>
+<li>Pruebe siempre <strong>reserva real</strong> en una ventana privada tras cambiar plantilla del evento.  </li>
+<li>Documente internamente quién tiene la <strong>clave Polar</strong> y quién puede pulsar <strong>Sincronizar licencia</strong>.</li>
+</ul>
+<hr>
+<h2>Parte 12 — Soporte</h2>
+<ul>
+<li><strong>Xabia / Digixop</strong> (instalación, licencias Core y addon MEC, Hub): contacto habitual <strong><a href="mailto:help@xabia.ai">help@xabia.ai</a></strong>.  </li>
+<li><strong>Facturación Polar</strong>: use el <strong>portal de cliente</strong> enlazado desde <strong>Addons</strong> cuando la suscripción esté activa.  </li>
+<li><strong>Incidencias del calendario MEC</strong> (bugs del plugin Webnus, estilos, shortcodes): <strong>soporte Webnus / MEC</strong>.</li>
+</ul>
+<p>Para <strong>licencia principal, tokens y cartera</strong>, abra el <strong><a href="./manual-usuario-xabia-core.md">Manual del Core</a></strong>.</p>
+<div class="manual-pdf-cierre">
+
+<h2>Xabia AI — La web viva</h2>
+<p>Sabiduría natural con inteligencia artificial</p>
+<p>Xabia AI está especialmente indicada para empresas y asociaciones del sector del turismo, instituciones, empresas y tiendas online que quieran incrementar su conversión.</p>
+<p>Xabia AI está desarrollada por Digixop.</p>
+<p><strong>Xabia AI</strong> · Garaizar, 2 · 48004 Bilbao (SPAIN)</p>
+<p><a href="mailto:help@xabia.ai">help@xabia.ai</a></p>
+</div>
+</body>
+</html>

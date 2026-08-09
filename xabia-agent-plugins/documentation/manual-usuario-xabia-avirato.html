@@ -1,0 +1,475 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Manual de usuario — Xabia Avirato</title>
+<style>
+/**
+ * Estilos HTML / impresión / PDF — Manual de usuario Xabia
+ * Acento principal: azul marca (#2170b0). Grises tipo Material.
+ */
+
+@page {
+  margin: 16mm 17mm 18mm 17mm;
+}
+
+html {
+  font-size: 10.5pt;
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
+}
+
+body {
+  font-family:
+    -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  color: #202124;
+  line-height: 1.55;
+  max-width: 100%;
+  margin: 0;
+  padding: 0;
+}
+
+/* Marca — barra superior en la primera página vía h1 */
+h1 {
+  font-size: 1.85rem;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  color: #2170b0;
+  margin: 0 0 0.75rem;
+  padding: 0.85rem 0 0.65rem;
+  border-top: 6px solid #2170b0;
+  border-bottom: 2px solid #e8f0fe;
+  page-break-after: avoid;
+}
+
+h2 {
+  font-size: 1.28rem;
+  font-weight: 600;
+  color: #185a94;
+  margin: 1.6rem 0 0.65rem;
+  padding: 0.35rem 0 0.35rem 0.65rem;
+  border-left: 4px solid #2170b0;
+  background: linear-gradient(90deg, #e3f0fa 0%, transparent 100%);
+  page-break-after: avoid;
+}
+
+h3 {
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: #144a78;
+  margin: 1.25rem 0 0.5rem;
+  page-break-after: avoid;
+}
+
+h4,
+h5,
+h6 {
+  font-size: 1rem;
+  font-weight: 600;
+  color: #3c4043;
+  margin: 1rem 0 0.35rem;
+  page-break-after: avoid;
+}
+
+p {
+  margin: 0.5rem 0 0.65rem;
+  orphans: 3;
+  widows: 3;
+}
+
+strong {
+  color: #144a78;
+  font-weight: 600;
+}
+
+hr {
+  border: none;
+  height: 1px;
+  background: linear-gradient(90deg, #2170b0, #64b5f6, #e8eaed);
+  margin: 1.75rem 0;
+  opacity: 0.9;
+}
+
+ul,
+ol {
+  margin: 0.5rem 0 0.75rem;
+  padding-left: 1.35rem;
+}
+
+li {
+  margin: 0.25rem 0;
+}
+
+li::marker {
+  color: #2170b0;
+}
+
+blockquote {
+  margin: 1rem 0;
+  padding: 0.65rem 1rem;
+  border-left: 4px solid #2170b0;
+  background: #e8f4fc;
+  color: #3c4043;
+  font-size: 0.98em;
+}
+
+blockquote p {
+  margin: 0.35rem 0;
+}
+
+code {
+  font-family: ui-monospace, "Cascadia Code", "SF Mono", Menlo, Consolas, monospace;
+  font-size: 0.88em;
+  background: #e8f4fc;
+  border: 1px solid #c5dae8;
+  border-radius: 4px;
+  padding: 0.12em 0.4em;
+  color: #144a78;
+}
+
+pre {
+  font-family: ui-monospace, "Cascadia Code", "SF Mono", Menlo, Consolas, monospace;
+  font-size: 0.82rem;
+  line-height: 1.45;
+  background: #fafafa;
+  border: 1px solid #dadce0;
+  border-radius: 8px;
+  padding: 12px 14px;
+  overflow-x: auto;
+  page-break-inside: avoid;
+}
+
+pre code {
+  background: none;
+  border: none;
+  padding: 0;
+  color: #202124;
+  font-size: inherit;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 1rem 0;
+  font-size: 0.95rem;
+  page-break-inside: avoid;
+}
+
+th,
+td {
+  border: 1px solid #dadce0;
+  padding: 8px 10px;
+  text-align: left;
+  vertical-align: top;
+}
+
+th {
+  background: #e3f0fa;
+  color: #144a78;
+  font-weight: 600;
+}
+
+tr:nth-child(even) td {
+  background: #fafafa;
+}
+
+a {
+  color: #2170b0;
+  text-decoration: none;
+}
+
+a:hover {
+  text-decoration: underline;
+}
+
+@media print {
+  a[href^="http"]::after {
+    content: "";
+  }
+
+  a[href]::after {
+    content: none !important;
+  }
+}
+
+img {
+  max-width: 100%;
+  height: auto;
+  border-radius: 6px;
+}
+
+img[alt="Xabia"] {
+  height: 42px;
+  width: auto;
+  margin: 0 0 1rem;
+  display: block;
+}
+
+/* Cierre institucional (bloque final acordado) */
+.manual-pdf-cierre {
+  margin-top: 2rem;
+  padding: 1.25rem 1.1rem;
+  border: 1px solid #c5dae8;
+  border-radius: 8px;
+  border-top: 4px solid #2170b0;
+  background: linear-gradient(180deg, #f4f9fc 0%, #fff 45%);
+  page-break-before: always;
+}
+
+.manual-pdf-cierre h2 {
+  margin-top: 0;
+  color: #2170b0;
+  border-left-color: #2170b0;
+  background: linear-gradient(90deg, #e3f0fa 0%, transparent 100%);
+}
+</style>
+</head>
+<body>
+<h1>Manual de usuario — Xabia Avirato (addon para Avirato)</h1>
+<h2>Guía rápida de instalación</h2>
+<ol>
+<li>Instale y active <strong>Xabia Agent Core</strong>.</li>
+<li>Instale y active el ZIP <strong>Xabia Avirato</strong> desde <strong>Plugins → Añadir nuevo → Subir plugin</strong>.</li>
+<li>En <strong>Xabia Agent → Addons</strong>, active o sincronice la licencia del addon <strong>Avirato</strong> hasta que el Hub la reconozca.</li>
+<li>Cree o edite el agente que usará reservas y abra la pestaña <strong>Avirato</strong>.</li>
+<li>Introduzca el <strong>ID de establecimiento (webcode)</strong>, la <strong>URL del motor</strong> y, si hace falta, filtros de inclusión/exclusión.</li>
+<li>Guarde el agente y pruebe disponibilidad con fechas reales en <strong>Playground</strong>.</li>
+<li>Publique el chat con shortcode o con la interfaz nativa del Core.</li>
+<li>Verifique que los enlaces de reserva abren el motor Avirato con fechas e IDs correctos.</li>
+</ol>
+<hr>
+<h2>Parte 1 — Qué es y para qué sirve</h2>
+<h3>1.1 Definición breve</h3>
+<p><strong>Xabia Avirato</strong> es un <strong>complemento</strong> (plugin extra) que se instala sobre <strong>Xabia Agent Core</strong>. Conecta su chat Xabia con el <strong>motor de reservas online de Avirato</strong> que sus huéspedes ya conocen (la dirección habitual es la de booking de Avirato) para poder:</p>
+<ul>
+<li>Consultar si hay habitaciones o casas <strong>libres u ocupadas</strong> en fechas concretas.</li>
+<li>Mostrar <strong>precios</strong> cuando el motor los devuelve.</li>
+<li>Generar <strong>enlaces de reserva</strong> con los identificadores correctos.</li>
+<li>Reconocer cuando el visitante pide una <strong>casa o habitación concreta</strong> por nombre.</li>
+<li>Proponer <strong>alternativas</strong> si la casa pedida está llena y, cuando es posible, indicar una <strong>próxima fecha</strong> con disponibilidad.</li>
+</ul>
+<p>No sustituye al panel de Avirato ni a la configuración legal de precios y condiciones en su web; es una <strong>capa de consulta automatizada</strong> para el chat.</p>
+<h3>1.2 Qué problema resuelve</h3>
+<p>Sin este addon, un asistente con IA puede <strong>inventar</strong> disponibilidad o remitir genéricamente “a la web”. Con Xabia Avirato, las respuestas sobre disponibilidad se apoyan en lo que devuelve el <strong>motor real</strong> de reservas, de forma ordenada y con enlaces útiles.</p>
+<h3>1.3 Requisitos imprescindibles</h3>
+<table>
+<thead>
+<tr>
+<th>Requisito</th>
+<th>Qué significa para usted</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><strong>WordPress</strong> funcionando</td>
+<td>El addon es un plugin de WordPress.</td>
+</tr>
+<tr>
+<td><strong>Xabia Agent Core</strong> instalado y <strong>activo</strong></td>
+<td>Sin el Core el addon no carga correctamente y puede mostrar un aviso de error en el escritorio.</td>
+</tr>
+<tr>
+<td><strong>Licencia con add-on Avirato</strong></td>
+<td>La disponibilidad en tiempo real se valida en el <strong>Hub</strong> desde <strong>Xabia Agent → Addons</strong>, con la clave del addon <strong>Avirato</strong>. Si no hay suscripción activa, los <strong>avisos técnicos</strong> aparecen solo en el escritorio (Addons / registro); en el <strong>chat público</strong> el visitante verá un mensaje <strong>genérico</strong> para contactar con el establecimiento (villas + calendarios exactos), sin mensajes de «módulo no activo».</td>
+</tr>
+<tr>
+<td><strong>Establecimiento en Avirato</strong></td>
+<td>Debe tener un establecimiento dado de alta en Avirato con motor de reservas accesible.</td>
+</tr>
+<tr>
+<td><strong>ID de establecimiento (webcode)</strong></td>
+<td>Es el código numérico que usa Avirato en la URL del motor; sin él no hay consultas válidas (salvo configuración especial con otro plugin; ver más abajo).</td>
+</tr>
+</tbody></table>
+<hr>
+<h2>Parte 2 — Instalación paso a paso</h2>
+<h3>2.1 Antes de empezar</h3>
+<ol>
+<li>Tenga a mano el <strong>archivo ZIP</strong> del complemento que le haya facilitado Xabia o su distribuidor (el nombre puede variar en cada paquete).</li>
+<li>Confirme que <strong>Xabia Agent Core</strong> ya aparece instalado en <strong>Plugins</strong> y está <strong>activo</strong>.</li>
+</ol>
+<h3>2.2 Instalar el ZIP en WordPress</h3>
+<ol>
+<li>Entre en el escritorio de WordPress como administrador.</li>
+<li>Vaya a <strong>Plugins &gt; Añadir nuevo</strong>.</li>
+<li>Pulse <strong>Subir plugin</strong>.</li>
+<li>Elija el archivo ZIP de <strong>Xabia Avirato</strong>.</li>
+<li>Pulse <strong>Instalar ahora</strong> y, a continuación, <strong>Activar plugin</strong>.</li>
+</ol>
+<h3>2.3 Orden correcto de activación</h3>
+<ul>
+<li>Lo habitual es: <strong>primero Core</strong>, <strong>después</strong> Xabia Avirato.</li>
+<li>Si activa Xabia Avirato sin tener el Core activo, WordPress mostrará un aviso informando que hace falta el plugin principal de Xabia antes.</li>
+</ul>
+<h3>2.4 Comprobar que el addon está reconocido</h3>
+<p>En <strong>Xabia Agent → Addons</strong> puede ver <strong>Xabia Avirato</strong> en las tarjetas, <strong>introducir o revisar la clave de licencia del addon</strong> (validación Hub) y acceder a la <strong>tienda Polar</strong> (<a href="https://polar.sh/xabia">polar.sh/xabia</a>) y al <strong>portal del cliente</strong> (<a href="https://polar.sh/xabia/portal">polar.sh/xabia/portal</a>) para suscripciones. Normalmente el addon <strong>no tiene un menú propio aparte</strong>: el <strong>ID de establecimiento</strong>, URL del motor y filtros se configuran <strong>dentro de cada agente</strong>, en la pestaña <strong>Avirato</strong> (véase más abajo).</p>
+<blockquote>
+<p>📢 <strong>Nota sobre tarifas:</strong> el precio de la suscripción Avirato (y del resto de addons) se actualiza en tiempo real en <strong><a href="https://xabia.ai/precio">https://xabia.ai/precio</a></strong>. En el panel de Addons verá un texto orientativo, no una tarifa fija impresa.</p>
+</blockquote>
+<hr>
+<h2>Parte 3 — Dónde se configura (navegación en el escritorio)</h2>
+<h3>3.1 Ruta general</h3>
+<ol>
+<li><strong>Xabia Agent</strong> (o el nombre del menú que use su instalación para el Core).</li>
+<li>Edite el <strong>agente / proyecto</strong> que debe usar Avirato (cada sitio puede tener varios agentes).</li>
+<li>Busque la pestaña <strong>«Avirato»</strong> en la ficha del agente.</li>
+</ol>
+<h3>3.2 Cómo se guardan los datos</h3>
+<p>Los campos se guardan al pulsar <strong>Guardar agente</strong> en esa misma pantalla — no tiene que buscar ningún archivo suelto: WordPress custodia esa información en <strong>su instalación</strong>.</p>
+<hr>
+<h2>Parte 4 — Campos de configuración (explicación detallada)</h2>
+<h3>4.1 ID de establecimiento</h3>
+<ul>
+<li><strong>Qué es:</strong> el <strong>código web</strong> (webcode) del establecimiento en Avirato, el mismo que usa el motor en la URL de reservas.</li>
+<li><strong>Formato:</strong> normalmente un número (ejemplo ilustrativo: <code>12345678</code>).</li>
+<li><strong>Importancia:</strong> es el campo <strong>más crítico</strong>. Si está vacío o mal copiado, no habrá lectura correcta del motor.</li>
+<li><strong>Configuración automática (opcional):</strong> si ya usa el plugin <strong>Avirato Calendar</strong> en la misma web y ese plugin tiene cargado correctamente el <strong>webcode</strong>, el campo puede completarse solo. Sin ese calendario, copie siempre el número a mano desde su panel Avirato.</li>
+</ul>
+<h3>4.2 Nombre público del alojamiento</h3>
+<ul>
+<li><strong>Qué es:</strong> el nombre con el que el asistente hablará de “su” oferta cuando no haya otro contexto (por ejemplo “Casa rural El Roble”).</li>
+<li><strong>Si lo deja vacío:</strong> se usará el <strong>filtro de inclusión</strong> como etiqueta legible, o un texto genérico del tipo “el alojamiento configurado”.</li>
+</ul>
+<h3>4.3 Filtro de inclusión</h3>
+<ul>
+<li><strong>Qué es:</strong> un <strong>fragmento de texto</strong> que deben contener los nombres de tipos de espacio (subtipos) que <strong>sí</strong> quiere ofrecer.</li>
+<li><strong>Ejemplo:</strong> si todas sus casas llevan en el catálogo “demo-rural”, puede poner <code>demo-rural</code> para que solo esas entren en las respuestas.</li>
+<li><strong>Efecto técnico:</strong> limita qué líneas del catálogo se consideran “válidas”; si es demasiado estricto, puede parecer que “no hay disponibilidad” aunque en Avirato haya otras habitaciones.</li>
+</ul>
+<h3>4.4 IDs de habitación / casa (opcional)</h3>
+<ul>
+<li><strong>Qué es:</strong> uno o varios números internos de tipo de espacio (<strong>habitaciones o casas</strong> en el sistema Avirato), separados por guiones cuando son varios.</li>
+<li><strong>Automático:</strong> si rellenó el <strong>filtro de inclusión</strong> y el ID de establecimiento es correcto, el complemento puede <strong>rellenar esos números</strong> trayéndolos del <strong>Avirato Calendar</strong> que tenga en WordPress.</li>
+<li><strong>Manual:</strong> puede fijarlos usted si conoce los IDs exactos.</li>
+</ul>
+<h3>4.5 Lista de exclusión</h3>
+<ul>
+<li><strong>Qué es:</strong> palabras separadas por <strong>coma</strong> (sin complicar el formato).</li>
+<li><strong>Uso:</strong> excluir alojamientos cuyo nombre contenga ese fragmento (por ejemplo pruebas, casas cerradas temporada, etc.).</li>
+<li><strong>Comparación:</strong> no distingue mayúsculas; se usa el nombre normalizado en minúsculas.</li>
+</ul>
+<h3>4.6 Código promocional (opcional)</h3>
+<ul>
+<li>Si su campaña usa un código en el motor, puede indicarlo aquí para que las URLs generadas incluyan el parámetro de promoción cuando Avirato lo soporte en la misma forma que el addon construye la petición.</li>
+</ul>
+<h3>4.7 URL del motor</h3>
+<ul>
+<li><strong>Valor típico:</strong> la dirección web del motor de reservas que le da Avirato (<strong>booking</strong> habitual, suele recomendarse dejar también la <strong>/</strong> final como indique su equipo). <strong>Cámbiela solo</strong> si su proveedor le ha dicho usar <strong>otra dirección</strong>. Si la escribe mal, el chat no podrá consultar bien la disponibilidad.</li>
+</ul>
+<hr>
+<h2>Parte 5 — Gestión día a día</h2>
+<h3>5.1 Verificar licencia y addon</h3>
+<ul>
+<li><strong>Licencia Xabia del sitio y saldo de tokens</strong> se gestionan en la pantalla principal del Core: <strong><a href="./manual-usuario-xabia-core.md">Manual del Core — Conexión a la IA y Cartera</a></strong>.</li>
+<li><strong>Licencia del addon Avirato</strong> (suscripción validada en el Hub) se introduce en <strong>Xabia Agent → Addons</strong>, en la tarjeta de Avirato. Allí puede comprar o renovar en <strong><a href="https://polar.sh/xabia">Polar — xabia</a></strong> (tarifas en <a href="https://xabia.ai/precio">xabia.ai/precio</a>) y gestionar la suscripción en el <strong><a href="https://polar.sh/xabia/portal">portal Polar</a></strong>. Si la fecha de renovación está a <strong>30 días o menos</strong>, el escritorio puede mostrar un <strong>aviso</strong> en esa misma pantalla.</li>
+<li>Si tras contratar o pegar la clave el Hub aún no reconoce el addon, espere unos minutos, vuelva a cargar <strong>Addons</strong> y, si hace falta, contacte con <strong>soporte</strong> con el comprobante. <strong>No</strong> espere que el visitante vea errores técnicos de licencia en el chat: solo mensajes orientativos de contacto.</li>
+</ul>
+<h3>5.2 Cambios de temporada o catálogo</h3>
+<ul>
+<li>Si añade o renombra casas en Avirato, revise el <strong>filtro de inclusión</strong> y la <strong>lista de exclusión</strong> para que sigan teniendo sentido.</li>
+<li>Si usa el calendario Avirato en WordPress, sincronice o actualice datos según el procedimiento de ese plugin para que los <strong>subtipos</strong> y webcodes estén al día.</li>
+</ul>
+<h3>5.3 Probar antes de publicitar</h3>
+<ol>
+<li>Abra el <strong>playground</strong> o el chat en una página de prueba.</li>
+<li>Pruebe frases con <strong>fechas claras</strong> (véase Parte 6).</li>
+<li>Pruebe el nombre de <strong>una casa concreta</strong> que exista en el catálogo.</li>
+<li>Pulse el <strong>enlace de reserva</strong> y confirme que abre el motor con fechas e IDs coherentes.</li>
+</ol>
+<h3>5.4 Privacidad y datos</h3>
+<ul>
+<li>El addon consulta el <strong>motor público</strong> de reservas (petición HTTP al mismo tipo de URL que vería un usuario en el navegador). No sustituye a políticas de privacidad ni a los textos legales de su web; el responsable del sitio debe seguir cumpliendo RGPD y condiciones de Avirato.</li>
+</ul>
+<hr>
+<h2>Parte 6 — Cómo lo usa el visitante (experiencia en el chat)</h2>
+<h3>6.1 Qué frases “activan” la disponibilidad</h3>
+<p>El sistema busca <strong>intención de disponibilidad</strong> o <strong>fechas</strong> en el mensaje. Entre otras, reacciona a términos como: disponibilidad, reserva, alojamiento, noches, estancia, nombres de meses, “esta semana”, “fin de semana”, “semana santa”, rangos de fechas en texto o formato <code>DD/MM/AAAA</code> o <code>AAAA-MM-DD</code>, etc.</p>
+<h3>6.2 Fechas en lenguaje natural</h3>
+<p>El addon interpreta muchas expresiones en español, por ejemplo:</p>
+<ul>
+<li>Semanas del mes (“primera semana de julio”), quincenas, mediados de mes, principios/finales de mes.</li>
+<li>“Una semana” o duración en <strong>noches</strong> o <strong>días</strong> (ajusta la salida según lo que diga el usuario).</li>
+<li>Algunas expresiones fijas de calendario (p. ej. ciertos puentes o festividades según la versión del plugin).</li>
+</ul>
+<p>Si el usuario es vago con las fechas, el sistema <strong>deduce</strong> un rango razonable; cuanto más concreto sea el visitante, más fiable es el resultado.</p>
+<h3>6.3 Idioma del motor</h3>
+<ul>
+<li>El idioma con el que se consulta la página de disponibilidad <strong>sigue al idioma elegido por el visitante en el chat</strong> (español, inglés, etc.). Si no llega ese dato desde el frontal, habitualmente habrá español como respaldo.</li>
+<li>Desde el Core v1.0.57, la respuesta de la IA es <strong>políglota</strong>: Xabia intenta responder en el idioma del último mensaje del usuario aunque la configuración del sitio o del shortcode esté en otro idioma. El parámetro de idioma sigue siendo útil para interfaz, voz y consulta del motor, pero no bloquea la redacción final del asistente.</li>
+</ul>
+<h3>6.4 Pedir una casa o habitación por nombre</h3>
+<ul>
+<li>Si el nombre coincide con un alojamiento de su lista en <strong>Avirato Calendar</strong>, o cuando en el proyecto del Core marca una <strong>IDENTIDAD (ENTE)</strong> coherente, el sistema puede <strong>centrarse</strong> primero en esa unidad ante la misma fecha.</li>
+<li>Si esa unidad está <strong>ocupada</strong>, el mensaje lo indicará, mostrará <strong>otras opciones</strong> libres en las mismas fechas si las hay, y puede sugerir la <strong>próxima</strong> ventana disponible buscando fechas cercanas.</li>
+</ul>
+<h3>6.5 Forzar una consulta “fresca” (sin depender de caché reciente)</h3>
+<p>Si el visitante escribe cosas como <strong>actualiza</strong>, <strong>refresca</strong>, <strong>mira otra vez</strong>, <strong>vuelve a comprobar</strong>, etc., el sistema puede <strong>saltar</strong> la caché reciente y volver a consultar el motor.</p>
+<h3>6.6 Enlaces de reserva</h3>
+<p>Cuando haya plaza, la respuesta incluirá normalmente <strong>un botón de reserva o un enlace</strong> listos para clicar según cómo monte visualmente la plantilla de Xabia.</p>
+<hr>
+<h2>Parte 7 — Consumo de tokens e IA</h2>
+<ul>
+<li>Las respuestas <strong>directas sobre disponibilidad</strong> con la plantilla de este complemento pueden resolverse <strong>sin llamada al modelo de lenguaje</strong> en ese momento, de modo que <strong>muchas consultas prácticas de fechas pueden no consumir tokens</strong>.</li>
+</ul>
+<hr>
+<h2>Parte 8 — Mensajes habituales y qué significan</h2>
+<table>
+<thead>
+<tr>
+<th>Situación</th>
+<th>Qué suele significar</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>En el <strong>chat público</strong>, texto genérico del tipo «contacte…», «villas», «calendarios exactos» (sin detalle técnico)</td>
+<td>El addon puede estar desactivado, la <strong>clave en Addons</strong> no valida aún, o la suscripción no está activa. <strong>Revise Xabia Agent → Addons</strong> y el registro (<code>debug.log</code> si lo tiene); el visitante no debe ver textos tipo «módulo no activo».</td>
+</tr>
+<tr>
+<td>“No he podido leer correctamente el motor de reservas…”</td>
+<td>Fallo técnico al obtener o parsear la página del motor (red, cambio HTML, URL incorrecta).</td>
+</tr>
+<tr>
+<td>Siempre “sin disponibilidad”</td>
+<td>Revise ID de establecimiento, URL del motor y filtros de inclusión/exclusión; pruebe fechas donde sepa que hay plazas.</td>
+</tr>
+<tr>
+<td>El enlace abre demasiadas habitaciones</td>
+<td>Revise si el <strong>ID de habitación</strong> manual es demasiado amplio o si los filtros no acotan bien.</td>
+</tr>
+</tbody></table>
+<hr>
+<h2>Parte 9 — Solución de problemas (checklist)</h2>
+<ol>
+<li><strong>Core activo</strong> y <strong>Xabia Avirato activo</strong>.</li>
+<li><strong>ID de establecimiento</strong> correcto (copiado del entorno Avirato / web del motor).</li>
+<li><strong>URL del motor</strong> correcta (<code>https://booking.avirato.com/</code> salvo indicación contraria).</li>
+<li><strong>Filtro de inclusión</strong> no demasiado restrictivo para pruebas iniciales (puede dejarse vacío al principio para validar lectura y luego afinar).</li>
+<li><strong>Exclusiones:</strong> confirme que no está excluyendo por error todo el catálogo.</li>
+<li><strong>Xabia Agent → Addons:</strong> clave de <strong>Avirato</strong> validada en el Hub (y suscripción activa en Polar si aplica).</li>
+<li><strong>Prueba en incógnito</strong> tras limpiar caché del sitio si usa plugins de caché agresivos en el frontal.</li>
+<li>Si usa <strong>Avirato Calendar</strong>, confirme que ha refrescado allí establecimientos y tipos antes de esperar numeración automática de habitaciones aquí dentro.</li>
+</ol>
+<hr>
+<h2>Parte 10 — Buenas prácticas</h2>
+<ul>
+<li>Validar el <strong>webcode</strong> con una reserva manual en el motor antes de confiar en el chat.</li>
+<li>Ajustar <strong>nombre público</strong> y <strong>filtros</strong> para que el tono del bot coincida con su marca.</li>
+<li>No usar PDFs ni documentos estáticos como sustituto de <strong>disponibilidad en vivo</strong>; el valor del addon es precisamente la consulta al motor.</li>
+<li>Revisar periódicamente los <strong>enlaces</strong> tras actualizaciones grandes de Avirato o del tema del sitio.</li>
+</ul>
+<hr>
+<h2>Parte 11 — Soporte</h2>
+<p><strong>Xabia</strong> (instalación, licencia Core, complementos): mismo correo de ayuda habitual de Xabia.</p>
+<p><strong>Temas sólo del contrato con Avirato</strong> (no del plugin Xabia): su contacto comercial Avirato.</p>
+<p>Para <strong>licencia</strong>, <strong>Cartera</strong> y ajustes globales abra el <strong><a href="./manual-usuario-xabia-core.md">Manual del Core</a></strong>.</p>
+<div class="manual-pdf-cierre">
+
+<h2>Xabia AI — La web viva</h2>
+<p>Sabiduría natural con inteligencia artificial</p>
+<p>Xabia AI está especialmente indicada para empresas y asociaciones del sector del turismo, instituciones, empresas y tiendas online que quieran incrementar su conversión.</p>
+<p>Xabia AI está desarrollada por Digixop.</p>
+<p><strong>Xabia AI</strong> · Garaizar, 2 · 48004 Bilbao (SPAIN)</p>
+<p><a href="mailto:help@xabia.ai">help@xabia.ai</a></p>
+</div>
+</body>
+</html>

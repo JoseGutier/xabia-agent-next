@@ -1,0 +1,261 @@
+<?php
+
+require('../vendor/autoload.php');
+
+$_DATABASE = 'projects/grpc-prober-testing/instances/test-instance/databases/test-db';
+$_TEST_USERNAME = 'test_username';
+
+function hardAssert($value, $error_message)
+{
+    if (!$value) {
+        echo $error_message."\n";
+        exit(1);
+    }
+}
+function hardAssertIfStatusOk($status)
+{
+    if ($status->code !== Grpc\STATUS_OK) {
+        echo "Call did not complete successfully. Status object:\n";
+        var_dump($status);
+        exit(1);
+    }
+}
+
+function microtime_float()
+{
+    list($usec, $sec) = explode(" ", microtime());
+    return ((float)$usec + (float)$sec);
+}
+
+function sessionManagement($client, &$metrics){
+	global $_DATABASE;
+
+	$createSessionRequest = new Google\Cloud\Spanner\V1\CreateSessionRequest();
+	$createSessionRequest->setDatabase($_DATABASE);
+	
+	
+	$time_start = microtime_float();
+	list($session, $status) = $client->CreateSession($createSessionRequest)->wait();
+
+	hardAssertIfStatusOk($status);
+	hardAssert($session !== null, 'Call completed with a null response');
+
+	$lantency =  (microtime_float()- $time_start) * 1000;
+	$metrics['create_session_latency_ms'] = $lantency;
+
+	
+	$getSessionRequest = new Google\Cloud\Spanner\V1\GetSessionRequest();
+	$getSessionRequest->setName($session->getName());
+	$time_start = microtime_float();
+	$response = $client->GetSession($getSessionRequest);
+	$response->wait();
+	$lantency =  (microtime_float() - $time_start) * 1000;
+	$metrics['get_session_latency_ms'] = $lantency;
+
+	
+	$listSessionsRequest = new Google\Cloud\Spanner\V1\ListSessionsRequest();
+	$listSessionsRequest->setDatabase($_DATABASE);
+	$time_start = microtime_float();
+	$response = $client->ListSessions($listSessionsRequest);
+	$lantency =  (microtime_float() - $time_start) * 1000;
+	$metrics['list_sessions_latency_ms'] = $lantency;
+
+	
+	$deleteSessionRequest = new Google\Cloud\Spanner\V1\DeleteSessionRequest();
+	$deleteSessionRequest->setName($session->getName());
+	$time_start = microtime_float();
+	$client->deleteSession($deleteSessionRequest);
+	$lantency =  (microtime_float() - $time_start) * 1000;
+	$metrics['delete_session_latency_ms'] = $lantency;
+
+}
+
+function executeSql($client, &$metrics){
+	global $_DATABASE;
+
+	$createSessionRequest = new Google\Cloud\Spanner\V1\CreateSessionRequest();
+	$createSessionRequest->setDatabase($_DATABASE);
+	list($session, $status) = $client->CreateSession($createSessionRequest)->wait();
+
+	hardAssertIfStatusOk($status);
+	hardAssert($session !== null, 'Call completed with a null response');
+
+	
+	$time_start = microtime_float();
+	$executeSqlRequest = new Google\Cloud\Spanner\V1\ExecuteSqlRequest();
+	$executeSqlRequest->setSession($session->getName());
+	$executeSqlRequest->setSql('select * FROM users');
+	$result_set = $client->ExecuteSql($executeSqlRequest);
+	$lantency =  (microtime_float() - $time_start) * 1000;
+	$metrics['execute_sql_latency_ms'] = $lantency;
+
+	
+
+	
+	$partial_result_set = $client->ExecuteStreamingSql($executeSqlRequest);
+
+	$time_start = microtime_float();
+	$first_result = array_values($partial_result_set->getMetadata())[0];
+	$lantency =  (microtime_float() - $time_start) * 1000;
+	$metrics['execute_streaming_sql_latency_ms'] = $lantency;
+
+	
+
+	$deleteSessionRequest = new Google\Cloud\Spanner\V1\DeleteSessionRequest();
+	$deleteSessionRequest->setName($session->getName());
+	$client->deleteSession($deleteSessionRequest);
+}
+
+function read($client, &$metrics){
+	global $_DATABASE;
+
+	$createSessionRequest = new Google\Cloud\Spanner\V1\CreateSessionRequest();
+	$createSessionRequest->setDatabase($_DATABASE);
+	list($session, $status) = $client->CreateSession($createSessionRequest)->wait();
+
+	hardAssertIfStatusOk($status);
+	hardAssert($session !== null, 'Call completed with a null response');
+
+	
+	$time_start = microtime_float();
+	$readRequest = new Google\Cloud\Spanner\V1\ReadRequest();
+	$readRequest->setSession($session->getName());
+	$readRequest->setTable('users');
+	$readRequest->setColumns(['username', 'firstname', 'lastname']);
+	$keyset = new Google\Cloud\Spanner\V1\KeySet();
+	$keyset->setAll(True);
+	$readRequest->setKeySet($keyset);
+	$result_set = $client->Read($readRequest);
+	$lantency =  (microtime_float() - $time_start) * 1000;
+	$metrics['read_latency_ms'] = $lantency;
+
+	
+
+	
+	$partial_result_set = $client->StreamingRead($readRequest);
+	$time_start = microtime_float();
+	$first_result = array_values($partial_result_set->getMetadata())[0];
+	$lantency =  (microtime_float() - $time_start) * 1000;
+	$metrics['streaming_read_latency_ms'] = $lantency;
+
+	
+
+	$deleteSessionRequest = new Google\Cloud\Spanner\V1\DeleteSessionRequest();
+	$deleteSessionRequest->setName($session->getName());
+	$client->deleteSession($deleteSessionRequest);
+}
+
+function transaction($client, &$metrics){
+	global $_DATABASE;
+
+	$createSessionRequest = new Google\Cloud\Spanner\V1\CreateSessionRequest();
+	$createSessionRequest->setDatabase($_DATABASE);
+	list($session, $status) = $client->CreateSession($createSessionRequest)->wait();
+
+	hardAssertIfStatusOk($status);
+	hardAssert($session !== null, 'Call completed with a null response');
+
+	$txn_options = new Google\Cloud\Spanner\V1\TransactionOptions();
+	$rw = new Google\Cloud\Spanner\V1\TransactionOptions\ReadWrite();
+	$txn_options->setReadWrite($rw);
+	$txn_request = new Google\Cloud\Spanner\V1\BeginTransactionRequest();
+	$txn_request->setSession($session->getName());
+	$txn_request->setOptions($txn_options);
+
+	
+	$time_start = microtime_float();
+	list($txn, $status) = $client->BeginTransaction($txn_request)->wait();
+	$lantency =  (microtime_float() - $time_start) * 1000;
+	$metrics['begin_transaction_latency_ms'] = $lantency;
+
+	hardAssertIfStatusOk($status);
+	hardAssert($txn !== null, 'Call completed with a null response');
+
+	
+	$commit_request = new Google\Cloud\Spanner\V1\CommitRequest();
+	$commit_request->setSession($session->getName());
+	$commit_request->setTransactionId($txn->getId());
+
+	$time_start = microtime_float();
+	$client->Commit($commit_request);
+	$latency =  (microtime_float() - $time_start) * 1000;
+	$metrics['commit_latency_ms'] = $lantency;
+
+	
+	list($txn, $status) = $client->BeginTransaction($txn_request)->wait();
+	$rollback_request = new Google\Cloud\Spanner\V1\RollbackRequest();
+	$rollback_request->setSession($session->getName());
+	$rollback_request->setTransactionId($txn->getId());
+
+	hardAssertIfStatusOk($status);
+	hardAssert($txn !== null, 'Call completed with a null response');
+
+	$time_start = microtime_float();
+	$client->Rollback($rollback_request);
+	$latency =  (microtime_float() - $time_start) * 1000;
+	$metrics['rollback_latency_ms'] = $latency;
+
+	$deleteSessionRequest = new Google\Cloud\Spanner\V1\DeleteSessionRequest();
+	$deleteSessionRequest->setName($session->getName());
+	$client->deleteSession($deleteSessionRequest);
+}
+
+function partition($client, &$metrics){
+	global $_DATABASE;
+	global $_TEST_USERNAME;
+
+	$createSessionRequest = new Google\Cloud\Spanner\V1\CreateSessionRequest();
+	$createSessionRequest->setDatabase($_DATABASE);
+	list($session, $status) = $client->CreateSession($createSessionRequest)->wait();
+
+	hardAssertIfStatusOk($status);
+	hardAssert($session !== null, 'Call completed with a null response');
+
+	$txn_options = new Google\Cloud\Spanner\V1\TransactionOptions();
+	$ro = new Google\Cloud\Spanner\V1\TransactionOptions\PBReadOnly();
+	$txn_options->setReadOnly($ro);
+	$txn_selector = new Google\Cloud\Spanner\V1\TransactionSelector();
+	$txn_selector->setBegin($txn_options);
+
+	
+	$ptn_query_request = new Google\Cloud\Spanner\V1\PartitionQueryRequest();
+	$ptn_query_request->setSession($session->getName());
+	$ptn_query_request->setSql('select * FROM users');
+	$ptn_query_request->setTransaction($txn_selector);
+
+	$time_start = microtime_float();
+	$client->PartitionQuery($ptn_query_request);
+	$lantency =  (microtime_float() - $time_start) * 1000;
+	$metrics['partition_query_latency_ms'] = $lantency;
+
+	
+	$ptn_read_request = new Google\Cloud\Spanner\V1\PartitionReadRequest();
+	$ptn_read_request->setSession($session->getName());
+	$ptn_read_request->setTable('users');
+	$ptn_read_request->setTransaction($txn_selector);
+	$keyset = new Google\Cloud\Spanner\V1\KeySet();
+	$keyset->setAll(True);
+	$ptn_read_request->setKeySet($keyset);
+	$ptn_read_request->setColumns(['username', 'firstname', 'lastname']);
+
+	$time_start = microtime_float();
+	$client->PartitionRead($ptn_read_request);
+	$latency =  (microtime_float() - $time_start) * 1000;
+	$metrics['partition_read_latency_ms'] = $latency;
+
+	
+	$deleteSessionRequest = new Google\Cloud\Spanner\V1\DeleteSessionRequest();
+	$deleteSessionRequest->setName($session->getName());
+	$client->deleteSession($deleteSessionRequest);
+}
+
+$PROBE_FUNCTIONS = [
+	'session_management' => 'sessionManagement',
+	'execute_sql' => 'executeSql',
+	'read' => 'read',
+	'transaction' => 'transaction',
+	'partition' => 'partition'
+];
+
+return $PROBE_FUNCTIONS;
+

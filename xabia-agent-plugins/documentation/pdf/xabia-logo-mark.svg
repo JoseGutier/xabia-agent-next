@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 40" width="200" height="40" role="img" aria-label="Xabia">
+  <rect x="0" y="4" width="6" height="32" rx="1" fill="#1565c0"/>
+  <text x="16" y="30" font-family="system-ui,Segoe UI,sans-serif" font-size="26" font-weight="700" fill="#c2185b">Xabia</text>
+  <text x="108" y="28" font-family="system-ui,Segoe UI,sans-serif" font-size="11" font-weight="600" fill="#5f6368">AI</text>
+</svg>

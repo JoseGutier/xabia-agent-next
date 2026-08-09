@@ -1,0 +1,606 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Manual de usuario — Smart QR (Xabia Core)</title>
+<style>
+/**
+ * Estilos HTML / impresión / PDF — Manual de usuario Xabia
+ * Acento principal: azul marca (#2170b0). Grises tipo Material.
+ */
+
+@page {
+  margin: 16mm 17mm 18mm 17mm;
+}
+
+html {
+  font-size: 10.5pt;
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
+}
+
+body {
+  font-family:
+    -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  color: #202124;
+  line-height: 1.55;
+  max-width: 100%;
+  margin: 0;
+  padding: 0;
+}
+
+/* Marca — barra superior en la primera página vía h1 */
+h1 {
+  font-size: 1.85rem;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  color: #2170b0;
+  margin: 0 0 0.75rem;
+  padding: 0.85rem 0 0.65rem;
+  border-top: 6px solid #2170b0;
+  border-bottom: 2px solid #e8f0fe;
+  page-break-after: avoid;
+}
+
+h2 {
+  font-size: 1.28rem;
+  font-weight: 600;
+  color: #185a94;
+  margin: 1.6rem 0 0.65rem;
+  padding: 0.35rem 0 0.35rem 0.65rem;
+  border-left: 4px solid #2170b0;
+  background: linear-gradient(90deg, #e3f0fa 0%, transparent 100%);
+  page-break-after: avoid;
+}
+
+h3 {
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: #144a78;
+  margin: 1.25rem 0 0.5rem;
+  page-break-after: avoid;
+}
+
+h4,
+h5,
+h6 {
+  font-size: 1rem;
+  font-weight: 600;
+  color: #3c4043;
+  margin: 1rem 0 0.35rem;
+  page-break-after: avoid;
+}
+
+p {
+  margin: 0.5rem 0 0.65rem;
+  orphans: 3;
+  widows: 3;
+}
+
+strong {
+  color: #144a78;
+  font-weight: 600;
+}
+
+hr {
+  border: none;
+  height: 1px;
+  background: linear-gradient(90deg, #2170b0, #64b5f6, #e8eaed);
+  margin: 1.75rem 0;
+  opacity: 0.9;
+}
+
+ul,
+ol {
+  margin: 0.5rem 0 0.75rem;
+  padding-left: 1.35rem;
+}
+
+li {
+  margin: 0.25rem 0;
+}
+
+li::marker {
+  color: #2170b0;
+}
+
+blockquote {
+  margin: 1rem 0;
+  padding: 0.65rem 1rem;
+  border-left: 4px solid #2170b0;
+  background: #e8f4fc;
+  color: #3c4043;
+  font-size: 0.98em;
+}
+
+blockquote p {
+  margin: 0.35rem 0;
+}
+
+code {
+  font-family: ui-monospace, "Cascadia Code", "SF Mono", Menlo, Consolas, monospace;
+  font-size: 0.88em;
+  background: #e8f4fc;
+  border: 1px solid #c5dae8;
+  border-radius: 4px;
+  padding: 0.12em 0.4em;
+  color: #144a78;
+}
+
+pre {
+  font-family: ui-monospace, "Cascadia Code", "SF Mono", Menlo, Consolas, monospace;
+  font-size: 0.82rem;
+  line-height: 1.45;
+  background: #fafafa;
+  border: 1px solid #dadce0;
+  border-radius: 8px;
+  padding: 12px 14px;
+  overflow-x: auto;
+  page-break-inside: avoid;
+}
+
+pre code {
+  background: none;
+  border: none;
+  padding: 0;
+  color: #202124;
+  font-size: inherit;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 1rem 0;
+  font-size: 0.95rem;
+  page-break-inside: avoid;
+}
+
+th,
+td {
+  border: 1px solid #dadce0;
+  padding: 8px 10px;
+  text-align: left;
+  vertical-align: top;
+}
+
+th {
+  background: #e3f0fa;
+  color: #144a78;
+  font-weight: 600;
+}
+
+tr:nth-child(even) td {
+  background: #fafafa;
+}
+
+a {
+  color: #2170b0;
+  text-decoration: none;
+}
+
+a:hover {
+  text-decoration: underline;
+}
+
+@media print {
+  a[href^="http"]::after {
+    content: "";
+  }
+
+  a[href]::after {
+    content: none !important;
+  }
+}
+
+img {
+  max-width: 100%;
+  height: auto;
+  border-radius: 6px;
+}
+
+img[alt="Xabia"] {
+  height: 42px;
+  width: auto;
+  margin: 0 0 1rem;
+  display: block;
+}
+
+/* Cierre institucional (bloque final acordado) */
+.manual-pdf-cierre {
+  margin-top: 2rem;
+  padding: 1.25rem 1.1rem;
+  border: 1px solid #c5dae8;
+  border-radius: 8px;
+  border-top: 4px solid #2170b0;
+  background: linear-gradient(180deg, #f4f9fc 0%, #fff 45%);
+  page-break-before: always;
+}
+
+.manual-pdf-cierre h2 {
+  margin-top: 0;
+  color: #2170b0;
+  border-left-color: #2170b0;
+  background: linear-gradient(90deg, #e3f0fa 0%, transparent 100%);
+}
+</style>
+</head>
+<body>
+<h1>Manual de usuario — Smart QR y tótems (Xabia Agent Core)</h1>
+<blockquote>
+<p><strong>Versión del producto:</strong> Xabia Agent Core <strong>v1.0.59</strong> (mayo 2026)<br><strong>Incluido en la licencia Core</strong> — no requiere plugin ni addon de pago aparte.<br><strong>PDF en línea:</strong> <a href="https://xabia.ai/docs/manual-usuario-xabia-smart-qr.pdf">https://xabia.ai/docs/manual-usuario-xabia-smart-qr.pdf</a><br><strong>HTML en línea:</strong> <a href="https://xabia.ai/docs/manual-usuario-xabia-smart-qr.html">https://xabia.ai/docs/manual-usuario-xabia-smart-qr.html</a><br><strong>Manual Core (contexto general):</strong> <a href="./manual-usuario-xabia-core.md">manual-usuario-xabia-core.md</a></p>
+</blockquote>
+<hr>
+<h2>Guía rápida (5 minutos)</h2>
+<ol>
+<li>Instale y active <strong>Xabia Agent Core</strong> (<code>xabia-agent-core</code>) con licencia válida.</li>
+<li>Cree un agente, sincronice datos con al menos una columna marcada como <strong>IDENTIDAD (ENTE)</strong> (§4).</li>
+<li>Publique una <strong>página de aterrizaje</strong> con el shortcode del agente, por ejemplo:<br><code>[xabia_agent id=&quot;mi-museo&quot;]</code></li>
+<li>En <strong>Editar agente → pestaña Smart QR / Tótems</strong>, seleccione esa página como <strong>Página de aterrizaje</strong> y guarde.</li>
+<li>En la misma pestaña, pulse <strong>Generar QR</strong> junto al ente que quiera (sala, producto, habitación…).</li>
+<li>Descargue el PNG, imprímalo o compártalo. Al escanearlo, el visitante llega al chat <strong>anclado a ese ente</strong> (efecto túnel).</li>
+<li>Para una <strong>tablet en recepción</strong>, use la ruta <code>/xabia-box/?x_project=ID_AGENTE</code> o active <strong>Modo tótem</strong> (§8).</li>
+</ol>
+<p><strong>Importante:</strong> si actualiza el Core o usa <code>/xabia-box/</code>, visite <strong>Ajustes → Enlaces permanentes → Guardar</strong> una vez para regenerar las reglas de URL.</p>
+<hr>
+<h2>1. Qué es Smart QR en Xabia</h2>
+<p><strong>Smart QR</strong> es la capa del Core que conecta el mundo físico (carteles, etiquetas, tótems, folletos) con el chat de Xabia. Cuando alguien escanea un código o abre un enlace de túnel:</p>
+<ul>
+<li>El asistente <strong>sabe desde qué punto ha llegado</strong> (sala del museo, habitación del hotel, producto concreto…).</li>
+<li>El <strong>conocimiento RAG</strong> puede filtrarse por <strong>ente</strong> (<code>ente_id</code>).</li>
+<li>El <strong>saludo y el tono</strong> se personalizan para ese emplazamiento.</li>
+<li>Las conversaciones pueden etiquetarse en analítica como origen <strong>Smart QR / túnel</strong> (si tiene activada la pestaña de analítica del Core).</li>
+</ul>
+<p>Todo esto va <strong>incluido en Xabia Agent Core</strong> desde la v1.0.59. El antiguo plugin separado «Xabia Smart QR» está <strong>obsoleto</strong>; si aún lo tiene instalado, desactívelo y elimínelo.</p>
+<h3>1.1 Casos de uso típicos</h3>
+<table>
+<thead>
+<tr>
+<th>Sector</th>
+<th>Ejemplo</th>
+<th>Qué consigue</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><strong>Museo / cultura</strong></td>
+<td>QR junto a cada sala</td>
+<td>«Estás en la sala de Goya…» con contexto de esa colección</td>
+</tr>
+<tr>
+<td><strong>Hotel / rural</strong></td>
+<td>QR en la habitación o en la recepción</td>
+<td>Información del alojamiento, servicios, reservas (con addon Avirato si aplica)</td>
+</tr>
+<tr>
+<td><strong>Retail</strong></td>
+<td>QR en estantería o ficha de producto</td>
+<td>Chat centrado en ese SKU o categoría</td>
+</tr>
+<tr>
+<td><strong>Feria / stand</strong></td>
+<td>QR en el roll-up</td>
+<td>Túnel al ente «empresa-stand-12»</td>
+</tr>
+<tr>
+<td><strong>Ayuntamiento / oficina</strong></td>
+<td>Tótem en hall</td>
+<td>Pantalla <code>/xabia-box/</code> con reinicio por inactividad</td>
+</tr>
+</tbody></table>
+<h3>1.2 Qué <strong>no</strong> es Smart QR</h3>
+<ul>
+<li><strong>No</strong> sustituye la sincronización de datos: debe tener conocimiento indexado (CSV, SQL, CPT…) con entes identificados.</li>
+<li><strong>No</strong> es un generador de QR genérico para URLs arbitrarias: está pensado para <strong>túneles hacia su agente Xabia</strong> con contexto de ente.</li>
+<li><strong>No</strong> requiere licencia addon Polar aparte: forma parte del <strong>Core</strong>.</li>
+</ul>
+<hr>
+<h2>2. Conceptos clave</h2>
+<h3>2.1 Ente (<code>ente_id</code>)</h3>
+<p>Un <strong>ente</strong> es la unidad lógica de segmentación del conocimiento: una sala, un producto, una empresa, una habitación…</p>
+<ul>
+<li>En el <strong>mapeo de columnas</strong> del agente, marque <strong>IDENTIDAD (ENTE)</strong> en el campo que identifica cada fila de forma estable (slug, código, ID interno).</li>
+<li>Tras <strong>Sincronizar datos</strong>, cada fila queda asociada a un <code>ente_id</code> (por ejemplo <code>sala-impresionismo</code>, <code>okana</code>, <code>producto-442</code>).</li>
+<li>El valor especial <code>global</code> significa «sin ente concreto»; no sirve para generar QR de túnel.</li>
+</ul>
+<h3>2.2 Efecto túnel</h3>
+<p>Cuando el visitante llega con un <strong>ente</strong> activo (por URL <code>?ente_id=</code> o escaneo POI <code>?xqr=</code>), el Core inyecta en el prompt del modelo un contexto interno del tipo:</p>
+<blockquote>
+<p><em>El usuario ha llegado por enlace de túnel Smart QR al ente «Sala Impresionismo». Salúdale de forma específica…</em></p>
+</blockquote>
+<p>El visitante <strong>no ve</strong> ese texto; solo nota un saludo y respuestas más precisas.</p>
+<h3>2.3 Página de aterrizaje</h3>
+<p>Es una <strong>página publicada de WordPress</strong> que contiene el shortcode del agente. Los QR generados apuntan a:</p>
+<pre><code class="language-text">https://su-dominio.com/pagina-del-chat/?ente_id=sala-impresionismo
+</code></pre>
+<p>Si no configura landing, el sistema puede usar la ruta genérica <code>/xabia-box/?x_project=ID_AGENTE&amp;ente_id=…</code>.</p>
+<h3>2.4 Punto de interés (POI) y URLs <code>?xqr=</code></h3>
+<p>Además del túnel por ente, el Core admite <strong>identificadores de POI</strong> en la URL:</p>
+<pre><code class="language-text">https://su-dominio.com/?xqr=sala-3&amp;x_project=mi-museo
+</code></pre>
+<p>(o el alias <code>?xid=</code>). Esto activa sesión de escaneo, saludo automático y, si el POI tiene <code>ente_slug</code>, ancla el chat a ese ente.</p>
+<p>Los datos del POI pueden venir de:</p>
+<ul>
+<li>Registro interno (<code>xabia_qr_poi_registry</code>),</li>
+<li>Tabla <code>xabia_qr_poi</code>,</li>
+<li>O filas del conocimiento RAG del agente.</li>
+</ul>
+<h3>2.5 Ruta <code>/xabia-box/</code></h3>
+<p>Experiencia <strong>a pantalla completa</strong> pensada para tótems: sin botón flotante, chat ocupando la pantalla.</p>
+<pre><code class="language-text">https://su-dominio.com/xabia-box/?x_project=mi-museo&amp;ente_id=recepcion
+</code></pre>
+<hr>
+<h2>3. Dónde está en el panel de WordPress</h2>
+<table>
+<thead>
+<tr>
+<th>Ubicación</th>
+<th>Qué hace</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><strong>Editar agente → Smart QR / Tótems</strong></td>
+<td>Página de aterrizaje, modo tótem, tabla de entes, botones <strong>Generar QR</strong></td>
+</tr>
+<tr>
+<td><strong>Editar agente → General → preview de conocimiento</strong></td>
+<td>Columna <strong>Smart QR</strong> con acceso rápido al generador por ente</td>
+</tr>
+<tr>
+<td><strong>Analítica</strong> (si está activa)</td>
+<td>Distinción de tráfico <strong>Web</strong> vs <strong>Smart QR / túnel</strong></td>
+</tr>
+</tbody></table>
+<p>No aparece en <strong>Xabia Agent → Addons</strong> como producto de pago: es funcionalidad <strong>Core</strong>.</p>
+<hr>
+<h2>4. Preparar datos con entes</h2>
+<h3>4.1 CSV de ejemplo (museo)</h3>
+<p>Archivo <code>salas.csv</code>:</p>
+<pre><code class="language-csv">codigo_sala;nombre_sala;texto_guia;piso
+sala-impresionismo;Impresionismo;Obras de Monet, Renoir y Degas entre 1860 y 1880.;1
+sala-barroco;Barroco;Escultura y pintura europea del siglo XVII.;2
+</code></pre>
+<p>En el agente:</p>
+<ol>
+<li>Suba el CSV y <strong>Conectar / Mapear</strong>.</li>
+<li>Marque <code>codigo_sala</code> como <strong>IDENTIDAD (ENTE)</strong>.</li>
+<li>Etiquete <code>nombre_sala</code> como título y <code>texto_guia</code> como texto principal.</li>
+<li><strong>Sincronizar datos</strong> → <strong>Entrenar</strong> (si usa búsqueda vectorial).</li>
+</ol>
+<p>Tras sincronizar, en <strong>Smart QR / Tótems</strong> verá entes <code>sala-impresionismo</code> y <code>sala-barroco</code>.</p>
+<h3>4.2 SQL / WordPress con ente</h3>
+<p>Si usa el <strong>Asistente de contenidos WordPress</strong>, marque el campo que identifica cada registro (ID de post, slug, SKU…) como <strong>Ente</strong>. El slug resultante será el <code>ente_id</code> en la memoria del agente.</p>
+<hr>
+<h2>5. Configurar la pestaña «Smart QR / Tótems»</h2>
+<p>Abra <strong>Xabia Agent → Editar agente → Smart QR / Tótems</strong>.</p>
+<h3>5.1 Página de aterrizaje</h3>
+<ol>
+<li><p>Cree una página en WordPress, por ejemplo <strong>«Asistente del museo»</strong>.</p>
+</li>
+<li><p>Inserte el shortcode:</p>
+<pre><code class="language-text">[xabia_agent id=&quot;mi-museo&quot;]
+</code></pre>
+</li>
+<li><p><strong>Publique</strong> la página.</p>
+</li>
+<li><p>En el desplegable <strong>Página de aterrizaje</strong>, selecciónela y pulse <strong>Guardar agente</strong>.</p>
+</li>
+</ol>
+<h3>5.2 Modo tótem (kiosko)</h3>
+<table>
+<thead>
+<tr>
+<th>Ajuste</th>
+<th>Efecto</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><strong>Modo tótem</strong> (checkbox)</td>
+<td>Tras X minutos sin interacción, la sesión del chat se reinicia al saludo inicial</td>
+</tr>
+<tr>
+<td><strong>Minutos de inactividad</strong></td>
+<td><code>0</code> = solo reinicios explícitos del shortcode; <code>5</code>–<code>15</code> habitual en recepción</td>
+</tr>
+</tbody></table>
+<p>También puede forzar minutos en el shortcode:</p>
+<pre><code class="language-text">[xabia_agent id=&quot;mi-museo&quot; totem=&quot;10&quot;]
+</code></pre>
+<p>El valor del shortcode <strong>prevalece</strong> sobre el defecto del agente.</p>
+<h3>5.3 Tabla de entes y generador</h3>
+<p>Con el agente guardado y entes en memoria, la pestaña muestra:</p>
+<table>
+<thead>
+<tr>
+<th>Columna</th>
+<th>Descripción</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><strong>ente_id</strong></td>
+<td>Slug interno</td>
+</tr>
+<tr>
+<td><strong>Nombre visible</strong></td>
+<td>Etiqueta amigable</td>
+</tr>
+<tr>
+<td><strong>URL de túnel</strong></td>
+<td>Enlace listo para copiar</td>
+</tr>
+<tr>
+<td><strong>Smart QR</strong></td>
+<td>Botón <strong>Generar QR</strong></td>
+</tr>
+</tbody></table>
+<p>Al pulsar <strong>Generar QR</strong> se abre un modal con:</p>
+<ul>
+<li><p>Vista previa del código</p>
+</li>
+<li><p><strong>Descargar PNG</strong> / <strong>Descargar SVG</strong></p>
+</li>
+<li><p><strong>Copiar enlace</strong>, <strong>Copiar shortcode</strong>, <strong>Copiar imagen</strong></p>
+</li>
+<li><p>Shortcode sugerido:</p>
+<pre><code class="language-text">[xabia_agent id=&quot;mi-museo&quot; ente_id=&quot;sala-impresionismo&quot;]
+</code></pre>
+</li>
+</ul>
+<hr>
+<h2>6. Tipos de enlace (referencia)</h2>
+<h3>6.1 Túnel por ente (recomendado para QR impreso)</h3>
+<pre><code class="language-text">https://ejemplo.com/asistente-museo/?ente_id=sala-impresionismo
+</code></pre>
+<p>Generado automáticamente por el panel. Es el que codifica el PNG del generador.</p>
+<h3>6.2 Shortcode embebido con ente fijo</h3>
+<p>Útil en una landing dedicada a una sola sala (sin depender de <code>?ente_id=</code> en la URL):</p>
+<pre><code class="language-text">[xabia_agent id=&quot;mi-museo&quot; ente_id=&quot;sala-impresionismo&quot;]
+</code></pre>
+<h3>6.3 POI físico (<code>?xqr=</code>)</h3>
+<pre><code class="language-text">https://ejemplo.com/?xqr=placa-entrada&amp;x_project=mi-museo
+</code></pre>
+<p>El visitante recibe saludo contextual del POI. Configure POI en registro/tabla o deje que el Core infiera datos del conocimiento RAG.</p>
+<h3>6.4 Tótem pantalla completa</h3>
+<pre><code class="language-text">https://ejemplo.com/xabia-box/?x_project=mi-museo
+</code></pre>
+<p>Con ente preseleccionado:</p>
+<pre><code class="language-text">https://ejemplo.com/xabia-box/?x_project=mi-museo&amp;ente_id=recepcion
+</code></pre>
+<p>En el navegador del tótem, abra esa URL en <strong>modo kiosko</strong> (pantalla completa del SO).</p>
+<hr>
+<h2>7. Ejemplos completos por sector</h2>
+<h3>7.1 Museo con una landing y QRs por sala</h3>
+<p><strong>Objetivo:</strong> Cartel en cada sala con QR distinto.</p>
+<ol>
+<li>Agente <code>mi-museo</code>, CSV de salas (§4.1).</li>
+<li>Página <code>/asistente/</code> con <code>[xabia_agent id=&quot;mi-museo&quot;]</code>.</li>
+<li>Landing configurada en Smart QR / Tótems.</li>
+<li>Generar QR para <code>sala-impresionismo</code> → imprimir PNG.</li>
+<li>El visitante escanea → chat abierto → saludo contextual → respuestas basadas en el texto de esa sala.</li>
+</ol>
+<p><strong>Prueba sin imprimir:</strong> abra la URL de túnel en el móvil o use el Playground con el mismo <code>ente_id</code>.</p>
+<h3>7.2 Hotel rural (Astei-style)</h3>
+<p><strong>Objetivo:</strong> QR en cada casa con información y enlace a reserva.</p>
+<ol>
+<li>Sincronice alojamientos con ente = slug de casa (<code>okana</code>, <code>etxola</code>, …).</li>
+<li>Landing con el agente principal.</li>
+<li>QR por ente; el túnel centra el contexto en esa casa.</li>
+<li>Si tiene <strong>Xabia Avirato</strong>, las preguntas de disponibilidad pueden combinarse con el contexto del ente (consulte manual Avirato).</li>
+</ol>
+<h3>7.3 Tienda con QR en estantería</h3>
+<ol>
+<li>CSV de productos con columna SKU como <strong>ENTE</strong>.</li>
+<li>QR apunta a <code>?ente_id=sku-12345</code>.</li>
+<li>Instrucciones en <strong>Personalidad</strong>: «Si el visitante llega por QR de producto, prioriza ficha, stock y precio de ese SKU en el contexto».</li>
+</ol>
+<h3>7.4 Recepción municipal (tótem)</h3>
+<ol>
+<li>Agente <code>atencion-ciudadana</code>.</li>
+<li>Active <strong>Modo tótem</strong> con 8 minutos de inactividad.</li>
+<li>Tablet con <code>/xabia-box/?x_project=atencion-ciudadana</code>.</li>
+<li>Sin QR impreso: experiencia fija en mostrador.</li>
+</ol>
+<hr>
+<h2>8. Comportamiento en el chat (visitante)</h2>
+<ol>
+<li><strong>Apertura:</strong> saludo inicial del agente o saludo POI si vino por <code>?xqr=</code>.</li>
+<li><strong>Contexto RAG:</strong> el Brain prioriza fragmentos del <code>ente_id</code> activo (modo estricto).</li>
+<li><strong>Primera persona:</strong> en modo túnel/QR, el modelo suele responder como guía del lugar («En esta sala encontrarás…»).</li>
+<li><strong>Idioma:</strong> responde en el idioma del último mensaje del visitante (políglota Core); el QR no fija idioma.</li>
+<li><strong>Tótem:</strong> tras inactividad, vuelve al estado inicial (útil en pantallas compartidas).</li>
+</ol>
+<hr>
+<h2>9. Analítica y origen del tráfico</h2>
+<p>Si usa la pestaña <strong>Analítica</strong> del Core, las conversaciones pueden clasificarse:</p>
+<ul>
+<li><strong>Web</strong> — chat normal en la web.</li>
+<li><strong>Smart QR / túnel</strong> — llegada con ente/QR activo.</li>
+</ul>
+<p>Sirve para medir cuánto uso generan los carteles físicos frente al widget web.</p>
+<hr>
+<h2>10. Solución de problemas</h2>
+<table>
+<thead>
+<tr>
+<th>Problema</th>
+<th>Qué revisar</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>No aparecen entes en Smart QR / Tótems</td>
+<td>¿Ha <strong>sincronizado</strong>? ¿Hay filas con ente distinto de <code>global</code>?</td>
+</tr>
+<tr>
+<td>«Configura la página de aterrizaje…» al generar QR</td>
+<td>Seleccione página publicada con shortcode y <strong>Guarde agente</strong></td>
+</tr>
+<tr>
+<td>El QR abre la web pero sin contexto de ente</td>
+<td>Compruebe que la URL lleva <code>?ente_id=</code> correcto; pruebe el enlace copiado del panel</td>
+</tr>
+<tr>
+<td><code>/xabia-box/</code> da 404</td>
+<td><strong>Ajustes → Enlaces permanentes → Guardar</strong>; Core ≥ 1.0.59</td>
+</tr>
+<tr>
+<td>Sigue viendo aviso del plugin «Xabia Smart QR»</td>
+<td>Desactive y elimine el plugin legacy <code>xabia-smart-qr</code></td>
+</tr>
+<tr>
+<td>Respuestas genéricas pese al QR</td>
+<td>Baje <strong>índice de confianza</strong> en Personalidad; compruebe que el ente tiene texto en RAG</td>
+</tr>
+<tr>
+<td>Modal QR no carga</td>
+<td>Recargue el editor del agente; compruebe que no hay bloqueo de scripts en admin</td>
+</tr>
+</tbody></table>
+<hr>
+<h2>11. Arquitectura modular (referencia técnica ligera)</h2>
+<p>Smart QR está repartido en módulos <strong>dentro del ZIP del Core</strong>:</p>
+<table>
+<thead>
+<tr>
+<th>Módulo en Core</th>
+<th>Función</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>core/class-xabia-smart-qr.php</code></td>
+<td>Túnel en prompt, assets del generador, helpers de URL</td>
+</tr>
+<tr>
+<td><code>addons/xabia-qr/xabia-addon-qr.php</code></td>
+<td>POI, sesión <code>?xqr=</code>, pestaña admin, motor de entes</td>
+</tr>
+<tr>
+<td><code>core/class-xabia-box-route.php</code></td>
+<td>Rewrite <code>/xabia-box/</code></td>
+</tr>
+<tr>
+<td><code>admin/js/xabia-smart-qr-admin.js</code></td>
+<td>Modal generador (PNG/SVG, portapapeles)</td>
+</tr>
+</tbody></table>
+<p>No instale addons adicionales para Smart QR. Los addons <strong>Avirato</strong>, <strong>MEC</strong> y <strong>Woo</strong> son independientes y opcionales.</p>
+<hr>
+<h2>12. Migración desde el plugin «Xabia Smart QR»</h2>
+<p>Si en instalaciones antiguas tenía el plugin separado <code>xabia-smart-qr</code>:</p>
+<ol>
+<li>Actualice <strong>Xabia Agent Core</strong> a <strong>v1.0.59</strong> o superior.</li>
+<li><strong>Desactive y elimine</strong> <code>xabia-smart-qr</code> en <strong>Plugins</strong>.</li>
+<li>Compruebe <strong>Smart QR / Tótems</strong> en su agente: la funcionalidad ya está ahí.</li>
+<li>Regeneré permalinks si usa <code>/xabia-box/</code>.</li>
+</ol>
+<p>No hace falta migrar licencia addon: Smart QR ya no tiene producto Polar propio.</p>
+<hr>
+<div class="manual-pdf-cierre">
+
+<h2>Xabia AI — La web viva</h2>
+<p>Sabiduría natural con inteligencia artificial</p>
+<p>Xabia AI está especialmente indicada para empresas y asociaciones del sector del turismo, instituciones, empresas y tiendas online que quieran incrementar su conversión.</p>
+<p>Xabia AI está desarrollada por Digixop.</p>
+<p><strong>Xabia AI</strong> · Garaizar, 2 · 48004 Bilbao (SPAIN)</p>
+<p><a href="mailto:help@xabia.ai">help@xabia.ai</a></p>
+</div>
+</body>
+</html>

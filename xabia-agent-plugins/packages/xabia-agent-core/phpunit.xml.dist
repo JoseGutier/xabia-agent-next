@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<phpunit
+    bootstrap="tests/bootstrap.php"
+    colors="true"
+    backupGlobals="false"
+    beStrictAboutTestsThatDoNotTestAnything="false"
+>
+    <testsuites>
+        <testsuite name="Xabia LITE">
+            <file>tests/test-xabia-lite-pipeline.php</file>
+        </testsuite>
+    </testsuites>
+    <php>
+        <const name="XABIA_FORCE_LITE_MODE" value="true"/>
+    </php>
+</phpunit>

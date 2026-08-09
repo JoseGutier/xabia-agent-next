@@ -1,0 +1,211 @@
+/* Manuales Xabia AI — índice y páginas (estilo limpio tipo Aktiba) */
+:root {
+	--ink: #1a1f24;
+	--muted: #5a636c;
+	--line: #d8dde3;
+	--bg: #f4f6f8;
+	--paper: #fffcf9;
+	--accent: #2170b0;
+	--accent-soft: #e3f0fa;
+	--warn: #8a5a00;
+	--warn-bg: #fff6e5;
+	--radius: 10px;
+	--font: "Source Sans 3", "Segoe UI", system-ui, sans-serif;
+	--display: "Fraunces", Georgia, serif;
+	--max: 46rem;
+}
+
+*,
+*::before,
+*::after {
+	box-sizing: border-box;
+}
+
+html {
+	scroll-behavior: smooth;
+}
+
+body {
+	margin: 0;
+	font-family: var(--font);
+	font-size: 1.05rem;
+	line-height: 1.65;
+	color: var(--ink);
+	background:
+		radial-gradient(ellipse 80% 50% at 10% -10%, #dceaf5 0%, transparent 55%),
+		radial-gradient(ellipse 60% 40% at 100% 0%, #efe6d6 0%, transparent 50%),
+		var(--bg);
+}
+
+a {
+	color: var(--accent);
+	text-decoration-thickness: 1px;
+	text-underline-offset: 0.15em;
+}
+
+a:hover {
+	color: #185a94;
+}
+
+.wrap {
+	width: min(100% - 2rem, 58rem);
+	margin: 0 auto;
+	padding: 2.5rem 0 4rem;
+}
+
+.site-header {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: baseline;
+	justify-content: space-between;
+	gap: 0.75rem 1.5rem;
+	margin-bottom: 2rem;
+	padding-bottom: 1.25rem;
+	border-bottom: 1px solid var(--line);
+}
+
+.brand {
+	font-family: var(--display);
+	font-size: 1.35rem;
+	font-weight: 600;
+	letter-spacing: -0.02em;
+	color: var(--ink);
+	text-decoration: none;
+}
+
+.brand span {
+	color: var(--accent);
+}
+
+.meta {
+	font-size: 0.9rem;
+	color: var(--muted);
+}
+
+.hero {
+	background: var(--paper);
+	border: 1px solid var(--line);
+	border-radius: var(--radius);
+	padding: 1.75rem 1.5rem 1.5rem;
+	margin-bottom: 2rem;
+	box-shadow: 0 1px 0 rgba(26, 31, 36, 0.04);
+}
+
+.hero h1 {
+	font-family: var(--display);
+	font-size: clamp(1.75rem, 3vw, 2.35rem);
+	font-weight: 600;
+	letter-spacing: -0.03em;
+	line-height: 1.2;
+	margin: 0 0 0.75rem;
+}
+
+.hero .lede {
+	margin: 0;
+	color: var(--muted);
+	max-width: var(--max);
+}
+
+.site-footer {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: baseline;
+	justify-content: space-between;
+	gap: 0.75rem 1.5rem;
+	margin-top: 2rem;
+	padding-top: 1rem;
+	border-top: 1px solid var(--line);
+	font-size: 0.88rem;
+	color: var(--muted);
+}
+
+.site-footer p {
+	margin: 0;
+}
+
+.site-footer .credit {
+	margin-left: auto;
+	text-align: right;
+}
+
+.site-footer .credit a {
+	color: var(--muted);
+}
+
+.site-footer .credit a:hover {
+	color: var(--accent);
+}
+
+.index-grid {
+	display: grid;
+	gap: 1rem;
+}
+
+@media (min-width: 640px) {
+	.index-grid {
+		grid-template-columns: repeat(2, 1fr);
+	}
+}
+
+.card {
+	display: block;
+	background: var(--paper);
+	border: 1px solid var(--line);
+	border-radius: var(--radius);
+	padding: 1.25rem 1.35rem;
+	color: inherit;
+	transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.card:hover {
+	border-color: var(--accent);
+	box-shadow: 0 6px 20px rgba(33, 112, 176, 0.1);
+}
+
+.card h2 {
+	font-family: var(--display);
+	font-size: 1.2rem;
+	margin: 0 0 0.4rem;
+}
+
+.card h2 a {
+	color: var(--accent);
+	text-decoration: none;
+}
+
+.card h2 a:hover {
+	text-decoration: underline;
+}
+
+.card p {
+	margin: 0;
+	color: var(--muted);
+	font-size: 0.95rem;
+}
+
+.card .card-meta {
+	margin-top: 0.75rem;
+	font-size: 0.82rem;
+	color: var(--muted);
+}
+
+.card .card-meta a {
+	text-decoration: none;
+}
+
+.card .card-meta a:hover {
+	text-decoration: underline;
+}
+
+.card code {
+	font-size: 0.88em;
+}
+
+.section-label {
+	font-size: 0.75rem;
+	text-transform: uppercase;
+	letter-spacing: 0.08em;
+	color: var(--muted);
+	font-weight: 600;
+	margin: 0 0 0.85rem;
+}

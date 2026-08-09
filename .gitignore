@@ -14,3 +14,7 @@ php_error.log
 # Ignorar configuración de IDEs locales
 .vscode/
 .idea/
+
+# GCP credentials (never commit)
+google-key.json
+**/google-key.json

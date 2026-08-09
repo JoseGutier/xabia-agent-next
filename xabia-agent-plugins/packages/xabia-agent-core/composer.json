@@ -1,0 +1,16 @@
+{
+    "name": "digixop/xabia-wordpress-plugin",
+    "description": "Xabia Agent Next — dependencias PHP (Google Auth, JWT) para Vertex y servicios en el sitio.",
+    "type": "wordpress-plugin",
+    "require": {
+        "php": ">=7.4",
+        "google/auth": "^1.44",
+        "firebase/php-jwt": "^6.0"
+    },
+    "require-dev": {
+        "wp-phpunit/wp-phpunit": "^6.0"
+    },
+    "config": {
+        "sort-packages": true
+    }
+}

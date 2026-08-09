@@ -1,0 +1,31 @@
+msgid ""
+msgstr ""
+"Language: eu_ES\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+
+msgid "Minimizar chat"
+msgstr "Txata minimizatu"
+
+msgid "Hablar"
+msgstr "Hitz egin"
+
+msgid "Pulsar para hablar"
+msgstr "Sakatu hitz egiteko"
+
+msgid "Escribe aquí..."
+msgstr "Idatzi hemen..."
+
+msgid "Activar voz (lectura en alto)"
+msgstr "Ahotsa aktibatu (olo bizi)"
+
+msgid "Activar voz"
+msgstr "Ahotsa aktibatu"
+
+msgid "Enviar"
+msgstr "Bidali"
+
+msgid "Enviar mensaje"
+msgstr "Mezua bidali"
+
+msgid "Hola, soy Xabia."
+msgstr "Kaixo, Xabia naiz."

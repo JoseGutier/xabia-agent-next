@@ -1,0 +1,31 @@
+msgid ""
+msgstr ""
+"Language: en_US\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+
+msgid "Minimizar chat"
+msgstr "Minimize chat"
+
+msgid "Hablar"
+msgstr "Speak"
+
+msgid "Pulsar para hablar"
+msgstr "Tap to speak"
+
+msgid "Escribe aquí..."
+msgstr "Write here..."
+
+msgid "Activar voz (lectura en alto)"
+msgstr "Enable voice (read aloud)"
+
+msgid "Activar voz"
+msgstr "Enable voice"
+
+msgid "Enviar"
+msgstr "Send"
+
+msgid "Enviar mensaje"
+msgstr "Send message"
+
+msgid "Hola, soy Xabia."
+msgstr "Hi, I'm Xabia."

@@ -1,0 +1,2820 @@
+/**
+ * Xabia Agent — Panel de administración
+ * Estética tipo Google Site Kit: tarjetas blancas, tipografía clara, acentos verde (éxito) y magenta (detalle).
+ * Ámbito: solo dentro de .xabia-wrapper
+ */
+
+.xabia-wrapper.xabia-admin-app {
+	--xabia-page-bg: #f1f3f4;
+	--xabia-card-bg: #ffffff;
+	--xabia-border: #dadce0;
+	--xabia-border-subtle: #e8eaed;
+	--xabia-text: #202124;
+	--xabia-text-secondary: #5f6368;
+	--xabia-green: #059669;
+	--xabia-green-hover: #047857;
+	--xabia-green-soft: #e6f4ea;
+	--xabia-green-border: #ceead6;
+	--xabia-magenta: #c2185b;
+	--xabia-magenta-hover: #ad1457;
+	--xabia-magenta-soft: #fce4ec;
+	--xabia-radius: 12px;
+	--xabia-radius-sm: 8px;
+	--xabia-shadow: 0 1px 2px rgba(60, 64, 67, 0.12), 0 1px 3px rgba(60, 64, 67, 0.08);
+	--xabia-shadow-hover: 0 2px 8px rgba(60, 64, 67, 0.14);
+
+	max-width: 1280px;
+	margin: 0 auto 32px;
+	padding: 0 12px 24px;
+	font-family: "Plus Jakarta Sans", "Google Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen-Sans, Ubuntu, Cantarell, "Helvetica Neue", sans-serif;
+	font-size: 14px;
+	line-height: 1.5;
+	color: var(--xabia-text);
+	box-sizing: border-box;
+}
+
+.xabia-wrapper.xabia-admin-app *,
+.xabia-wrapper.xabia-admin-app *::before,
+.xabia-wrapper.xabia-admin-app *::after {
+	box-sizing: inherit;
+}
+
+/* Fondo de página coherente con wp-admin pero más “producto” */
+body.wp-admin .xabia-wrapper.xabia-admin-app {
+	margin-top: 12px;
+}
+
+/* ——— Tarjetas ——— */
+.xabia-card {
+	background: var(--xabia-card-bg);
+	border: 1px solid var(--xabia-border);
+	border-radius: var(--xabia-radius);
+	box-shadow: var(--xabia-shadow);
+	padding: 28px 32px;
+	margin-bottom: 24px;
+}
+
+.xabia-card--flush {
+	padding: 0;
+	overflow: hidden;
+}
+
+.xabia-card-title {
+	margin: 0 0 8px;
+	font-size: 18px;
+	font-weight: 500;
+	letter-spacing: -0.01em;
+	color: var(--xabia-text);
+}
+
+.xabia-card-desc {
+	margin: 0 0 20px;
+	font-size: 13px;
+	color: var(--xabia-text-secondary);
+	max-width: 720px;
+}
+
+.xabia-card-desc--flush-bottom {
+	margin-bottom: 0;
+}
+
+/* ——— Cabecera (hero) ——— */
+.xabia-admin-header {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: flex-start;
+	justify-content: space-between;
+	gap: 16px 24px;
+	padding: 32px 36px;
+	margin-bottom: 24px;
+	border-bottom: 3px solid var(--xabia-magenta);
+}
+
+.xabia-page-title {
+	margin: 0 0 6px;
+	font-size: 28px;
+	font-weight: 400;
+	letter-spacing: -0.02em;
+	line-height: 1.2;
+	color: var(--xabia-text);
+}
+
+.xabia-page-subtitle {
+	margin: 0;
+	font-size: 14px;
+	color: var(--xabia-text-secondary);
+	max-width: 560px;
+}
+
+.xabia-admin-header .xabia-btn--ghost {
+	align-self: center;
+}
+
+/* ——— Toolbar ——— */
+.xabia-toolbar {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 12px;
+	margin-bottom: 20px;
+}
+
+/* ——— Lista de agentes ——— */
+.xabia-agent-grid {
+	display: grid;
+	grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+	gap: 20px;
+	margin-bottom: 28px;
+}
+
+.xabia-agent-tile {
+	display: flex;
+	flex-direction: column;
+	gap: 16px;
+	padding: 24px 28px;
+	margin-bottom: 0;
+	transition: box-shadow 0.2s ease, border-color 0.2s ease;
+}
+
+.xabia-agent-tile:hover {
+	box-shadow: var(--xabia-shadow-hover);
+	border-color: var(--xabia-border);
+}
+
+.xabia-agent-tile__name {
+	font-size: 16px;
+	font-weight: 500;
+	color: var(--xabia-text);
+	margin: 0;
+}
+
+.xabia-agent-tile__id {
+	display: inline-block;
+	margin-top: 4px;
+	font-size: 12px;
+	font-weight: 500;
+	color: var(--xabia-magenta);
+	letter-spacing: 0.02em;
+}
+
+.xabia-agent-tile__actions {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 8px;
+	margin-top: auto;
+}
+
+/* ——— Formulario global claves ——— */
+.xabia-keys-form .xabia-field-group {
+	margin-bottom: 22px;
+}
+
+.xabia-keys-form label.xabia-label {
+	display: block;
+	font-size: 13px;
+	font-weight: 500;
+	color: var(--xabia-text);
+	margin-bottom: 8px;
+}
+
+.xabia-keys-form .widefat {
+	border-radius: var(--xabia-radius-sm);
+	border-color: var(--xabia-border);
+	padding: 10px 12px;
+	font-size: 14px;
+}
+
+.xabia-keys-form .description,
+.xabia-wrapper .description {
+	color: var(--xabia-text-secondary);
+	font-size: 13px;
+	margin-top: 8px;
+	border-left: 3px solid var(--xabia-magenta-soft);
+	padding-left: 12px;
+	margin-left: 0;
+}
+
+.xabia-keys-form .xabia-form-actions {
+	margin-top: 28px;
+	padding-top: 20px;
+	border-top: 1px solid var(--xabia-border-subtle);
+}
+
+/* ——— Botones (WordPress + variantes) ——— */
+.xabia-wrapper .button,
+.xabia-wrapper .button-secondary {
+	border-radius: var(--xabia-radius-sm);
+	padding: 8px 16px;
+	min-height: 36px;
+	line-height: 1.4;
+	border-color: var(--xabia-border);
+	box-shadow: none;
+}
+
+.xabia-wrapper .button:hover,
+.xabia-wrapper .button-secondary:hover {
+	border-color: #bdc1c6;
+}
+
+.xabia-wrapper .button.button-primary,
+.xabia-wrapper .button-primary.xabia-btn {
+	background: var(--xabia-green);
+	border-color: var(--xabia-green);
+	color: #fff;
+	text-shadow: none;
+	box-shadow: none;
+}
+
+.xabia-wrapper .button.button-primary:hover,
+.xabia-wrapper .button-primary.xabia-btn:hover {
+	background: var(--xabia-green-hover);
+	border-color: var(--xabia-green-hover);
+	color: #fff;
+}
+
+.xabia-btn--ghost {
+	background: transparent !important;
+	border: 1px solid var(--xabia-border) !important;
+	color: var(--xabia-text) !important;
+}
+
+.xabia-btn--ghost:hover {
+	border-color: var(--xabia-magenta) !important;
+	color: var(--xabia-magenta) !important;
+	background: var(--xabia-magenta-soft) !important;
+}
+
+.xabia-btn--danger-outline {
+	color: #c5221f !important;
+	border-color: #f5c6c4 !important;
+	background: #fce8e6 !important;
+}
+
+.xabia-btn--danger-outline:hover {
+	border-color: #c5221f !important;
+	background: #fad2cf !important;
+}
+
+/* ——— Layout edición ——— */
+.xabia-edit-layout {
+	display: grid;
+	grid-template-columns: minmax(0, 1fr) 340px;
+	gap: 24px;
+	align-items: start;
+}
+
+@media (max-width: 1100px) {
+	.xabia-edit-layout {
+		grid-template-columns: 1fr;
+	}
+
+	.xabia-edit-layout .xabia-sidebar {
+		order: -1;
+	}
+}
+
+@media (min-width: 1101px) {
+	.xabia-edit-layout .xabia-sidebar {
+		position: static;
+		top: auto;
+		display: flex;
+		flex-direction: column;
+		gap: 16px;
+	}
+
+	/* Memoria / acciones: siempre completa, sin scroll interno (el Playground baja si hace falta) */
+	.xabia-edit-layout .xabia-sidebar .xabia-status-box {
+		flex: 0 0 auto;
+		overflow: visible;
+	}
+
+	.xabia-edit-layout .xabia-sidebar .xabia-playground-card {
+		flex: 0 0 auto;
+	}
+
+	.xabia-edit-layout .xabia-sidebar #p-chat-canvas {
+		height: min(280px, 32vh);
+		min-height: 180px;
+	}
+}
+
+.xabia-memory-summary-bar {
+	background: #f0f6fc;
+	border: 1px solid #c5d9ed;
+	border-radius: var(--xabia-radius, 8px);
+	padding: 14px 18px;
+	margin-bottom: 18px;
+}
+
+.xabia-memory-summary-bar__main {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: baseline;
+	gap: 8px 14px;
+	margin-bottom: 6px;
+}
+
+.xabia-memory-summary-bar__title {
+	font-size: 15px;
+	color: var(--xabia-text, #1d2327);
+}
+
+.xabia-memory-summary-bar__stats {
+	font-size: 14px;
+	color: var(--xabia-text-secondary, #50575e);
+}
+
+.xabia-memory-summary-bar__hint {
+	margin: 0 0 10px !important;
+	font-size: 12.5px;
+	line-height: 1.5;
+}
+
+.xabia-memory-summary-bar__version {
+	display: inline-block;
+	margin-left: 6px;
+	padding: 1px 7px;
+	border-radius: 4px;
+	background: #fff;
+	border: 1px solid #dcdcde;
+	font-size: 11px;
+	color: #646970;
+}
+
+.xabia-memory-summary-bar__jump {
+	margin-top: 2px;
+}
+
+/* Quitar estilo por defecto del postbox dentro de nuestro layout */
+.xabia-wrapper .xabia-main-card.postbox {
+	border: none;
+	box-shadow: none;
+	background: transparent;
+	padding: 0;
+	margin: 0;
+}
+
+.xabia-wrapper .xabia-main-card > .xabia-card-inner {
+	background: var(--xabia-card-bg);
+	border: 1px solid var(--xabia-border);
+	border-radius: var(--xabia-radius);
+	box-shadow: var(--xabia-shadow);
+	overflow: hidden;
+}
+
+/* ——— Pestañas estilo Site Kit ——— */
+.xabia-tab-nav {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 0;
+	margin: 0;
+	padding: 0 8px;
+	background: var(--xabia-card-bg);
+	border-bottom: 1px solid var(--xabia-border-subtle);
+}
+
+.xabia-tab-btn {
+	position: relative;
+	padding: 16px 22px;
+	margin: 0;
+	cursor: pointer;
+	font: inherit;
+	font-weight: 500;
+	font-size: 14px;
+	color: var(--xabia-text-secondary);
+	background: transparent;
+	border: none;
+	border-radius: 0;
+	transition: color 0.15s ease, background 0.15s ease;
+}
+
+.xabia-tab-btn:hover {
+	color: var(--xabia-text);
+	background: rgba(194, 24, 91, 0.06);
+}
+
+.xabia-tab-btn.active {
+	color: var(--xabia-text);
+	font-weight: 600;
+}
+
+.xabia-tab-btn.active::after {
+	content: "";
+	position: absolute;
+	left: 12px;
+	right: 12px;
+	bottom: 0;
+	height: 3px;
+	background: var(--xabia-magenta);
+	border-radius: 3px 3px 0 0;
+}
+
+.xabia-tab-content {
+	display: none;
+	padding: 28px 32px 32px;
+	background: var(--xabia-card-bg);
+	min-height: 420px;
+	border: none;
+}
+
+.xabia-tab-content.active {
+	display: block;
+}
+
+.xabia-wrapper .xabia-tab-content label {
+	display: block;
+	font-weight: 500;
+	font-size: 13px;
+	color: var(--xabia-text);
+	margin-bottom: 6px;
+	margin-top: 16px;
+}
+
+.xabia-wrapper .xabia-tab-content label:first-child,
+.xabia-wrapper .xabia-tab-content > label:first-of-type {
+	margin-top: 0;
+}
+
+.xabia-wrapper .xabia-tab-content hr {
+	border: none;
+	border-top: 1px solid var(--xabia-border-subtle);
+	margin: 24px 0;
+}
+
+.xabia-wrapper .xabia-tab-content .widefat,
+.xabia-wrapper .xabia-tab-content textarea.widefat,
+.xabia-wrapper .xabia-tab-content input.regular-text {
+	border-radius: var(--xabia-radius-sm);
+	border-color: var(--xabia-border);
+}
+
+.xabia-wrapper .xabia-tab-content code {
+	background: var(--xabia-magenta-soft);
+	color: var(--xabia-magenta);
+	padding: 2px 8px;
+	border-radius: 4px;
+	font-size: 12px;
+	border: 1px solid rgba(194, 24, 91, 0.2);
+}
+
+/* ——— Caja motor / Vertex ——— */
+.xabia-vertex-box {
+	background: var(--xabia-card-bg);
+	border: 1px solid var(--xabia-border);
+	border-left: 4px solid var(--xabia-magenta);
+	padding: 22px 24px;
+	border-radius: var(--xabia-radius-sm);
+	margin-bottom: 24px;
+	box-shadow: var(--xabia-shadow);
+}
+
+.xabia-vertex-box > label strong {
+	color: var(--xabia-text);
+	font-size: 14px;
+}
+
+/* ——— Secciones fuente de datos ——— */
+.xabia-panel-muted {
+	background: #f8f9fa;
+	padding: 20px 22px;
+	border: 1px solid var(--xabia-border-subtle);
+	border-radius: var(--xabia-radius-sm);
+	margin-bottom: 16px;
+}
+
+.xabia-section-title {
+	font-size: 15px;
+	font-weight: 600;
+	margin: 28px 0 12px;
+	color: var(--xabia-text);
+	padding-bottom: 8px;
+	border-bottom: 2px solid var(--xabia-magenta-soft);
+	display: inline-block;
+}
+
+/* ——— Mapeador de filas ——— */
+.xabia-rag-toolbar {
+	margin-bottom: 14px;
+	padding: 12px 14px;
+	background: #f8f9fa;
+	border: 1px solid var(--xabia-border);
+	border-radius: var(--xabia-radius-sm);
+}
+.xabia-rag-toolbar-actions {
+	margin: 8px 0 0;
+	display: flex;
+	flex-wrap: wrap;
+	gap: 8px;
+}
+.xabia-import-rag-wrap {
+	display: inline-flex;
+	align-items: center;
+	gap: 4px;
+	flex: 0 0 auto;
+	font-size: 12px;
+	font-weight: 600;
+	color: #1e8e3e;
+	cursor: pointer;
+	user-select: none;
+	white-space: nowrap;
+}
+.xabia-import-rag-wrap input {
+	margin: 0;
+}
+.row-repeater-box.xabia-rag-excluded {
+	opacity: 0.55;
+	background: #f1f3f4;
+}
+.row-repeater-box.xabia-rag-excluded .xabia-import-rag-wrap {
+	color: #9aa0a6;
+}
+
+.row-repeater-box {
+	background: var(--xabia-card-bg);
+	padding: 16px 18px;
+	border: 1px solid var(--xabia-border);
+	margin-bottom: 12px;
+	border-radius: var(--xabia-radius-sm);
+	display: flex;
+	align-items: center;
+	gap: 16px;
+	box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+}
+
+/* Columna / campo: selector + icono prioritario */
+.row-col-select-wrap {
+	flex: 0 0 28%;
+	min-width: 160px;
+	max-width: 360px;
+	display: flex;
+	align-items: center;
+	gap: 8px;
+}
+
+.xabia-wrapper .xabia-col-selector {
+	width: 100%;
+	min-width: 0;
+	border: 1px solid var(--xabia-border);
+	border-radius: var(--xabia-radius-sm);
+	padding: 8px 10px;
+	font-size: 13px;
+	color: var(--xabia-text);
+	background: var(--xabia-card-bg);
+	line-height: 1.4;
+}
+
+.xabia-wrapper .xabia-col-selector:hover {
+	border-color: #bdc1c6;
+}
+
+.xabia-wrapper .xabia-col-selector:focus {
+	outline: none;
+	border-color: var(--xabia-magenta);
+	box-shadow: 0 0 0 2px rgba(194, 24, 91, 0.22);
+}
+
+.xabia-wrapper .xabia-field-brain.dashicons {
+	flex-shrink: 0;
+	width: 22px;
+	height: 22px;
+	font-size: 22px;
+	line-height: 1;
+	color: var(--xabia-magenta);
+}
+
+.xabia-wrapper .xabia-field-id-hint.dashicons {
+	flex-shrink: 0;
+	width: 22px;
+	height: 22px;
+	font-size: 22px;
+	line-height: 1;
+	color: #5f6368;
+	cursor: help;
+}
+
+.xabia-cpt-meta-tool .xabia-label {
+	margin-bottom: 6px;
+}
+
+.row-inputs {
+	flex: 1;
+	display: flex;
+	gap: 10px;
+	align-items: center;
+	flex-wrap: wrap;
+}
+
+.check-ente-wrapper {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	font-size: 10px;
+	font-weight: 700;
+	text-transform: uppercase;
+	letter-spacing: 0.04em;
+	color: var(--xabia-text-secondary);
+	background: var(--xabia-magenta-soft);
+	padding: 6px 12px;
+	border-radius: 6px;
+	border: 1px solid rgba(194, 24, 91, 0.25);
+	cursor: pointer;
+}
+
+.xabia-ente-tools {
+	margin-left: auto;
+	display: flex;
+	align-items: center;
+	flex-wrap: wrap;
+	gap: 10px;
+}
+
+.xabia-ente-label-wrap .xabia-ente-label-col {
+	min-width: 140px;
+	max-width: 280px;
+}
+
+/* ——— SQL box ——— */
+.sql-box {
+	width: 100%;
+	min-height: 120px;
+	font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+	font-size: 12px;
+	background: #1e1e1e;
+	color: #e8eaed;
+	padding: 14px 16px;
+	border-radius: var(--xabia-radius-sm);
+	border: 1px solid #3c4043;
+}
+
+/* ——— Multi-fuente ——— */
+.xabia-multi-source-box {
+	border: 1px solid var(--xabia-border);
+	padding: 22px 24px;
+	margin-bottom: 20px;
+	background: var(--xabia-card-bg);
+	border-radius: var(--xabia-radius-sm);
+	box-shadow: var(--xabia-shadow);
+}
+
+.xabia-multi-source-box h4 {
+	margin-top: 0;
+	font-size: 14px;
+	font-weight: 600;
+	color: var(--xabia-text);
+}
+
+/* ——— Pie del formulario principal ——— */
+.xabia-card-footer {
+	padding: 20px 32px;
+	background: #f8f9fa;
+	border-top: 1px solid var(--xabia-border-subtle);
+	text-align: right;
+}
+
+/* ——— Sidebar: memoria + playground ——— */
+.xabia-sidebar {
+	display: flex;
+	flex-direction: column;
+	gap: 20px;
+}
+
+.xabia-status-box {
+	background: var(--xabia-card-bg);
+	padding: 24px 28px;
+	border: 1px solid var(--xabia-border);
+	border-radius: var(--xabia-radius);
+	box-shadow: var(--xabia-shadow);
+	margin-bottom: 0;
+}
+
+.xabia-memory-panel-head {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: baseline;
+	justify-content: space-between;
+	gap: 8px 12px;
+	margin-bottom: 12px;
+}
+
+.xabia-memory-panel-head h3 {
+	margin: 0;
+	font-size: 16px;
+	font-weight: 600;
+	color: var(--xabia-text);
+}
+
+.xabia-playground-jump {
+	font-size: 12px;
+	font-weight: 600;
+	text-decoration: none;
+	color: var(--xabia-magenta);
+	white-space: nowrap;
+}
+
+.xabia-playground-jump:hover,
+.xabia-playground-jump:focus {
+	color: #9c1450;
+	text-decoration: underline;
+}
+
+.xabia-status-box h3 {
+	margin: 0 0 12px;
+	font-size: 16px;
+	font-weight: 600;
+	color: var(--xabia-text);
+}
+
+.xabia-status-box p {
+	margin: 0 0 16px;
+	font-size: 14px;
+	color: var(--xabia-text-secondary);
+}
+
+.xabia-sidebar-action {
+	width: 100%;
+	text-align: center;
+	justify-content: center;
+}
+
+.xabia-status-box .xabia-sidebar-action + .xabia-sidebar-action {
+	margin-top: 8px;
+}
+
+.xabia-stat-line {
+	font-size: 14px;
+	color: var(--xabia-text);
+	margin-bottom: 16px;
+	line-height: 1.6;
+}
+
+.xabia-stat-line strong {
+	color: var(--xabia-magenta);
+	font-weight: 600;
+}
+
+.xabia-sync-feedback {
+	margin-top: 14px;
+	font-weight: 600;
+	font-size: 13px;
+	min-height: 1.2em;
+	color: var(--xabia-text-secondary);
+	padding: 10px 12px;
+	background: #f8f9fa;
+	border: 1px solid var(--xabia-border-subtle);
+	border-radius: var(--xabia-radius-sm);
+}
+
+.xabia-sync-feedback.xabia-sync-feedback--success {
+	color: var(--xabia-green);
+	background: var(--xabia-green-soft);
+	border-color: var(--xabia-green-border);
+}
+
+.xabia-sync-feedback.xabia-sync-feedback--error {
+	color: #c5221f;
+	background: #fce8e6;
+	border-color: #f5c6c4;
+}
+
+.xabia-sync-feedback.xabia-sync-feedback--pending {
+	color: var(--xabia-text);
+	border-left: 3px solid var(--xabia-magenta);
+}
+
+.xabia-status-box--busy .xabia-sidebar-action:not(:disabled) {
+	opacity: 0.65;
+}
+
+.xabia-work-progress {
+	margin-top: 14px;
+	padding: 14px 14px 12px;
+	background: #fff;
+	border: 1px solid var(--xabia-border);
+	border-left: 3px solid var(--xabia-magenta);
+	border-radius: var(--xabia-radius-sm);
+	box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+}
+
+.xabia-work-progress__head {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	margin-bottom: 12px;
+}
+
+.xabia-work-progress__title {
+	font-weight: 600;
+	font-size: 14px;
+	color: var(--xabia-text);
+}
+
+.xabia-work-progress__spinner {
+	width: 18px;
+	height: 18px;
+	flex-shrink: 0;
+	border: 2px solid #e8eaed;
+	border-top-color: var(--xabia-magenta);
+	border-radius: 50%;
+	animation: xabia-spin 0.75s linear infinite;
+}
+
+@keyframes xabia-spin {
+	to { transform: rotate(360deg); }
+}
+
+.xabia-work-progress__track {
+	height: 6px;
+	background: #eceff1;
+	border-radius: 999px;
+	overflow: hidden;
+	margin-bottom: 10px;
+}
+
+.xabia-work-progress__bar {
+	width: 40%;
+	height: 100%;
+	border-radius: 999px;
+	background: linear-gradient(90deg, var(--xabia-magenta), #c2185b);
+	animation: xabia-progress-indeterminate 1.4s ease-in-out infinite;
+}
+
+@keyframes xabia-progress-indeterminate {
+	0% { transform: translateX(-120%); }
+	100% { transform: translateX(320%); }
+}
+
+.xabia-work-progress__step {
+	margin: 0 0 6px;
+	font-size: 13px;
+	line-height: 1.45;
+	color: var(--xabia-text);
+}
+
+.xabia-work-progress__elapsed {
+	margin: 0;
+	font-size: 12px;
+	line-height: 1.4;
+	color: var(--xabia-text-secondary);
+}
+
+.xabia-pipeline-alert {
+	display: none;
+	margin: 0 0 12px;
+	padding: 12px 14px;
+	font-size: 13px;
+	line-height: 1.5;
+	border-radius: var(--xabia-radius-sm);
+	border: 1px solid #f5c6c4;
+	background: #fce8e6;
+	color: #8a1f11;
+}
+
+.xabia-pipeline-alert--visible {
+	display: block;
+}
+
+.xabia-pipeline-alert p {
+	margin: 8px 0 0;
+}
+
+.xabia-pipeline-alert p:first-of-type {
+	margin-top: 6px;
+}
+
+.xabia-stat-line--danger {
+	color: #c5221f;
+	font-weight: 600;
+}
+
+.xabia-stat-line--warn {
+	color: #b06000;
+	font-weight: 600;
+}
+
+.xabia-stat-line--muted {
+	font-size: 12px;
+	color: var(--xabia-text-secondary);
+}
+
+.xabia-playground-card {
+	background: var(--xabia-card-bg);
+	border: 1px solid var(--xabia-border);
+	border-radius: var(--xabia-radius);
+	box-shadow: var(--xabia-shadow);
+	overflow: hidden;
+}
+
+.xabia-playground-card__head {
+	padding: 14px 20px;
+	background: linear-gradient(135deg, #fafafa 0%, #fff 100%);
+	border-bottom: 1px solid var(--xabia-border-subtle);
+	font-size: 13px;
+	font-weight: 600;
+	color: var(--xabia-text);
+}
+
+.xabia-playground-card__head span {
+	color: var(--xabia-magenta);
+	font-weight: 500;
+}
+
+#p-chat-canvas {
+	height: 360px;
+	overflow-y: auto;
+	padding: 20px;
+	background: #fafafa;
+}
+
+.xabia-playground-input-row {
+	padding: 14px 16px;
+	border-top: 1px solid var(--xabia-border-subtle);
+	display: flex;
+	gap: 10px;
+	align-items: center;
+	background: var(--xabia-card-bg);
+}
+
+.xabia-playground-rag-debug {
+    margin: 8px 0 12px 0;
+    font-size: 11px;
+    max-width: 100%;
+}
+.xabia-playground-rag-debug pre {
+    white-space: pre-wrap;
+    word-break: break-word;
+    background: #f6f7f7;
+    border: 1px solid #dcdcde;
+    padding: 8px 10px;
+    max-height: 280px;
+    overflow: auto;
+}
+	flex: 1;
+	border-radius: var(--xabia-radius-sm);
+	border: 1px solid var(--xabia-border);
+	padding: 10px 12px;
+}
+
+/* ——— Chat mensajes ——— */
+.xabia-chat-msg {
+	margin-bottom: 14px;
+	padding: 14px 16px;
+	border-radius: var(--xabia-radius-sm);
+	font-size: 13px;
+	line-height: 1.55;
+	position: relative;
+	border: 1px solid var(--xabia-border-subtle);
+}
+
+.xabia-chat-msg.xabia-from-bot {
+	background: var(--xabia-card-bg);
+	color: var(--xabia-text);
+	border-left: 4px solid var(--xabia-green);
+}
+
+.xabia-chat-msg.user {
+	background: #fff;
+	color: var(--xabia-text);
+	border-left: 4px solid var(--xabia-magenta);
+	margin-left: 12px;
+}
+
+.xabia-chat-msg img {
+	max-width: 100%;
+	border-radius: var(--xabia-radius-sm);
+	margin-top: 10px;
+	display: block;
+	box-shadow: var(--xabia-shadow);
+	border: 1px solid var(--xabia-border-subtle);
+}
+
+.xabia-chat-link {
+	display: inline-block;
+	margin-top: 10px;
+	padding: 8px 16px;
+	background: var(--xabia-green);
+	color: #fff !important;
+	text-decoration: none;
+	border-radius: var(--xabia-radius-sm);
+	font-weight: 600;
+	font-size: 12px;
+}
+
+.xabia-chat-link:hover {
+	background: var(--xabia-green-hover);
+	color: #fff !important;
+}
+
+/* ——— Tabla logs ——— */
+.xabia-log-table {
+	width: 100%;
+	border-collapse: collapse;
+	font-size: 13px;
+	border-radius: var(--xabia-radius-sm);
+	overflow: hidden;
+	border: 1px solid var(--xabia-border);
+}
+
+.xabia-log-table th {
+	text-align: left;
+	background: #f8f9fa;
+	padding: 12px 14px;
+	border-bottom: 1px solid var(--xabia-border);
+	font-weight: 600;
+	color: var(--xabia-text);
+}
+
+.xabia-log-table td {
+	padding: 12px 14px;
+	border-bottom: 1px solid var(--xabia-border-subtle);
+	vertical-align: top;
+	color: var(--xabia-text-secondary);
+}
+
+.xabia-log-table tr:last-child td {
+	border-bottom: none;
+}
+
+/* ——— Password toggle ——— */
+.pass-wrapper {
+	position: relative;
+	display: flex;
+	align-items: center;
+}
+
+.toggle-pass {
+	position: absolute;
+	right: 12px;
+	cursor: pointer;
+	color: var(--xabia-magenta);
+	z-index: 10;
+	opacity: 0.85;
+}
+
+.toggle-pass:hover {
+	opacity: 1;
+}
+
+/* ——— Feedback CSV ——— */
+#csv-feedback,
+.multi-csv-feedback {
+	font-size: 13px;
+	color: var(--xabia-green);
+	font-weight: 500;
+}
+
+/* ——— Notices dentro del área (si WP las inyecta) ——— */
+.xabia-wrapper .notice {
+	border-radius: var(--xabia-radius-sm);
+	border-left-width: 4px;
+}
+
+.xabia-wrapper .notice.notice-success {
+	border-left-color: var(--xabia-green);
+}
+
+/* ——— Modal Asistente CPT (fuera de .xabia-wrapper) ——— */
+body.wp-admin .xabia-modal-backdrop {
+	display: none;
+	position: fixed;
+	inset: 0;
+	background: rgba(32, 33, 36, 0.45);
+	z-index: 100000;
+}
+
+body.wp-admin .xabia-modal-panel {
+	display: none;
+	position: fixed;
+	left: 50%;
+	top: 50%;
+	transform: translate(-50%, -50%);
+	z-index: 100001;
+	width: min(520px, calc(100vw - 32px));
+	max-height: min(90vh, 640px);
+	overflow: auto;
+	background: var(--xabia-card-bg, #fff);
+	border: 1px solid var(--xabia-border, #dadce0);
+	border-radius: var(--xabia-radius, 12px);
+	box-shadow: 0 8px 24px rgba(60, 64, 67, 0.18);
+	padding: 0;
+	font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen-Sans, Ubuntu, Cantarell, "Helvetica Neue", sans-serif;
+}
+
+body.wp-admin .xabia-modal-panel.xabia-modal-panel--curator {
+	width: min(720px, calc(100vw - 24px));
+	max-height: min(92vh, 720px);
+}
+
+body.wp-admin .xabia-modal-panel__inner {
+	padding: 20px 22px 18px;
+}
+
+body.wp-admin .xabia-modal-panel__title {
+	margin: 0 0 10px;
+	font-size: 17px;
+	font-weight: 600;
+	color: var(--xabia-text, #202124);
+}
+
+body.wp-admin .xabia-modal-panel .xabia-label {
+	display: block;
+	font-weight: 600;
+	margin-bottom: 6px;
+	font-size: 13px;
+}
+
+body.wp-admin .xabia-modal-panel__actions {
+	margin: 16px 0 0;
+	padding-top: 12px;
+	border-top: 1px solid var(--xabia-border-subtle, #e8eaed);
+}
+
+/* Consola de curación CPT (modal admin) */
+body.wp-admin .xabia-cpt-assistant-deep-scroll {
+	max-height: min(420px, 52vh);
+	overflow: auto;
+	border: 1px solid var(--xabia-border, #dadce0);
+	padding: 12px 14px;
+	background: #fafafa;
+	border-radius: var(--xabia-radius-sm, 8px);
+	margin-top: 8px;
+}
+
+body.wp-admin .xabia-field-selector__section {
+	margin-bottom: 16px;
+	padding-bottom: 12px;
+	border-bottom: 1px solid var(--xabia-border-subtle, #e8eaed);
+}
+
+body.wp-admin .xabia-field-selector__section:last-child {
+	border-bottom: 0;
+	margin-bottom: 0;
+	padding-bottom: 0;
+}
+
+body.wp-admin .xabia-field-selector__heading {
+	margin: 0 0 8px;
+	font-size: 13px;
+	font-weight: 600;
+	color: var(--xabia-magenta, #c2185b);
+	letter-spacing: 0.02em;
+	text-transform: uppercase;
+}
+
+body.wp-admin .xabia-field-selector__list {
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+}
+
+body.wp-admin .xabia-curate-row {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	justify-content: space-between;
+	gap: 8px 12px;
+	padding: 8px 10px;
+	background: #fff;
+	border: 1px solid var(--xabia-border-subtle, #e8eaed);
+	border-radius: 8px;
+}
+
+body.wp-admin .xabia-curate-row__ledger {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 8px 10px;
+	flex: 1;
+	min-width: 0;
+}
+
+body.wp-admin .xabia-curate-row__main {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	min-width: 0;
+	cursor: pointer;
+	margin: 0;
+	flex: 1;
+}
+
+body.wp-admin .xabia-curate-row__title {
+	font-weight: 500;
+	color: var(--xabia-text, #202124);
+}
+
+body.wp-admin .xabia-curate-row__key {
+	font-size: 11px;
+	color: var(--xabia-text-secondary, #5f6368);
+	background: #f1f3f4;
+	padding: 2px 6px;
+	border-radius: 4px;
+	max-width: 100%;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+body.wp-admin .xabia-field-badge--data {
+	display: inline-block;
+	font-size: 11px;
+	font-weight: 600;
+	padding: 2px 8px;
+	border-radius: 999px;
+	background: var(--xabia-green-soft, #e6f4ea);
+	color: var(--xabia-green, #1e8e3e);
+	border: 1px solid var(--xabia-green-border, #ceead6);
+	white-space: nowrap;
+}
+
+body.wp-admin .xabia-curate-row__ente {
+	display: inline-flex;
+	align-items: center;
+	gap: 4px;
+	margin: 0;
+	cursor: pointer;
+	font-size: 12px;
+	font-weight: 600;
+	color: var(--xabia-text-secondary, #5f6368);
+	flex-shrink: 0;
+}
+
+body.wp-admin .xabia-curate-row__ente input:disabled {
+	cursor: not-allowed;
+	opacity: 0.45;
+}
+
+body.wp-admin .xabia-curate-empty {
+	margin: 6px 0 0;
+}
+
+/* ——— Subpáginas: Wallet, Addons, Central (misma estética que el listado principal) ——— */
+
+.xabia-wrapper.xabia-admin-app .xabia-wallet-balance-card .xabia-card-title,
+.xabia-wrapper.xabia-admin-app .xabia-wallet-usage-card .xabia-card-title {
+	margin-bottom: 4px;
+}
+
+.xabia-wrapper.xabia-admin-app .xabia-wallet-balance-figure {
+	font-size: 2.5rem;
+	font-weight: 600;
+	letter-spacing: -0.03em;
+	color: var(--xabia-text);
+	line-height: 1.1;
+	margin: 12px 0 8px;
+}
+
+.xabia-wrapper.xabia-admin-app .xabia-wallet-balance-unit {
+	font-size: 1rem;
+	font-weight: 500;
+	color: var(--xabia-text-secondary);
+	margin-left: 6px;
+}
+
+.xabia-wrapper.xabia-admin-app .xabia-wallet-meta {
+	margin: 0 0 4px;
+	font-size: 13px;
+	color: var(--xabia-text-secondary);
+}
+
+.xabia-wrapper.xabia-admin-app .xabia-wallet-meta code {
+	font-size: 12px;
+	background: #f1f3f4;
+	padding: 2px 8px;
+	border-radius: 4px;
+}
+
+.xabia-wrapper.xabia-admin-app .xabia-wallet-actions {
+	margin: 18px 0 0;
+}
+
+.xabia-wrapper.xabia-admin-app .xabia-wallet-usage-summary {
+	margin: 0 0 12px;
+	font-size: 15px;
+	color: var(--xabia-text);
+}
+
+.xabia-wrapper.xabia-admin-app .xabia-wallet-progress {
+	height: 10px;
+	background: var(--xabia-border-subtle);
+	border-radius: 999px;
+	overflow: hidden;
+	margin: 0 0 20px;
+}
+
+.xabia-wrapper.xabia-admin-app .xabia-wallet-progress__fill {
+	height: 100%;
+	border-radius: 999px;
+	background: linear-gradient(90deg, #73b5e6, var(--xabia-magenta));
+	transition: width 0.35s ease;
+}
+
+.xabia-wrapper.xabia-admin-app .xabia-wallet-sparkline {
+	display: flex;
+	align-items: flex-end;
+	justify-content: space-between;
+	gap: 3px;
+	min-height: 72px;
+	padding: 0 2px;
+}
+
+.xabia-wrapper.xabia-admin-app .xabia-wallet-sparkline__bar {
+	flex: 1;
+	max-width: 20px;
+	min-width: 4px;
+	background: #73b5e6;
+	border-radius: 4px 4px 0 0;
+	opacity: 0.88;
+	transition: opacity 0.15s ease;
+}
+
+.xabia-wrapper.xabia-admin-app .xabia-wallet-sparkline__bar:hover {
+	opacity: 1;
+}
+
+.xabia-wrapper.xabia-admin-app .xabia-wallet-section-title {
+	margin: 8px 0 6px;
+	font-size: 20px;
+	font-weight: 500;
+	letter-spacing: -0.02em;
+	color: var(--xabia-text);
+}
+
+.xabia-wrapper.xabia-admin-app .xabia-wallet-section-desc {
+	margin: 0 0 20px;
+	font-size: 13px;
+	color: var(--xabia-text-secondary);
+	max-width: 640px;
+}
+
+/* ——— Página Wallet: tarjetas (misma línea que Addons) ——— */
+.xabia-wrapper.xabia-page-wallet {
+	--xabia-cta-green: #00a368;
+	--xabia-cta-green-hover: #00915a;
+	padding-bottom: 40px;
+}
+
+.xabia-wrapper.xabia-page-wallet .xabia-admin-header--wallet {
+	border-bottom: none;
+	border-top: 3px solid var(--xabia-magenta);
+	box-shadow: var(--xabia-shadow);
+}
+
+.xabia-wrapper.xabia-page-wallet .xabia-wallet-stats-row {
+	display: grid;
+	grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr));
+	gap: 20px;
+	margin-bottom: 24px;
+}
+
+.xabia-wrapper.xabia-page-wallet .xabia-wallet-stats-row > .xabia-card {
+	margin-bottom: 0;
+}
+
+.xabia-wrapper.xabia-page-wallet .xabia-wallet-balance-card,
+.xabia-wrapper.xabia-page-wallet .xabia-wallet-usage-card {
+	border-radius: var(--xabia-radius-sm);
+	border: 1px solid var(--xabia-border);
+	box-shadow: 0 1px 2px rgba(60, 64, 67, 0.08);
+	border-left: 4px solid var(--xabia-cta-green);
+	padding: 24px 28px;
+}
+
+.xabia-wrapper.xabia-page-wallet .xabia-wallet-usage-card {
+	border-left-color: var(--xabia-magenta);
+}
+
+.xabia-wrapper.xabia-page-wallet .xabia-wallet-balance-card .xabia-card-title,
+.xabia-wrapper.xabia-page-wallet .xabia-wallet-usage-card .xabia-card-title {
+	font-size: 18px;
+	font-weight: 600;
+	letter-spacing: -0.02em;
+}
+
+.xabia-wrapper.xabia-page-wallet .xabia-wallet-balance-figure {
+	font-size: 2.25rem;
+	margin-top: 8px;
+}
+
+.xabia-wrapper.xabia-page-wallet .xabia-wallet-progress__fill {
+	background: linear-gradient(90deg, var(--xabia-cta-green), var(--xabia-magenta));
+}
+
+.xabia-wrapper.xabia-page-wallet .xabia-wallet-sparkline__bar {
+	background: var(--xabia-cta-green);
+	opacity: 0.85;
+}
+
+.xabia-wrapper.xabia-page-wallet .xabia-wallet-sparkline__bar:hover {
+	opacity: 1;
+}
+
+.xabia-wrapper.xabia-page-wallet .xabia-wallet-packs-panel {
+	padding: 28px 32px 32px;
+	margin-bottom: 24px;
+}
+
+.xabia-wrapper.xabia-page-wallet .xabia-wallet-packs-panel .xabia-card-title {
+	font-size: 20px;
+	font-weight: 600;
+	letter-spacing: -0.02em;
+	margin-bottom: 8px;
+}
+
+.xabia-wrapper.xabia-page-wallet .xabia-wallet-toolbar {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 12px 16px;
+	margin: 0 0 24px;
+}
+
+.xabia-wrapper.xabia-page-wallet .xabia-btn-wallet-secondary {
+	display: inline-flex;
+	align-items: center;
+	min-height: 40px;
+	padding: 0 18px;
+	border-radius: 10px;
+	font-size: 14px;
+	font-weight: 500;
+	color: var(--xabia-text) !important;
+	background: #fff !important;
+	border: 1px solid var(--xabia-border) !important;
+	text-decoration: none !important;
+	box-shadow: 0 1px 2px rgba(60, 64, 67, 0.06);
+	transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.xabia-wrapper.xabia-page-wallet .xabia-btn-wallet-secondary:hover,
+.xabia-wrapper.xabia-page-wallet .xabia-btn-wallet-secondary:focus {
+	border-color: #bdc1c6 !important;
+	background: #f8f9fa !important;
+	color: var(--xabia-text) !important;
+}
+
+.xabia-wrapper.xabia-page-wallet .xabia-wallet-pack-grid {
+	display: grid;
+	grid-template-columns: repeat(auto-fill, minmax(min(100%, 260px), 1fr));
+	gap: 20px;
+	margin: 0;
+}
+
+.xabia-wrapper.xabia-page-wallet .xabia-wallet-pack-card {
+	display: flex;
+	flex-direction: column;
+	gap: 10px;
+	border: 1px solid var(--xabia-border);
+	border-radius: var(--xabia-radius-sm);
+	border-top: 1px solid var(--xabia-border);
+	border-left: 4px solid var(--xabia-magenta);
+	box-shadow: 0 1px 2px rgba(60, 64, 67, 0.06);
+	padding: 22px 24px;
+	margin-bottom: 0;
+	transition: box-shadow 0.2s ease, border-color 0.2s ease;
+}
+
+.xabia-wrapper.xabia-page-wallet .xabia-wallet-pack-card:hover {
+	box-shadow: var(--xabia-shadow-hover);
+}
+
+.xabia-wrapper.xabia-page-wallet .xabia-wallet-pack-card__price {
+	font-size: 1.5rem;
+	font-weight: 600;
+	letter-spacing: -0.02em;
+}
+
+.xabia-wrapper.xabia-page-wallet .xabia-btn-wallet-cta {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	min-height: 40px;
+	padding: 0 22px;
+	border-radius: 10px;
+	font-size: 14px;
+	font-weight: 600;
+	font-family: inherit;
+	line-height: 1.2;
+	color: #fff !important;
+	background: var(--xabia-cta-green) !important;
+	border: none !important;
+	box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
+	text-decoration: none !important;
+	margin-top: auto;
+	align-self: flex-start;
+	cursor: pointer;
+	transition: background 0.15s ease, box-shadow 0.15s ease;
+}
+
+.xabia-wrapper.xabia-page-wallet .xabia-btn-wallet-cta:hover,
+.xabia-wrapper.xabia-page-wallet .xabia-btn-wallet-cta:focus {
+	background: var(--xabia-cta-green-hover) !important;
+	color: #fff !important;
+	box-shadow: 0 2px 6px rgba(0, 99, 74, 0.18);
+}
+
+.xabia-license-status--ok{color:var(--xabia-green,#059669);}
+.xabia-license-status--bad{color:#c5221f;}
+
+.xabia-addon-sub-card__check{
+	position:absolute;right:0;top:0;width:28px;height:28px;border-radius:50%;
+	background:var(--xabia-green-soft,#e6f4ea);color:var(--xabia-green,#1e8e3e);
+	line-height:28px;text-align:center;
+	display:flex;align-items:center;justify-content:center;
+	border:1px solid var(--xabia-green-border,#ceead6);
+}
+.xabia-addon-sub-card__inherited{margin:0 0 12px;font-size:13px;color:var(--xabia-text-secondary,#5f6368);}
+
+.xabia-wrapper.xabia-page-addons .xabia-addons-catalog-grid {
+	display: grid;
+	grid-template-columns: repeat(auto-fill, minmax(min(100%, 260px), 1fr));
+	gap: 20px;
+	margin: 0;
+}
+
+.xabia-wrapper.xabia-page-addons .xabia-addon-catalog-card {
+	margin-bottom: 0;
+	padding: 20px 22px 20px 24px;
+	display: flex;
+	flex-direction: column;
+	gap: 10px;
+	min-height: 132px;
+	transition: box-shadow 0.2s ease, border-color 0.2s ease;
+	border: 1px solid var(--xabia-border);
+	border-radius: var(--xabia-radius-sm);
+	box-shadow: 0 1px 2px rgba(60, 64, 67, 0.06);
+	border-left: 4px solid var(--xabia-addon-bar-inactive);
+}
+
+.xabia-wrapper.xabia-page-addons .xabia-addon-catalog-card:hover {
+	box-shadow: var(--xabia-shadow-hover);
+}
+
+.xabia-wrapper.xabia-page-addons .xabia-addon-catalog-card--active {
+	border-left-color: var(--xabia-cta-green);
+}
+
+.xabia-wrapper.xabia-page-addons .xabia-addon-catalog-card--installed {
+	border-left-color: #c9a227;
+}
+
+.xabia-wrapper.xabia-page-addons .xabia-addon-catalog-card--available {
+	border-left-color: var(--xabia-addon-bar-inactive);
+	opacity: 1;
+	filter: none;
+}
+
+.xabia-wrapper.xabia-page-addons .xabia-addon-catalog-card__head {
+	display: flex;
+	align-items: flex-start;
+	justify-content: space-between;
+	gap: 10px;
+}
+
+.xabia-wrapper.xabia-page-addons .xabia-addon-catalog-card__title {
+	margin: 0;
+	font-size: 16px;
+	font-weight: 600;
+	letter-spacing: -0.01em;
+	color: var(--xabia-text);
+}
+
+.xabia-wrapper.xabia-page-addons .xabia-addon-catalog-card__check {
+	flex-shrink: 0;
+	width: 28px;
+	height: 28px;
+	border-radius: 50%;
+	background: var(--xabia-green-soft);
+	color: var(--xabia-green);
+	font-weight: 700;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	font-size: 14px;
+	border: 1px solid var(--xabia-green-border);
+}
+
+.xabia-wrapper.xabia-page-addons .xabia-addon-catalog-card__desc {
+	margin: 0;
+	font-size: 13px;
+	color: var(--xabia-text-secondary);
+	line-height: 1.55;
+	flex: 1;
+}
+
+.xabia-wrapper.xabia-page-addons .xabia-addon-catalog-card__status-block {
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+	margin-top: auto;
+	padding-top: 8px;
+}
+
+.xabia-wrapper.xabia-page-addons .xabia-addon-catalog-card__status-block .xabia-addon-catalog-card__state {
+	font-size: 13px;
+	font-weight: 600;
+	text-transform: none;
+	letter-spacing: normal;
+	color: var(--xabia-text);
+	line-height: 1.45;
+}
+
+.xabia-wrapper.xabia-page-addons .xabia-addon-catalog-card__hub-row {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 8px 12px;
+	font-size: 13px;
+	line-height: 1.4;
+}
+
+.xabia-wrapper.xabia-page-addons .xabia-addon-catalog-card__hub-key {
+	color: var(--xabia-text-secondary);
+	font-weight: 500;
+}
+
+.xabia-wrapper.xabia-page-addons .xabia-addon-catalog-card__pill {
+	display: inline-flex;
+	align-items: center;
+	padding: 4px 11px;
+	border-radius: 999px;
+	font-size: 11px;
+	font-weight: 700;
+	text-transform: uppercase;
+	letter-spacing: 0.03em;
+}
+
+.xabia-wrapper.xabia-page-addons .xabia-addon-catalog-card__pill--ok {
+	background: var(--xabia-green-soft);
+	color: var(--xabia-green);
+	border: 1px solid var(--xabia-green-border);
+}
+
+.xabia-wrapper.xabia-page-addons .xabia-addon-catalog-card__pill--bad {
+	background: #fef2f2;
+	color: #b91c1c;
+	border: 1px solid #fecaca;
+}
+
+.xabia-wrapper.xabia-page-addons .xabia-addon-catalog-card__file {
+	font-size: 11px;
+	display: block;
+	word-break: break-all;
+	color: var(--xabia-text-secondary);
+	background: var(--xabia-page-bg);
+	padding: 8px 10px;
+	border-radius: var(--xabia-radius-sm);
+	border: 1px solid var(--xabia-border-subtle);
+}
+
+.xabia-wrapper.xabia-page-addons .xabia-addons-wp-intro__actions {
+	margin: 20px 0 0;
+}
+
+.xabia-wrapper.xabia-admin-app .xabia-wallet-pack-card--pill{
+	background:#fff!important;border:1px solid var(--xabia-border-subtle,#dadce0);
+	border-radius:12px;border-top:3px solid var(--xabia-magenta-soft);
+	box-shadow:0 1px 2px rgba(60,64,67,.06);
+}
+
+.xabia-wrapper.xabia-admin-app .xabia-wallet-pack-card {
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+	padding: 24px 26px;
+	border-top: 3px solid var(--xabia-magenta-soft);
+	transition: box-shadow 0.2s ease, border-color 0.2s ease;
+}
+
+.xabia-wrapper.xabia-admin-app .xabia-wallet-pack-card:hover {
+	box-shadow: var(--xabia-shadow-hover);
+}
+
+.xabia-wrapper.xabia-admin-app .xabia-wallet-pack-card__name {
+	margin: 0;
+	font-size: 17px;
+	font-weight: 500;
+	color: var(--xabia-text);
+}
+
+.xabia-wrapper.xabia-admin-app .xabia-wallet-pack-card__price {
+	font-size: 1.75rem;
+	font-weight: 600;
+	color: var(--xabia-text);
+	letter-spacing: -0.02em;
+}
+
+.xabia-wrapper.xabia-admin-app .xabia-wallet-pack-card__tokens {
+	margin: 0;
+	font-size: 13px;
+	color: var(--xabia-text-secondary);
+}
+
+.xabia-wrapper.xabia-admin-app .xabia-wallet-pack-card__conversations {
+	margin: 0 0 8px;
+	font-size: 12px;
+	line-height: 1.35;
+	color: var(--xabia-text-secondary);
+	opacity: 0.9;
+}
+
+.xabia-wrapper.xabia-admin-app .xabia-wallet-pack-card .button {
+	margin-top: auto;
+	align-self: flex-start;
+}
+
+/* Addons grid */
+.xabia-wrapper.xabia-admin-app .xabia-addon-grid {
+	display: grid;
+	grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+	gap: 20px;
+	margin-bottom: 28px;
+}
+
+.xabia-wrapper.xabia-admin-app .xabia-addon-card {
+	display: flex;
+	flex-direction: column;
+	gap: 10px;
+	padding: 24px 26px;
+	margin-bottom: 0;
+	transition: box-shadow 0.2s ease, border-color 0.2s ease;
+}
+
+.xabia-wrapper.xabia-admin-app .xabia-addon-card--active {
+	border-color: var(--xabia-green-border);
+	box-shadow: 0 0 0 1px var(--xabia-green-soft);
+}
+
+.xabia-wrapper.xabia-admin-app .xabia-addon-card--installed {
+	border-left: 4px solid #f9ab00;
+}
+
+.xabia-wrapper.xabia-admin-app .xabia-addon-card--available {
+	opacity: 0.92;
+	filter: grayscale(0.06);
+}
+
+.xabia-wrapper.xabia-admin-app .xabia-addon-card__head {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: flex-start;
+	justify-content: space-between;
+	gap: 10px;
+}
+
+.xabia-wrapper.xabia-admin-app .xabia-addon-card__title {
+	margin: 0;
+	font-size: 17px;
+	font-weight: 500;
+	color: var(--xabia-text);
+	line-height: 1.3;
+	flex: 1;
+	min-width: 0;
+}
+
+.xabia-wrapper.xabia-admin-app .xabia-addon-card__badge {
+	display: inline-block;
+	font-size: 11px;
+	font-weight: 600;
+	padding: 4px 10px;
+	border-radius: 999px;
+	white-space: nowrap;
+	flex-shrink: 0;
+}
+
+.xabia-wrapper.xabia-admin-app .xabia-addon-card__badge--active {
+	background: var(--xabia-green-soft);
+	color: var(--xabia-green);
+	border: 1px solid var(--xabia-green-border);
+}
+
+.xabia-wrapper.xabia-admin-app .xabia-addon-card__badge--installed {
+	background: #fef7e0;
+	color: #b06000;
+	border: 1px solid #fce8b2;
+}
+
+.xabia-wrapper.xabia-admin-app .xabia-addon-card__badge--available {
+	background: #f1f3f4;
+	color: var(--xabia-text-secondary);
+	border: 1px solid var(--xabia-border-subtle);
+}
+
+.xabia-wrapper.xabia-admin-app .xabia-addon-card__desc {
+	margin: 0;
+	font-size: 13px;
+	color: var(--xabia-text-secondary);
+	line-height: 1.45;
+	flex: 1;
+}
+
+.xabia-wrapper.xabia-admin-app .xabia-addon-card__file {
+	margin: 0;
+}
+
+.xabia-wrapper.xabia-admin-app .xabia-addon-card__file code {
+	font-size: 11px;
+	word-break: break-all;
+	background: #f8f9fa;
+	padding: 6px 10px;
+	display: block;
+	border-radius: var(--xabia-radius-sm);
+	border: 1px solid var(--xabia-border-subtle);
+}
+
+.xabia-wrapper.xabia-admin-app .xabia-addon-card__actions {
+	margin-top: 8px;
+	padding-top: 14px;
+	border-top: 1px solid var(--xabia-border-subtle);
+}
+
+/* Xabia Central */
+.xabia-wrapper.xabia-admin-app .xabia-central-project-card .xabia-central-project-form__label {
+	display: block;
+	font-size: 13px;
+	font-weight: 500;
+	margin-bottom: 8px;
+	color: var(--xabia-text);
+}
+
+.xabia-wrapper.xabia-admin-app .xabia-central-nodes-card__inner {
+	padding: 28px 32px 0;
+}
+
+.xabia-wrapper.xabia-admin-app .xabia-central-nodes-card .xabia-table-scroll {
+	overflow-x: auto;
+	border-top: 1px solid var(--xabia-border-subtle);
+}
+
+.xabia-wrapper.xabia-admin-app table.xabia-table-elegant {
+	margin: 0;
+	border: none;
+	box-shadow: none;
+}
+
+.xabia-wrapper.xabia-admin-app table.xabia-table-elegant thead th {
+	font-size: 12px;
+	font-weight: 600;
+	text-transform: uppercase;
+	letter-spacing: 0.04em;
+	color: var(--xabia-text-secondary);
+	background: #fafafa;
+	padding: 14px 16px;
+	border-bottom: 1px solid var(--xabia-border-subtle);
+}
+
+.xabia-wrapper.xabia-admin-app table.xabia-table-elegant tbody td {
+	padding: 14px 16px;
+	vertical-align: middle;
+	font-size: 14px;
+}
+
+.xabia-wrapper.xabia-admin-app table.xabia-table-elegant tbody tr:nth-child(odd) {
+	background: #fcfcfd;
+}
+
+.xabia-wrapper.xabia-admin-app .xabia-table-elegant__actions {
+	white-space: nowrap;
+	text-align: right;
+}
+
+.xabia-wrapper.xabia-admin-app .xabia-table-elegant__actions .button {
+	margin-left: 6px;
+}
+
+.xabia-wrapper.xabia-admin-app .xabia-central-toolbar {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 10px;
+	padding: 20px 32px 12px;
+}
+
+.xabia-wrapper.xabia-admin-app .xabia-central-footnote {
+	margin: 0 32px 24px;
+	max-width: 820px;
+}
+
+.xabia-wrapper.xabia-admin-app .xabia-central-sync-feedback {
+	font-size: 13px;
+	margin-left: 4px;
+}
+
+.xabia-wrapper.xabia-admin-app .xabia-central-error {
+	color: #c62828;
+	font-size: 13px;
+}
+
+.xabia-wrapper.xabia-admin-app .xabia-central-endpoint-card .xabia-central-endpoint-url {
+	margin: 0;
+}
+
+.xabia-wrapper.xabia-admin-app .xabia-central-endpoint-card .xabia-central-endpoint-url code {
+	display: block;
+	padding: 14px 16px;
+	background: #f8f9fa;
+	border: 1px solid var(--xabia-border-subtle);
+	border-radius: var(--xabia-radius-sm);
+	font-size: 13px;
+	word-break: break-all;
+}
+
+.xabia-wrapper.xabia-admin-app .xabia-central-form-card .form-table th {
+	width: 200px;
+	padding-top: 16px;
+	font-weight: 500;
+	color: var(--xabia-text);
+}
+
+.xabia-wrapper.xabia-admin-app .xabia-central-form-card .form-table td {
+	padding-top: 16px;
+}
+
+.xabia-wrapper.xabia-admin-app .xabia-central-form-actions {
+	margin-top: 20px;
+	padding-top: 16px;
+	border-top: 1px solid var(--xabia-border-subtle);
+}
+
+/* Licencia: campo + botón mostrar/ocultar */
+.xabia-wrapper.xabia-admin-app .xabia-license-input-row {
+	display: flex;
+	align-items: stretch;
+	gap: 8px;
+	max-width: 720px;
+}
+
+.xabia-wrapper.xabia-admin-app .xabia-license-input-wrap {
+	flex: 1;
+	min-width: 0;
+}
+
+.xabia-wrapper.xabia-admin-app .xabia-toggle-license-visibility {
+	flex-shrink: 0;
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	min-width: 42px;
+	padding-left: 10px;
+	padding-right: 10px;
+}
+
+.xabia-wrapper.xabia-admin-app .xabia-toggle-license-visibility .dashicons {
+	width: 20px;
+	height: 20px;
+	font-size: 20px;
+	line-height: 1;
+	margin: 0;
+}
+
+.xabia-wrapper.xabia-admin-app .xabia-saved-license-reveal {
+	margin-top: 10px;
+	padding: 12px 14px;
+	background: #f8f9fa;
+	border: 1px solid var(--xabia-border-subtle);
+	border-radius: var(--xabia-radius-sm);
+	max-width: 720px;
+	word-break: break-all;
+}
+
+.xabia-wrapper.xabia-admin-app .xabia-saved-license-reveal code {
+	display: block;
+	font-size: 13px;
+	margin-bottom: 8px;
+	white-space: pre-wrap;
+}
+
+/* ——— Página Addons (suscripciones + lista WP) ——— */
+.xabia-wrapper.xabia-page-addons {
+	--xabia-polar-blue: #2170b0;
+	--xabia-polar-blue-hover: #1a5a90;
+	--xabia-cta-green: #00a368;
+	--xabia-cta-green-hover: #00915a;
+	--xabia-addon-bar-inactive: #d0d4d8;
+	font-family: "Plus Jakarta Sans", "Google Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen-Sans, Ubuntu, Cantarell, "Helvetica Neue", sans-serif;
+	padding-bottom: 40px;
+}
+
+/* Cabecera: barra superior magenta como el listado de agentes */
+.xabia-wrapper.xabia-page-addons .xabia-admin-header--addons {
+	border-bottom: none;
+	border-top: 3px solid var(--xabia-magenta);
+	box-shadow: var(--xabia-shadow);
+}
+
+.xabia-wrapper.xabia-page-addons .xabia-addons-polar-panel .xabia-card-title,
+.xabia-wrapper.xabia-page-addons .xabia-addons-catalog-panel .xabia-card-title {
+	margin-bottom: 8px;
+	font-size: 20px;
+	font-weight: 600;
+	letter-spacing: -0.02em;
+}
+
+.xabia-wrapper.xabia-page-addons .xabia-addons-polar-panel,
+.xabia-wrapper.xabia-page-addons .xabia-addons-catalog-panel {
+	padding: 28px 32px 32px;
+	margin-bottom: 24px;
+}
+
+.xabia-wrapper.xabia-page-addons .xabia-addons-panel-hint {
+	margin: 0 0 20px;
+	font-size: 13px;
+	line-height: 1.55;
+	color: var(--xabia-text-secondary);
+	max-width: 760px;
+}
+
+.xabia-wrapper.xabia-page-addons .xabia-addons-panel-toolbar {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 12px 16px;
+	margin: 0 0 28px;
+	padding-bottom: 4px;
+}
+
+.xabia-wrapper.xabia-page-addons .xabia-addons-panel-toolbar--catalog {
+	margin-bottom: 24px;
+}
+
+.xabia-wrapper.xabia-page-addons .xabia-btn-addons-cta {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	min-height: 40px;
+	padding: 0 22px;
+	border: none;
+	border-radius: 10px;
+	font-size: 14px;
+	font-weight: 600;
+	font-family: inherit;
+	line-height: 1.2;
+	color: #fff !important;
+	background: var(--xabia-cta-green) !important;
+	box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
+	cursor: pointer;
+	text-decoration: none !important;
+	transition: background 0.15s ease, box-shadow 0.15s ease, transform 0.1s ease;
+}
+
+.xabia-wrapper.xabia-page-addons .xabia-btn-addons-cta:hover,
+.xabia-wrapper.xabia-page-addons .xabia-btn-addons-cta:focus {
+	background: var(--xabia-cta-green-hover) !important;
+	color: #fff !important;
+	box-shadow: 0 2px 6px rgba(0, 99, 74, 0.18);
+}
+
+.xabia-wrapper.xabia-page-addons .xabia-btn-addons-cta:disabled {
+	opacity: 0.65;
+	cursor: not-allowed;
+	box-shadow: none;
+}
+
+.xabia-wrapper.xabia-page-addons .xabia-btn-addons-secondary {
+	display: inline-flex;
+	align-items: center;
+	min-height: 40px;
+	padding: 0 18px;
+	border-radius: 10px;
+	font-size: 14px;
+	font-weight: 500;
+	color: var(--xabia-text) !important;
+	background: #fff !important;
+	border: 1px solid var(--xabia-border) !important;
+	text-decoration: none !important;
+	box-shadow: 0 1px 2px rgba(60, 64, 67, 0.06);
+	transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.xabia-wrapper.xabia-page-addons .xabia-btn-addons-secondary:hover,
+.xabia-wrapper.xabia-page-addons .xabia-btn-addons-secondary:focus {
+	border-color: #bdc1c6 !important;
+	background: #f8f9fa !important;
+	color: var(--xabia-text) !important;
+}
+
+.xabia-wrapper.xabia-page-addons .xabia-addons-catalog-empty {
+	margin: 0;
+	font-size: 14px;
+	color: var(--xabia-text-secondary);
+}
+
+.xabia-wrapper.xabia-page-addons .xabia-addon-subscription-grid {
+	display: grid;
+	grid-template-columns: repeat(auto-fill, minmax(min(100%, 320px), 1fr));
+	gap: 20px;
+	margin: 0;
+	padding-top: 4px;
+}
+
+/* Tarjeta Polar: acento izquierdo (como catálogo), sin barra superior gruesa */
+.xabia-wrapper.xabia-page-addons .xabia-addon-sub-card.xabia-card {
+	position: relative;
+	margin-bottom: 0;
+	padding: 24px 24px 28px 28px;
+	overflow: hidden;
+	display: flex;
+	flex-direction: column;
+	gap: 0;
+	transition: box-shadow 0.2s ease, border-color 0.2s ease;
+	border: 1px solid var(--xabia-border);
+	border-radius: var(--xabia-radius-sm);
+	box-shadow: 0 1px 2px rgba(60, 64, 67, 0.08);
+	border-top: 1px solid var(--xabia-border);
+	border-left: 4px solid var(--xabia-addon-bar-inactive);
+	min-height: 0;
+}
+
+.xabia-wrapper.xabia-page-addons .xabia-addon-sub-card--active.xabia-card {
+	border-left-color: var(--xabia-cta-green);
+	box-shadow: 0 1px 3px rgba(0, 163, 104, 0.12);
+}
+
+.xabia-wrapper.xabia-page-addons .xabia-addon-sub-card--inactive.xabia-card {
+	border-left-color: var(--xabia-addon-bar-inactive);
+}
+
+.xabia-wrapper.xabia-page-addons .xabia-addon-sub-card.xabia-card:hover {
+	box-shadow: var(--xabia-shadow-hover);
+	transform: none;
+}
+
+/* Badge Hub: más visible (píldora), solo dentro de tarjetas de suscripción */
+.xabia-wrapper.xabia-page-addons .xabia-addon-sub-card .xabia-addon-status-badge {
+	top: 22px;
+	right: 26px;
+	padding: 8px 16px;
+	font-size: 12px;
+	font-weight: 700;
+	letter-spacing: 0.04em;
+	box-shadow: 0 2px 8px rgba(5, 150, 105, 0.12);
+	z-index: 3;
+}
+
+.xabia-wrapper.xabia-page-addons .xabia-addon-sub-card .xabia-addon-status-badge--inactive {
+	box-shadow: 0 2px 8px rgba(185, 28, 28, 0.1);
+}
+
+.xabia-wrapper.xabia-page-addons .xabia-addon-sub-card .xabia-addon-status-badge .dashicons {
+	font-size: 16px;
+	width: 16px;
+	height: 16px;
+}
+
+@media (max-width: 600px) {
+	.xabia-wrapper.xabia-page-addons .xabia-addon-sub-card .xabia-addon-status-badge {
+		top: 16px;
+		right: 18px;
+		padding: 6px 12px;
+		font-size: 11px;
+	}
+}
+
+.xabia-wrapper.xabia-admin-app .xabia-addon-status-badge {
+	position: absolute;
+	top: 14px;
+	right: 18px;
+	z-index: 2;
+	display: inline-flex;
+	align-items: center;
+	gap: 5px;
+	padding: 5px 11px;
+	border-radius: 999px;
+	font-size: 11px;
+	font-weight: 700;
+	letter-spacing: 0.02em;
+	text-transform: uppercase;
+	box-shadow: 0 1px 3px rgba(60, 64, 67, 0.12);
+}
+
+.xabia-wrapper.xabia-admin-app .xabia-addon-status-badge .dashicons {
+	font-size: 14px;
+	width: 14px;
+	height: 14px;
+	line-height: 1;
+}
+
+.xabia-wrapper.xabia-admin-app .xabia-addon-status-badge--active {
+	background: var(--xabia-green-soft);
+	color: var(--xabia-green);
+	border: 1px solid var(--xabia-green-border);
+}
+
+.xabia-wrapper.xabia-admin-app .xabia-addon-status-badge--inactive {
+	background: #fef2f2;
+	color: #b91c1c;
+	border: 1px solid #fecaca;
+}
+
+.xabia-wrapper.xabia-admin-app .xabia-addon-sub-card__reason {
+	display: inline-block;
+	margin-right: 6px;
+	font-weight: 600;
+	color: #b45309;
+}
+
+@media (max-width: 600px) {
+	.xabia-wrapper.xabia-admin-app .xabia-addon-status-badge {
+		top: 10px;
+		right: 12px;
+		font-size: 10px;
+		padding: 4px 8px;
+	}
+}
+
+	margin: 0 0 20px;
+	padding: 14px 20px;
+	font-size: 13px;
+	font-weight: 500;
+	color: #b45309;
+	background: linear-gradient(90deg, #fffbeb 0%, #fef3c7 100%);
+	border: 1px solid #fcd34d;
+	border-radius: var(--xabia-radius-sm);
+}
+
+.xabia-wrapper.xabia-page-addons .xabia-addon-sub-card__renewal-banner--urgent {
+	color: #991b1b;
+	background: linear-gradient(90deg, #fef2f2 0%, #fee2e2 100%);
+	border-color: #f87171;
+	font-weight: 600;
+}
+
+.xabia-wrapper.xabia-page-addons .xabia-addon-sub-card__top {
+	position: relative;
+	display: flex;
+	align-items: flex-start;
+	gap: 16px;
+	padding: 0 96px 8px 0;
+}
+
+.xabia-wrapper.xabia-page-addons .xabia-addon-sub-card__icon {
+	flex-shrink: 0;
+	width: 44px;
+	height: 44px;
+	border-radius: 12px;
+	background: var(--xabia-magenta-soft);
+	color: var(--xabia-magenta);
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	box-shadow: 0 1px 2px rgba(194, 24, 91, 0.1);
+}
+
+.xabia-wrapper.xabia-page-addons .xabia-addon-sub-card--active .xabia-addon-sub-card__icon {
+	background: var(--xabia-green-soft);
+	color: var(--xabia-green);
+	box-shadow: 0 1px 3px rgba(5, 150, 105, 0.15);
+}
+
+.xabia-wrapper.xabia-page-addons .xabia-addon-sub-card__title {
+	margin: 0;
+	font-size: 17px;
+	font-weight: 600;
+	color: var(--xabia-text);
+	letter-spacing: -0.01em;
+	line-height: 1.3;
+}
+
+.xabia-wrapper.xabia-page-addons .xabia-addon-sub-card__price {
+	margin: 8px 0 0;
+	font-size: 15px;
+	font-weight: 600;
+	color: var(--xabia-polar-blue);
+}
+
+.xabia-wrapper.xabia-page-addons .xabia-addon-sub-card__consistency-hint {
+	margin: 16px 0 0;
+	padding: 14px 18px;
+	font-size: 13px;
+	line-height: 1.55;
+	color: #92400e;
+	background: linear-gradient(90deg, #fffbeb 0%, #fef9c3 100%);
+	border: 1px solid #fcd34d;
+	border-radius: var(--xabia-radius-sm);
+	max-width: 52em;
+}
+
+.xabia-wrapper.xabia-page-addons .xabia-addon-sub-card__wp-prefix {
+	font-weight: 600;
+	color: var(--xabia-text);
+}
+
+.xabia-wrapper.xabia-page-addons .xabia-addon-sub-card__desc {
+	margin: 0;
+	padding: 20px 0 0;
+	font-size: 14px;
+	line-height: 1.6;
+	color: var(--xabia-text-secondary);
+	max-width: 52em;
+}
+
+.xabia-wrapper.xabia-page-addons .xabia-addon-sub-card__wp {
+	margin: 0;
+	padding: 18px 0 0;
+	font-size: 13px;
+	line-height: 1.55;
+	color: var(--xabia-text-secondary);
+}
+
+.xabia-wrapper.xabia-page-addons .xabia-addon-sub-card__wp-file code {
+	font-size: 11px;
+	background: var(--xabia-page-bg);
+	padding: 4px 8px;
+	border-radius: 6px;
+	border: 1px solid var(--xabia-border-subtle);
+	margin-left: 8px;
+}
+
+.xabia-wrapper.xabia-page-addons .xabia-addon-sub-card__wp-state--ok {
+	color: var(--xabia-green);
+	font-weight: 600;
+}
+
+.xabia-wrapper.xabia-page-addons .xabia-addon-sub-card__wp-state--no {
+	color: #b06000;
+	font-weight: 600;
+}
+
+.xabia-wrapper.xabia-page-addons .xabia-addon-sub-card__form {
+	display: flex;
+	flex-direction: column;
+	gap: 0;
+	margin: 0;
+	padding: 28px 0 0;
+	margin-top: auto;
+}
+
+.xabia-wrapper.xabia-page-addons .xabia-addon-sub-card__panel {
+	background: linear-gradient(165deg, #f8fafc 0%, #f1f5f9 100%);
+	border: 1px solid var(--xabia-border-subtle);
+	border-radius: var(--xabia-radius);
+	padding: 26px 28px;
+	display: flex;
+	flex-direction: column;
+	gap: 16px;
+	box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.75);
+}
+
+.xabia-wrapper.xabia-page-addons .xabia-addon-sub-card__field-hint {
+	margin: 4px 0 0;
+	font-size: 13px;
+	color: var(--xabia-text-secondary);
+	line-height: 1.55;
+	max-width: 48em;
+}
+
+.xabia-wrapper.xabia-page-addons .xabia-addon-sub-card__label {
+	font-size: 13px;
+	font-weight: 600;
+	color: var(--xabia-text);
+}
+
+.xabia-wrapper.xabia-page-addons .xabia-addon-sub-card__input {
+	width: 100%;
+	border: 1px solid var(--xabia-border);
+	border-radius: var(--xabia-radius-sm);
+	padding: 12px 14px;
+	font-size: 14px;
+	background: var(--xabia-card-bg);
+	font-family: inherit;
+	line-height: 1.45;
+}
+
+.xabia-wrapper.xabia-page-addons .xabia-addon-sub-card__input:focus {
+	border-color: var(--xabia-polar-blue);
+	box-shadow: 0 0 0 2px rgba(33, 112, 176, 0.2);
+	outline: none;
+}
+
+.xabia-wrapper.xabia-page-addons .xabia-addon-sub-card__status {
+	display: flex;
+	align-items: flex-start;
+	gap: 10px;
+	font-size: 14px;
+	font-weight: 500;
+	line-height: 1.5;
+	color: var(--xabia-text-secondary);
+	padding-top: 4px;
+}
+
+.xabia-wrapper.xabia-page-addons .xabia-addon-sub-card__status--ok {
+	color: var(--xabia-green);
+}
+
+.xabia-wrapper.xabia-page-addons .xabia-addon-sub-card__status--bad {
+	color: #c5221f;
+}
+
+.xabia-wrapper.xabia-page-addons .xabia-addon-sub-card__dot {
+	width: 10px;
+	height: 10px;
+	border-radius: 999px;
+	flex-shrink: 0;
+	margin-top: 4px;
+}
+
+.xabia-wrapper.xabia-page-addons .xabia-addon-sub-card__dot--ok {
+	background: var(--xabia-green);
+}
+
+.xabia-wrapper.xabia-page-addons .xabia-addon-sub-card__dot--bad {
+	background: #ea4335;
+}
+
+.xabia-wrapper.xabia-page-addons .xabia-addon-sub-card__actions {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 12px 14px;
+	margin-top: 8px;
+	padding-top: 4px;
+}
+
+.xabia-wrapper.xabia-page-addons .xabia-btn-polar {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	min-height: 40px;
+	padding: 10px 20px;
+	border-radius: var(--xabia-radius-sm);
+	font-size: 13px;
+	font-weight: 600;
+	text-decoration: none;
+	border: none;
+	cursor: pointer;
+	transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
+	line-height: 1.35;
+	font-family: inherit;
+}
+
+.xabia-wrapper.xabia-page-addons .xabia-btn-polar--primary {
+	background: var(--xabia-cta-green);
+	color: #fff;
+	box-shadow: 0 1px 2px rgba(0, 99, 74, 0.2);
+}
+
+.xabia-wrapper.xabia-page-addons .xabia-btn-polar--primary:hover,
+.xabia-wrapper.xabia-page-addons .xabia-btn-polar--primary:focus {
+	background: var(--xabia-cta-green-hover);
+	color: #fff;
+}
+
+.xabia-wrapper.xabia-page-addons .xabia-btn-polar--secondary {
+	background: var(--xabia-card-bg);
+	color: var(--xabia-text);
+	border: 1px solid var(--xabia-border);
+}
+
+.xabia-wrapper.xabia-page-addons .xabia-btn-polar--secondary:hover {
+	border-color: var(--xabia-polar-blue);
+	color: var(--xabia-polar-blue);
+	background: #f8fbfd;
+}
+
+.xabia-wrapper.xabia-page-addons .xabia-btn-polar--ghost {
+	background: transparent;
+	color: var(--xabia-polar-blue);
+	border: 1px solid var(--xabia-border);
+}
+
+.xabia-wrapper.xabia-page-addons .xabia-btn-polar--ghost:hover {
+	border-color: var(--xabia-polar-blue);
+	background: #f8fbfd;
+}
+
+.xabia-wrapper.xabia-page-addons .xabia-addon-sub-card__portal-link {
+	font-size: 12px;
+	color: var(--xabia-polar-blue);
+	text-decoration: none;
+	font-weight: 500;
+	border-bottom: 1px solid rgba(33, 112, 176, 0.35);
+	width: 100%;
+	padding-top: 4px;
+}
+
+.xabia-wrapper.xabia-page-addons .xabia-addon-sub-card__portal-link:hover {
+	border-bottom-color: var(--xabia-polar-blue);
+}
+
+.xabia-wrapper.xabia-page-addons .xabia-addons-wp-extensions .xabia-addons-wp-list {
+	list-style: none;
+	margin: 0;
+	padding: 0;
+	display: flex;
+	flex-direction: column;
+	gap: 10px;
+}
+
+.xabia-wrapper.xabia-page-addons .xabia-addons-wp-list li {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 8px 12px;
+	padding: 14px 16px;
+	background: var(--xabia-page-bg);
+	border: 1px solid var(--xabia-border-subtle);
+	border-radius: var(--xabia-radius-sm);
+	font-size: 13px;
+	color: var(--xabia-text-secondary);
+}
+
+.xabia-wrapper.xabia-page-addons .xabia-addons-wp-list li strong {
+	color: var(--xabia-text);
+	font-weight: 500;
+}
+
+.xabia-wrapper.xabia-page-addons .xabia-addons-wp-list li code {
+	font-size: 11px;
+	background: var(--xabia-card-bg);
+	padding: 3px 8px;
+	border-radius: 4px;
+	border: 1px solid var(--xabia-border-subtle);
+	flex: 1 1 200px;
+	min-width: 0;
+	word-break: break-all;
+}
+
+.xabia-wrapper.xabia-page-addons .xabia-addons-wp-list__state {
+	margin: 0 4px 0 8px;
+	font-size: 11px;
+	font-weight: 600;
+	text-transform: uppercase;
+	letter-spacing: 0.04em;
+	color: var(--xabia-text-secondary);
+}
+
+.xabia-addons-notice {
+	margin: 12px 0 0 !important;
+}
+
+/* Smart QR modal (admin) */
+.xabia-smart-qr-modal {
+	position: fixed;
+	inset: 0;
+	z-index: 100100;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	padding: 24px;
+	box-sizing: border-box;
+}
+
+.xabia-smart-qr-modal__backdrop {
+	position: absolute;
+	inset: 0;
+	background: rgba(15, 23, 42, 0.55);
+}
+
+.xabia-smart-qr-modal__panel {
+	position: relative;
+	z-index: 1;
+	width: 100%;
+	max-width: 520px;
+	max-height: calc(100vh - 48px);
+	overflow: auto;
+	background: #fff;
+	border-radius: 12px;
+	box-shadow: 0 20px 50px rgba(15, 23, 42, 0.25);
+	padding: 24px 24px 20px;
+	box-sizing: border-box;
+}
+
+.xabia-smart-qr-modal__close {
+	position: absolute;
+	top: 12px;
+	right: 12px;
+	border: none;
+	background: transparent;
+	cursor: pointer;
+	color: #64748b;
+	width: 32px;
+	height: 32px;
+	padding: 0;
+}
+
+.xabia-smart-qr-modal__close:hover {
+	color: #0f172a;
+}
+
+.xabia-smart-qr-modal__title {
+	margin: 0 32px 8px 0;
+	font-size: 1.15rem;
+	line-height: 1.35;
+}
+
+.xabia-smart-qr-modal__subtitle {
+	margin: 0 0 16px;
+	word-break: break-all;
+	font-size: 12px;
+}
+
+.xabia-smart-qr-modal__qr-wrap {
+	display: flex;
+	justify-content: center;
+	margin: 0 0 16px;
+	padding: 12px;
+	background: #f8fafc;
+	border: 1px solid #e2e8f0;
+	border-radius: 8px;
+}
+
+.xabia-smart-qr-modal__qr {
+	min-height: 280px;
+	min-width: 280px;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	color: #64748b;
+}
+
+.xabia-smart-qr-modal__qr img {
+	display: block;
+	max-width: 100%;
+	height: auto;
+}
+
+.xabia-smart-qr-modal__url-row code {
+	display: inline-block;
+	margin-top: 6px;
+	word-break: break-all;
+	font-size: 12px;
+}
+
+.xabia-smart-qr-modal__actions {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 8px;
+	margin-top: 16px;
+}
+
+/* —— Filas visuales (expansiones / relaciones) — sin JSON —— */
+.xabia-wrapper.xabia-admin-app .xabia-visual-block {
+	margin-top: 4px;
+}
+
+.xabia-wrapper.xabia-admin-app .xabia-visual-rows {
+	display: flex;
+	flex-direction: column;
+	gap: 10px;
+	margin: 12px 0 8px;
+}
+
+.xabia-wrapper.xabia-admin-app .xabia-visual-row {
+	position: relative;
+	display: flex;
+	align-items: flex-start;
+	gap: 8px;
+	padding: 14px 40px 14px 14px;
+	background: #f8fafc;
+	border: 1px solid #e2e8f0;
+	border-radius: 10px;
+}
+
+.xabia-wrapper.xabia-admin-app .xabia-visual-row__grid {
+	flex: 1;
+	display: grid;
+	gap: 12px;
+	min-width: 0;
+}
+
+.xabia-wrapper.xabia-admin-app .xabia-kw-row__grid {
+	grid-template-columns: minmax(140px, 0.35fr) minmax(200px, 1fr);
+}
+
+.xabia-wrapper.xabia-admin-app .xabia-rel-row__grid {
+	grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+}
+
+.xabia-wrapper.xabia-admin-app .xabia-rel-row__grid--map {
+	grid-template-columns: minmax(140px, 1fr) auto minmax(140px, 1fr) minmax(180px, 1.4fr);
+	align-items: end;
+}
+
+.xabia-wrapper.xabia-admin-app .xabia-rel-arrow {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	padding-bottom: 8px;
+	color: #94a3b8;
+	font-size: 18px;
+	font-weight: 600;
+}
+
+.xabia-wrapper.xabia-admin-app .xabia-rel-actions {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 8px;
+	align-items: center;
+}
+
+.xabia-wrapper.xabia-admin-app .xabia-visual-field {
+	display: flex;
+	flex-direction: column;
+	gap: 4px;
+	margin: 0;
+	min-width: 0;
+}
+
+.xabia-wrapper.xabia-admin-app .xabia-visual-field__label {
+	font-size: 12px;
+	font-weight: 600;
+	color: #475569;
+	letter-spacing: 0.01em;
+}
+
+.xabia-wrapper.xabia-admin-app .xabia-visual-field input.widefat,
+.xabia-wrapper.xabia-admin-app .xabia-visual-field select.widefat {
+	max-width: 100%;
+	border-radius: 6px;
+	border-color: #cbd5e1;
+	background: #fff;
+}
+
+.xabia-wrapper.xabia-admin-app .xabia-visual-row__remove {
+	position: absolute;
+	top: 8px;
+	right: 10px;
+	border: 0;
+	background: transparent;
+	color: #94a3b8;
+	font-size: 22px;
+	line-height: 1;
+	cursor: pointer;
+	padding: 4px 8px;
+	text-decoration: none;
+}
+
+.xabia-wrapper.xabia-admin-app .xabia-visual-row__remove:hover {
+	color: #b91c1c;
+}
+
+.xabia-wrapper.xabia-admin-app .xabia-rel-meta-key-field {
+	position: relative;
+}
+
+.xabia-wrapper.xabia-admin-app .xabia-rel-meta-key-select:disabled {
+	opacity: 0.75;
+	cursor: wait;
+}
+
+.xabia-wrapper.xabia-admin-app .xabia-rel-meta-key-hint {
+	font-size: 12px;
+	color: #646970;
+}
+
+	flex-direction: column;
+	align-items: stretch;
+	padding-right: 40px;
+}
+
+.xabia-wrapper.xabia-admin-app .xabia-rel-db-advanced {
+	margin: 10px 0 0;
+	padding: 0;
+	border: 1px dashed #cbd5e1;
+	border-radius: 8px;
+	background: #fff;
+}
+
+.xabia-wrapper.xabia-admin-app .xabia-rel-db-advanced[hidden] {
+	display: none !important;
+}
+
+.xabia-wrapper.xabia-admin-app .xabia-rel-db-advanced > summary {
+	cursor: pointer;
+	list-style: none;
+	padding: 10px 12px;
+	font-size: 12px;
+	font-weight: 600;
+	color: #64748b;
+	user-select: none;
+}
+
+.xabia-wrapper.xabia-admin-app .xabia-rel-db-advanced > summary::-webkit-details-marker {
+	display: none;
+}
+
+.xabia-wrapper.xabia-admin-app .xabia-rel-db-advanced > summary::before {
+	content: '▸';
+	display: inline-block;
+	margin-right: 6px;
+	color: #94a3b8;
+}
+
+.xabia-wrapper.xabia-admin-app .xabia-rel-db-advanced[open] > summary::before {
+	content: '▾';
+}
+
+.xabia-wrapper.xabia-admin-app .xabia-rel-db-advanced__body {
+	padding: 0 12px 12px;
+	grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+}
+
+@media (max-width: 782px) {
+	.xabia-wrapper.xabia-admin-app .xabia-kw-row__grid,
+	.xabia-wrapper.xabia-admin-app .xabia-rel-row__grid,
+	.xabia-wrapper.xabia-admin-app .xabia-rel-row__grid--map {
+		grid-template-columns: 1fr;
+	}
+	.xabia-wrapper.xabia-admin-app .xabia-rel-arrow {
+		display: none;
+	}
+}
+

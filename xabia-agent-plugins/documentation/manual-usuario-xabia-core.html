@@ -1,0 +1,1217 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Manual de usuario — Xabia Agent Core</title>
+<style>
+/**
+ * Estilos HTML / impresión / PDF — Manual de usuario Xabia
+ * Acento principal: azul marca (#2170b0). Grises tipo Material.
+ */
+
+@page {
+  margin: 16mm 17mm 18mm 17mm;
+}
+
+html {
+  font-size: 10.5pt;
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
+}
+
+body {
+  font-family:
+    -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  color: #202124;
+  line-height: 1.55;
+  max-width: 100%;
+  margin: 0;
+  padding: 0;
+}
+
+/* Marca — barra superior en la primera página vía h1 */
+h1 {
+  font-size: 1.85rem;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  color: #2170b0;
+  margin: 0 0 0.75rem;
+  padding: 0.85rem 0 0.65rem;
+  border-top: 6px solid #2170b0;
+  border-bottom: 2px solid #e8f0fe;
+  page-break-after: avoid;
+}
+
+h2 {
+  font-size: 1.28rem;
+  font-weight: 600;
+  color: #185a94;
+  margin: 1.6rem 0 0.65rem;
+  padding: 0.35rem 0 0.35rem 0.65rem;
+  border-left: 4px solid #2170b0;
+  background: linear-gradient(90deg, #e3f0fa 0%, transparent 100%);
+  page-break-after: avoid;
+}
+
+h3 {
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: #144a78;
+  margin: 1.25rem 0 0.5rem;
+  page-break-after: avoid;
+}
+
+h4,
+h5,
+h6 {
+  font-size: 1rem;
+  font-weight: 600;
+  color: #3c4043;
+  margin: 1rem 0 0.35rem;
+  page-break-after: avoid;
+}
+
+p {
+  margin: 0.5rem 0 0.65rem;
+  orphans: 3;
+  widows: 3;
+}
+
+strong {
+  color: #144a78;
+  font-weight: 600;
+}
+
+hr {
+  border: none;
+  height: 1px;
+  background: linear-gradient(90deg, #2170b0, #64b5f6, #e8eaed);
+  margin: 1.75rem 0;
+  opacity: 0.9;
+}
+
+ul,
+ol {
+  margin: 0.5rem 0 0.75rem;
+  padding-left: 1.35rem;
+}
+
+li {
+  margin: 0.25rem 0;
+}
+
+li::marker {
+  color: #2170b0;
+}
+
+blockquote {
+  margin: 1rem 0;
+  padding: 0.65rem 1rem;
+  border-left: 4px solid #2170b0;
+  background: #e8f4fc;
+  color: #3c4043;
+  font-size: 0.98em;
+}
+
+blockquote p {
+  margin: 0.35rem 0;
+}
+
+code {
+  font-family: ui-monospace, "Cascadia Code", "SF Mono", Menlo, Consolas, monospace;
+  font-size: 0.88em;
+  background: #e8f4fc;
+  border: 1px solid #c5dae8;
+  border-radius: 4px;
+  padding: 0.12em 0.4em;
+  color: #144a78;
+}
+
+pre {
+  font-family: ui-monospace, "Cascadia Code", "SF Mono", Menlo, Consolas, monospace;
+  font-size: 0.82rem;
+  line-height: 1.45;
+  background: #fafafa;
+  border: 1px solid #dadce0;
+  border-radius: 8px;
+  padding: 12px 14px;
+  overflow-x: auto;
+  page-break-inside: avoid;
+}
+
+pre code {
+  background: none;
+  border: none;
+  padding: 0;
+  color: #202124;
+  font-size: inherit;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 1rem 0;
+  font-size: 0.95rem;
+  page-break-inside: avoid;
+}
+
+th,
+td {
+  border: 1px solid #dadce0;
+  padding: 8px 10px;
+  text-align: left;
+  vertical-align: top;
+}
+
+th {
+  background: #e3f0fa;
+  color: #144a78;
+  font-weight: 600;
+}
+
+tr:nth-child(even) td {
+  background: #fafafa;
+}
+
+a {
+  color: #2170b0;
+  text-decoration: none;
+}
+
+a:hover {
+  text-decoration: underline;
+}
+
+@media print {
+  a[href^="http"]::after {
+    content: "";
+  }
+
+  a[href]::after {
+    content: none !important;
+  }
+}
+
+img {
+  max-width: 100%;
+  height: auto;
+  border-radius: 6px;
+}
+
+img[alt="Xabia"] {
+  height: 42px;
+  width: auto;
+  margin: 0 0 1rem;
+  display: block;
+}
+
+/* Cierre institucional (bloque final acordado) */
+.manual-pdf-cierre {
+  margin-top: 2rem;
+  padding: 1.25rem 1.1rem;
+  border: 1px solid #c5dae8;
+  border-radius: 8px;
+  border-top: 4px solid #2170b0;
+  background: linear-gradient(180deg, #f4f9fc 0%, #fff 45%);
+  page-break-before: always;
+}
+
+.manual-pdf-cierre h2 {
+  margin-top: 0;
+  color: #2170b0;
+  border-left-color: #2170b0;
+  background: linear-gradient(90deg, #e3f0fa 0%, transparent 100%);
+}
+</style>
+</head>
+<body>
+<h1>Manual de usuario — Xabia Agent Core</h1>
+<blockquote>
+<p><strong>Versión del producto:</strong> Xabia Agent Core <strong>v1.0.201</strong> (agosto 2026)<br><strong>Índice de manuales:</strong> <a href="https://xabia.ai/docs/">https://xabia.ai/docs/</a><br><strong>PDF en línea:</strong> <a href="https://xabia.ai/docs/manual-usuario-xabia-core.pdf">https://xabia.ai/docs/manual-usuario-xabia-core.pdf</a><br><strong>HTML en línea:</strong> <a href="https://xabia.ai/docs/manual-usuario-xabia-core.html">https://xabia.ai/docs/manual-usuario-xabia-core.html</a></p>
+</blockquote>
+<h2>Guía rápida de instalación</h2>
+<ol>
+<li>Descargue el ZIP de <strong>Xabia Agent Core</strong> (<code>xabia-agent-core-1.0.201.zip</code> o paquete retail equivalente).</li>
+<li>En WordPress, vaya a <strong>Plugins → Añadir nuevo → Subir plugin</strong>, seleccione el ZIP y pulse <strong>Instalar ahora → Activar</strong>.</li>
+<li>Abra <strong>Xabia Agent</strong> y configure <strong>Conexión a la IA</strong>: pegue la licencia <code>XABIA--…</code>, elija <strong>Xabia Cloud</strong> (recomendado) o <strong>Infraestructura propia</strong>, y guarde.</li>
+<li>Cree un agente desde <strong>Nuevo agente</strong>, escriba nombre, saludo e instrucciones básicas.</li>
+<li>Elija una <strong>fuente de información</strong> (CSV, SQL, addon o multi-fuente), pulse <strong>Conectar / Mapear</strong> cuando proceda y guarde el agente.</li>
+<li>Pulse <strong>Sincronizar datos</strong> y, si usa búsqueda vectorial, <strong>Entrenar IA</strong>.</li>
+<li>Publique el agente con el shortcode <code>[xabia_agent id=&quot;ID_DEL_AGENTE&quot;]</code> o active la interfaz nativa desde <strong>Apariencia → Mostrar en el sitio sin shortcode</strong>.</li>
+<li>Pruebe en <strong>Playground</strong> y en una página real antes de abrirlo al público.</li>
+</ol>
+<p><strong>Actualización desde una versión anterior:</strong> suba el nuevo ZIP desde <strong>Plugins</strong>, sustituya la versión instalada y conserve la configuración existente. Si usa <code>/xabia-box/</code>, visite <strong>Ajustes → Enlaces permanentes → Guardar</strong> tras actualizar. Tras instalar <strong>1.0.72+</strong> con WPML, visite una página del front para que se sincronicen las traducciones de la UI del chat; vacíe caché (LiteSpeed, etc.). Con fuente <strong>SQL remota</strong>, tras actualizar a <strong>1.0.164+</strong> vuelva a <strong>Sincronizar</strong> (y enviar al Hub si aplica) para regenerar las fichas con el <strong>anexo</strong> de atributos mapeados.</p>
+<hr>
+<h2>Guía rápida: qué hacer en cada situación</h2>
+<p>Use esta tabla como <strong>hoja de ruta</strong>. Cada fila indica la pantalla exacta y el orden de pasos.</p>
+<table>
+<thead>
+<tr>
+<th>Quiero…</th>
+<th>Dónde voy</th>
+<th>Qué hago (en orden)</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><strong>Instalar Xabia por primera vez</strong></td>
+<td>Plugins → Subir plugin</td>
+<td>ZIP Core → Activar → <strong>Conexión a la IA</strong> (licencia + Cloud) → <strong>Nuevo agente</strong> → fuente de datos → <strong>Sincronizar</strong> → shortcode o modo nativo</td>
+</tr>
+<tr>
+<td><strong>Actualizar a una versión nueva</strong></td>
+<td>Plugins → Subir plugin</td>
+<td>Subir ZIP (sustituye) → <strong>Enlaces permanentes → Guardar</strong> → vaciar caché del sitio → probar chat en incógnito</td>
+</tr>
+<tr>
+<td><strong>Publicar el chat en una página concreta</strong></td>
+<td>Editar agente → General</td>
+<td>Copiar shortcode → pegar en la página → <strong>desactivar</strong> «Mostrar en el sitio sin shortcode» si no quiere avatar flotante</td>
+</tr>
+<tr>
+<td><strong>Avatar flotante en todo el sitio</strong></td>
+<td>Editar agente → Apariencia</td>
+<td><strong>Activar</strong> «Mostrar en el sitio sin shortcode» → elegir páginas incluidas/excluidas → <strong>Guardar agente</strong></td>
+</tr>
+<tr>
+<td><strong>Ocultar el chat sin borrarlo</strong></td>
+<td>Listado de agentes</td>
+<td><strong>Pausar</strong> (vuelve con <strong>Activar</strong>)</td>
+</tr>
+<tr>
+<td><strong>Multilingüe con WPML (ES + EU + EN…)</strong></td>
+<td>Ver §10.12</td>
+<td>Saludo en español → guardar agente → comprobar WPML String Translation → vaciar caché</td>
+</tr>
+<tr>
+<td><strong>Saludo distinto por idioma (automático)</strong></td>
+<td>Personalidad + licencia Core activa</td>
+<td>Escribir saludo en idioma base → <strong>Guardar agente</strong> (Core llama al Hub si hay WPML; DTP incluido en Core)</td>
+</tr>
+<tr>
+<td><strong>Saludo distinto por idioma (manual)</strong></td>
+<td>WPML → String Translation</td>
+<td>Contexto <strong>Xabia AI</strong> → cadena <code>Agent Greeting - su-agente</code> → traducir a mano</td>
+</tr>
+<tr>
+<td><strong>Placeholder «Escribe aquí…» traducido</strong></td>
+<td>Core ≥ 1.0.72 + WPML</td>
+<td>Instalar 1.0.72 → visitar el front una vez → comprobar dominio <code>xabia-intelligence</code> en String Translation</td>
+</tr>
+<tr>
+<td><strong>Conectar CSV o Excel</strong></td>
+<td>General → Archivos CSV</td>
+<td>Subir CSV → <strong>Explorar/escanear</strong> → mapear columnas → <strong>Sincronizar</strong> → <strong>Entrenar</strong></td>
+</tr>
+<tr>
+<td><strong>Conectar base de datos remota</strong></td>
+<td>General → SQL remoto</td>
+<td>Host, BD, usuario, clave, consulta → <strong>Probar consulta</strong> → mapear → <strong>Sincronizar</strong></td>
+</tr>
+<tr>
+<td><strong>QR por punto de interés</strong></td>
+<td>Smart QR / Tótems</td>
+<td>Sincronizar con columna <strong>ENTE</strong> → página de aterrizaje → <strong>Generar QR</strong> → <a href="./manual-usuario-xabia-smart-qr.md">manual Smart QR</a></td>
+</tr>
+<tr>
+<td><strong>Modo quiosco / tótem</strong></td>
+<td>Smart QR / Tótems</td>
+<td>Activar <strong>Modo tótem</strong> + minutos de inactividad, o URL <code>/xabia-box/?x_project=…</code></td>
+</tr>
+<tr>
+<td><strong>Recargar tokens</strong></td>
+<td>Cartera / Wallet</td>
+<td>Comprobar licencia en Conexión → <strong>Recargar</strong> pack → esperar unos minutos → <strong>Actualizar saldo</strong></td>
+</tr>
+<tr>
+<td><strong>Renovar licencia anual</strong></td>
+<td>Cartera / Wallet</td>
+<td><strong>Renovar año</strong> (misma licencia, no crear otra)</td>
+</tr>
+<tr>
+<td><strong>El chat no responde</strong></td>
+<td>Conexión + Cartera</td>
+<td>Licencia válida, saldo &gt; 0, agente no <strong>Pausado</strong>, caché vaciada</td>
+</tr>
+<tr>
+<td><strong>La IA no «ve» mis datos</strong></td>
+<td>Barra lateral del agente</td>
+<td>¿<strong>Sincronizar</strong> tras cambiar CSV/SQL? ¿<strong>Entrenar</strong> si hay vectorial? ¿Bajar umbral de confianza?</td>
+</tr>
+<tr>
+<td><strong>Listado masivo de fichas al instante</strong></td>
+<td>Playground / chat público</td>
+<td>Core <strong>≥ 1.0.118</strong>: mapeo con <strong>ENTE</strong> + taxonomía de actividad → preguntas de listado sin depender del Hub (§11)</td>
+</tr>
+<tr>
+<td><strong>Contacto o imagen de «la última» del listado</strong></td>
+<td>Mismo chat, turno siguiente</td>
+<td>Tras listado: «¿contacto de la última?» / «¿alguna imagen?» — roles <strong>Teléfono</strong>, <strong>Imagen</strong>, <strong>Logotipo</strong> en mapeo (§7.3, §11). Con SQL remoto: <strong>Sincronizar</strong> tras 1.0.164+ (§11.6)</td>
+</tr>
+<tr>
+<td><strong>Asistente CPT con SQL remoto</strong></td>
+<td>General → Asistente CPT</td>
+<td>Core <strong>≥ 1.0.162</strong>: lista solo tipos de la fuente activa (remoto / local / multi / addon); no mezcla CPTs del WordPress del chat (§7.2)</td>
+</tr>
+</tbody></table>
+<hr>
+<h2>1. Estructura del menú en WordPress</h2>
+<p>Tras activar <strong>Xabia Agent Core</strong>, en el escritorio aparece el menú <strong>Xabia Agent</strong> con icono de “superhero”.</p>
+<table>
+<thead>
+<tr>
+<th>Entrada del menú</th>
+<th>Qué muestra</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><strong>Xabia Agent</strong></td>
+<td>Pantalla principal: listado de agentes, escaparate de addons, y bloque global <strong>Conexión a la IA</strong> (licencia + modo Cloud / infra propia).</td>
+</tr>
+<tr>
+<td><strong>Addons</strong></td>
+<td>Tarjetas por addon de pago (Avirato, MEC, Woo, Central…), <strong>clave de licencia</strong> cuando aplica (validación Hub), <strong>tienda Polar</strong> y <strong>portal del cliente</strong>, avisos de renovación si la suscripción está próxima a caducar, y enlaces a <strong>Plugins</strong>. <strong>Smart QR no es un addon:</strong> va incluido en el Core (pestaña <strong>Smart QR / Tótems</strong> al editar un agente).</td>
+</tr>
+<tr>
+<td><strong>Cartera / Wallet</strong></td>
+<td>Saldo de tokens, consumo a 30 días, packs de recarga y renovación cuando aplica.</td>
+</tr>
+</tbody></table>
+<p><strong>Opciones según lo que tenga instalado su sitio</strong></p>
+<ul>
+<li>Si tiene <strong>Xabia Central</strong> activo, puede ver <strong>Federación (Xabia Central)</strong> como submenú para enlazar varios sitios o nodos cuando use esa función.</li>
+<li>Si tiene el addon <strong>Federación Nexus</strong>, puede aparecer <strong>Federación</strong> o <strong>Federación Nexus</strong> (consulte el manual de ese addon si lo usa).</li>
+</ul>
+<p>Para cambiar casi todos los ajustes hace falta estar entrado como <strong>administrador</strong> de WordPress (o con un perfil equivalente que permita gestionar plugins y opciones del sitio).</p>
+<hr>
+<h2>2. Pantalla principal: listado de agentes</h2>
+<p>Cuando abre <strong>Xabia Agent</strong> sin estar editando un agente concreto, verá:</p>
+<h3>2.1 Título y acciones</h3>
+<ul>
+<li><strong>Nuevo agente:</strong> crea una ficha nueva y abre el editor. Al guardar por primera vez, el sistema le asigna un <strong>identificador</strong> estable (derivado del nombre); ese código es el que pegará más adelante en la página web con el <strong>shortcode</strong> (ver más abajo).</li>
+</ul>
+<h3>2.2 Tarjetas de agentes existentes</h3>
+<p>Cada tarjeta muestra:</p>
+<ul>
+<li><strong>Nombre</strong> con el que verá el agente en el panel.</li>
+<li><strong>ID:</strong> un código como <code>ID: mi-asistente</code> que debe coincidir con lo que pone en el shortcode: <code>[xabia_agent id=&quot;mi-asistente&quot;]</code>.</li>
+<li><strong>Editar:</strong> abre toda la configuración del agente.</li>
+<li><strong>Borrar:</strong> elimina el agente y <strong>toda la memoria de conocimiento</strong> que hubiera generado para él (lo aprendido al sincronizar y entrenar). <strong>No se puede deshacer</strong> con un solo clic.</li>
+</ul>
+<p><strong>Si borra un agente:</strong> pierde su configuración, los mapeos de datos y la “memoria” asociada. Si subió un archivo CSV para ese agente, el archivo puede seguir en el servidor; si ya no lo necesita, puede borrarlo desde <strong>Medios</strong> o por FTP según su caso.</p>
+<h3>2.3 Bloque «Addons disponibles»</h3>
+<p>Tarjetas con los <strong>complementos (addons)</strong> que Xabia conoce: nombre, breve descripción y enlace para instalar o gestionar. Activar o desactivar un plugin sigue haciéndose en <strong>Plugins</strong> de WordPress, como con cualquier otro plugin.</p>
+<p><strong>Importante:</strong> un addon puede estar instalado pero inactivo, o activo pero requerir otra configuración (licencia addon, tablas, etc.).</p>
+<h3>2.4 Pausar un agente (listado)</h3>
+<p>En cada tarjeta del listado hay tres acciones: <strong>Editar</strong>, <strong>Pausar</strong> / <strong>Activar</strong> y <strong>Borrar</strong>.</p>
+<ul>
+<li><strong>Pausar:</strong> el agente deja de mostrarse en el sitio (no aparece el shortcode ni el disparador flotante). La configuración y la memoria se conservan.</li>
+<li>Si está pausado, la tarjeta muestra la etiqueta <strong>Pausado</strong> y el botón pasa a <strong>Activar</strong>.</li>
+</ul>
+<h3>2.5 Interfaz del chat por agente (pestaña Apariencia)</h3>
+<p>Desde la <strong>v1.0.28</strong>, la interfaz se configura <strong>por agente</strong> en <strong>Editar agente → Ajustes / Apariencia</strong>, sección <strong>«Interfaz del chat (avatar y panel)»</strong> (después de colores del chat). <strong>No</strong> hace falta Elementor ni bloques HTML en la página.</p>
+<p>Desde la <strong>v1.0.57</strong> hay modos claramente separados; desde la <strong>v1.0.192+</strong> existe además el <strong>lanzador incrustable</strong>:</p>
+<table>
+<thead>
+<tr>
+<th>Modo</th>
+<th>Qué se muestra</th>
+<th>Cuándo usarlo</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><strong>Nativo</strong> (<strong>Mostrar en el sitio sin shortcode</strong> activado)</td>
+<td>Avatar flotante + panel de chat inyectados automáticamente en la web.</td>
+<td>Cuando quiere el botón Xabia global en páginas del sitio.</td>
+</tr>
+<tr>
+<td><strong>Shortcode chat</strong> (<code>[xabia_agent id=&quot;…&quot;]</code>)</td>
+<td>Solo el chat embebido donde pegue el shortcode; <strong>no</strong> aparece avatar flotante.</td>
+<td>Cuando quiere el panel completo en una página o landing.</td>
+</tr>
+<tr>
+<td><strong>Lanzador</strong> (<code>[xabia_launcher id=&quot;…&quot;]</code> o <code>[xabia_avatar id=&quot;…&quot;]</code>)</td>
+<td>Solo el <strong>botón avatar</strong> incrustado en el contenido; al hacer clic abre el mismo panel que el nativo.</td>
+<td>Hero, columnas Elementor, CTAs. Tamaños: <code>sm</code> / <code>md</code> / <code>lg</code> / <code>xl</code> o píxeles (<code>size=&quot;320&quot;</code>).</td>
+</tr>
+</tbody></table>
+<p>Las reglas <strong>Mostrar solo en estas páginas</strong> y <strong>Excluir estas páginas o entradas</strong> pertenecen al modo <strong>nativo</strong>. En modo shortcode/lanzador el chat o botón aparece únicamente donde esté pegado el shortcode.</p>
+<h4>Avatar cinético oficial (v1.0.47)</h4>
+<p>El disparador por defecto reproduce el muñeco Xabia en <strong>capas SVG inline</strong> (cabeza, cuencas blancas y ojos/satélite), escaladas a una caja de 125×125 px:</p>
+<table>
+<thead>
+<tr>
+<th>Capa</th>
+<th>Qué representa</th>
+<th>Color configurable</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Cabeza</td>
+<td>Círculo base del avatar</td>
+<td><code>avatar_colors.bg</code></td>
+</tr>
+<tr>
+<td>Cuencas</td>
+<td>Dos círculos blancos bajo los ojos</td>
+<td><code>avatar_colors.shadow</code></td>
+</tr>
+<tr>
+<td>Ojos y satélite</td>
+<td>Dos ojos/pupilas y un punto decorativo lateral</td>
+<td><code>avatar_colors.dots</code> y variante secundaria</td>
+</tr>
+</tbody></table>
+<p>El avatar <strong>mira al cursor</strong> con efecto de profundidad: la cabeza se mueve muy poco, las cuencas algo más y los ojos/satélite con mayor amplitud (animación GSAP). También puede usar <strong>imagen personalizada</strong> (PNG/SVG desde Medios).</p>
+<h4>Comportamiento en la web (sin Elementor)</h4>
+<table>
+<thead>
+<tr>
+<th>Comportamiento</th>
+<th>Descripción</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><strong>Disparador flotante</strong></td>
+<td>Fijo abajo a la derecha (o izquierda / márgenes personalizados).</td>
+</tr>
+<tr>
+<td><strong>Scroll</strong></td>
+<td>Al <strong>bajar</strong> la página el botón aparece; al <strong>subir</strong> se oculta (como en la versión clásica de Xabia).</td>
+</tr>
+<tr>
+<td><strong>Panel de chat</strong></td>
+<td>Flotante derecha/izquierda, <strong>modal centrado con desenfoque</strong>, o pantalla completa.</td>
+</tr>
+<tr>
+<td><strong>Telón</strong></td>
+<td>Al abrir el chat, fondo semitransparente con blur en toda la pantalla.</td>
+</tr>
+</tbody></table>
+<h4>Opciones en el panel de Apariencia</h4>
+<table>
+<thead>
+<tr>
+<th>Ajuste</th>
+<th>Qué hace</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><strong>Tipo de disparador</strong></td>
+<td>Avatar cinético (nativo) o imagen personalizada.</td>
+</tr>
+<tr>
+<td><strong>Colores del avatar</strong></td>
+<td>Tinte de cabeza, cuencas y ojos del avatar nativo.</td>
+</tr>
+<tr>
+<td><strong>Posición del disparador</strong></td>
+<td>Abajo-derecha, abajo-izquierda o márgenes personalizados (px, vh, vw).</td>
+</tr>
+<tr>
+<td><strong>Comportamiento del panel</strong></td>
+<td>Flotante derecha, flotante izquierda, modal centrado, pantalla completa.</td>
+</tr>
+<tr>
+<td><strong>Avatar parlante</strong></td>
+<td>Activa el <strong>modo inmersivo</strong> (avatar grande / teatro) al abrir el panel. Independiente del mute TTS: silenciar la voz no desactiva el parlante (Core ≥ 1.0.200).</td>
+</tr>
+<tr>
+<td><strong>Mostrar en el sitio sin shortcode</strong></td>
+<td>Activa el modo nativo: avatar flotante + panel automático. Si se desmarca, use <code>[xabia_agent]</code> o <code>[xabia_launcher]</code>.</td>
+</tr>
+<tr>
+<td><strong>Mostrar solo en estas páginas</strong></td>
+<td>Limita el modo nativo a páginas concretas. Tiene prioridad sobre las exclusiones generales.</td>
+</tr>
+<tr>
+<td><strong>Exclusiones</strong></td>
+<td>Oculta el modo nativo por tipo de contenido, IDs de página, y carrito/checkout WooCommerce.</td>
+</tr>
+</tbody></table>
+<p>Guarde con <strong>Guardar agente</strong>. En modo nativo el plugin inyecta disparador y assets en <code>wp_footer</code> automáticamente. En modo shortcode, pegue <code>[xabia_agent id=&quot;su-agente&quot;]</code> o <code>[xabia_launcher id=&quot;su-agente&quot; size=&quot;lg&quot;]</code> donde corresponda.</p>
+<h4>Aspecto del chat (v1.0.197–1.0.201)</h4>
+<p>El panel usa un <strong>layout en stream</strong> (sin burbujas de mensaje), esquinas cuadradas y controles (enviar / micrófono / mute) que se revelan al pasar el ratón sobre la zona de escritura. El texto del usuario puede heredar el color de acento del avatar. Las respuestas del bot admiten <strong>Markdown básico</strong> (<code>**negrita**</code>, listas con viñetas) desde la <strong>v1.0.201</strong>.</p>
+<h4>Chat embebido con shortcode: halo y foco</h4>
+<p>El chat generado por shortcode conserva la estética del panel nativo: borde luminoso animado y sombra suave. Al hacer foco en el campo de texto, el plugin puede elevar el chat sobre la página y mostrar un <strong>overlay con blur</strong> que tapa el fondo para mejorar la lectura.</p>
+<p>El overlay se cierra haciendo clic fuera del chat, pulsando <strong>Escape</strong> o usando el botón de cierre en móvil. Esta capa es independiente del telón del avatar nativo: el shortcode sigue siendo un chat embebido, no un disparador flotante.</p>
+<p>La ruta <strong><code>/xabia-box/</code></strong> (Smart QR / tótem) muestra el chat a pantalla completa <strong>sin</strong> disparador flotante. Smart QR, generador de códigos y modo tótem están <strong>incluidos en el Core</strong> — consulte el <a href="./manual-usuario-xabia-smart-qr.md">manual Smart QR</a> para la guía completa con ejemplos.</p>
+<h3>2.6 Documentación en línea (xabia.ai/docs)</h3>
+<p>Los manuales en PDF y HTML del producto se publican en:</p>
+<table>
+<thead>
+<tr>
+<th>Recurso</th>
+<th>URL</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><strong>Índice — Manuales de Xabia AI</strong></td>
+<td><a href="https://xabia.ai/docs/">https://xabia.ai/docs/</a></td>
+</tr>
+<tr>
+<td>Manual Xabia Agent Core</td>
+<td><a href="https://xabia.ai/docs/manual-usuario-xabia-core.pdf">https://xabia.ai/docs/manual-usuario-xabia-core.pdf</a></td>
+</tr>
+<tr>
+<td>Manual Smart QR / tótems (Core)</td>
+<td><a href="https://xabia.ai/docs/manual-usuario-xabia-smart-qr.pdf">https://xabia.ai/docs/manual-usuario-xabia-smart-qr.pdf</a></td>
+</tr>
+<tr>
+<td>Manual Xabia MEC</td>
+<td><a href="https://xabia.ai/docs/manual-usuario-xabia-mec.pdf">https://xabia.ai/docs/manual-usuario-xabia-mec.pdf</a></td>
+</tr>
+<tr>
+<td>Manual Xabia Woo</td>
+<td><a href="https://xabia.ai/docs/manual-usuario-xabia-woo.pdf">https://xabia.ai/docs/manual-usuario-xabia-woo.pdf</a></td>
+</tr>
+<tr>
+<td>Manual Xabia Avirato</td>
+<td><a href="https://xabia.ai/docs/manual-usuario-xabia-avirato.pdf">https://xabia.ai/docs/manual-usuario-xabia-avirato.pdf</a></td>
+</tr>
+</tbody></table>
+<p>En el repositorio de desarrollo, las fuentes están en <code>xabia-agent-plugins/documentation/</code> y se regeneran con <code>./scripts/build-modular-manuals-pdf.sh</code>.</p>
+<hr>
+<h2>3. Conexión a la IA (tarjeta global)</h2>
+<p>Aquí decide <strong>cómo</strong> su web se conecta a la inteligencia artificial y al servicio <strong>xabia.ai</strong> cuando use el modo recomendado.</p>
+<p>Use el botón <strong>Guardar configuración</strong> de esta misma página (no confundir con <strong>Guardar agente</strong> dentro de un agente).</p>
+<h3>3.1 Modo de conexión</h3>
+<p>Tiene dos opciones:</p>
+<table>
+<thead>
+<tr>
+<th>Opción</th>
+<th>Nombre en pantalla</th>
+<th>Qué implica para usted</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><strong>Cloud de Xabia</strong></td>
+<td><strong>Xabia Cloud (recomendado)</strong></td>
+<td>Su sitio usa una <strong>licencia Xabia</strong> y el saldo de tokens de su cuenta. Las conversaciones pasan por la infraestructura de Xabia; <strong>no</strong> necesita pegar aquí ni en cada agente sus claves de OpenAI o Google: con licencia y saldo suficiente, ya está cubierto. En el agente puede que no vea el selector entre OpenAI y Google; el sistema fija por detrás lo adecuado para Cloud.</td>
+</tr>
+<tr>
+<td><strong>Cuenta propia</strong></td>
+<td><strong>Infraestructura propia</strong></td>
+<td>Las facturas van directamente contra <strong>su</strong> cuenta de OpenAI o Google Cloud (Vertex). Suele aparecer la sección de <strong>Claves API y Google Cloud</strong> para configurar rutas de credenciales. La licencia Xabia puede seguir siendo necesaria para otras funciones según su plan; pero el modelo de gasto aquí es el suyo directamente con proveedores externos.</td>
+</tr>
+</tbody></table>
+<p><strong>Tras cambiar de modo</strong>, revise cada agente: en Cloud no debe preocuparse por el “motor”; en infraestructura propia debe comprobar en cada uno qué proveedor usa y si las rutas/claves están bien.</p>
+<h3>3.2 Licencia y saldo</h3>
+<h4>Bloque informativo (tokens y caducidad)</h4>
+<ul>
+<li><strong>Tokens restantes:</strong> lo que figura después de que el sistema compruebe su licencia. Si lleva tiempo sin sincronizar, puede aparecer una raya hasta que pulse <strong>Actualizar saldo</strong>.</li>
+<li><strong>Caducidad:</strong> fecha hasta la que su licencia está activa según lo que recibe el sistema.</li>
+<li><strong>Comprobado:</strong> cuándo se hizo la última verificación contra el servicio central.</li>
+</ul>
+<p>El botón <strong>Actualizar saldo</strong> vuelve a preguntar a Xabia y refresca estos datos. Si aún no ha guardado una licencia, le avisará antes.</p>
+<p><strong>Sin licencia válida o sin saldo</strong>, el chat puede no responder o mostrar un mensaje sobre <strong>saldo insuficiente</strong> o licencia según configuración del servicio.</p>
+<h4>Campo «Licencia Xabia de este sitio»</h4>
+<ul>
+<li>Es un campo tipo contraseña; puede usar el ícono de ojo para <strong>ver solo lo que está escribiendo ahora</strong>.</li>
+<li>Si <strong>ya tiene</strong> una licencia guardada y deja este campo vacío al guardar, <strong>no borra la antigua</strong>. Para quitar definitivamente la licencia use la casilla <strong>Eliminar licencia guardada</strong> (véase más abajo).</li>
+<li>Solo pegue aquí cuando quiera <strong>cambiar</strong> la licencia por una nueva cadena que le hayan enviado.</li>
+</ul>
+<p><strong>Licencia guardada:</strong> en pantalla solo verá asteriscos y quizá los últimos caracteres (por seguridad).</p>
+<p><strong>Aviso amarillo:</strong> si el sistema detecta que lo guardado parece un <strong>ID de panel</strong> (por ejemplo empieza por <code>lic_…</code>) y no la <strong>cadena larga de activación</strong> que suele empezar por <code>xabia_</code>, le avisará: el servicio probablemente no la aceptará. Lo habitual es <strong>eliminar</strong> la licencia guardada, guardar, y volver a pegar la clave completa del correo o de su compra.</p>
+<h5>Botón «Ver licencia guardada en WordPress»</h5>
+<p>Muestra lo que realmente está guardado en su WordPress (sin espacios raros ni cortes). Solo lo deben usar <strong>administradores de confianza</strong>: quien vea la licencia podría usarla en otro sitio si la copiara.</p>
+<h4>Cómo se protege la conexión</h4>
+<p>Cuando la licencia es correcta, el plugin la usa para <strong>identificar de forma segura</strong> su sitio ante xabia.ai al enviar las peticiones. No hace falta que entienda el detalle técnico: si cambia de licencia, la nueva empieza a aplicarse al guardar. Si por error pega los asteriscos de la pantalla en lugar de la clave real, el sistema intenta <strong>no</strong> sustituir la buena licencia guardada.</p>
+<h4>Casilla «Eliminar licencia guardada de este sitio»</h4>
+<ul>
+<li>Al marcarla y pulsar <strong>Guardar configuración</strong>, se borra la licencia de este sitio.</li>
+<li><strong>Efecto:</strong> el chat dejará de usar el servicio Xabia asociado a esa clave hasta que pegue <strong>otra</strong> licencia válida.</li>
+<li><strong>No</strong> borra por sí sola sus claves OpenAI o Google de la sección avanzada; solo la licencia Xabia.</li>
+</ul>
+<h3>3.3 Claves API y Google Cloud (cuenta propia)</h3>
+<p>Solo aparece si eligió <strong>Infraestructura propia</strong>. La sección viene plegada en <strong>desplegable</strong> para no abrumar: ábrala cuando vaya a configurar credenciales.</p>
+<h4>OpenAI — clave (global aquí)</h4>
+<ul>
+<li>Es la <strong>clave secreta de su cuenta OpenAI</strong>.</li>
+<li>Sirve cuando el agente está configurado para usar <strong>OpenAI</strong> y cuando no lleva una clave distinta sólo para él.</li>
+<li>Trátela como una contraseña de banca: si alguien la copia, puede generar cargos en su nombre. Cambiela desde el panel OpenAI si cree que ha filtrado.</li>
+</ul>
+<h4>Google Cloud (Vertex AI) — ruta al archivo JSON de la cuenta de servicio</h4>
+<ul>
+<li>Debe ser la <strong>ruta completa en el servidor</strong> al archivo JSON que le da Google para la cuenta de servicio con permisos de Vertex/Gemini.</li>
+<li>Si en un agente concreto no rellena nada, se usará esta ruta <strong>global</strong>.</li>
+</ul>
+<p><strong>Errores frecuentes:</strong> ruta mal escrita, el servidor no puede leer el archivo, la cuenta no tiene permisos de Vertex, o el proyecto/región no coinciden con lo que usa en Google.</p>
+<h4>Google Cloud — clave de Maps</h4>
+<ul>
+<li>Para mapas en el chat o piezas visuales que integren Google Maps, si su proyecto lo usa.</li>
+</ul>
+<h4>Federación Nexus — «Activar solo modo Puente»</h4>
+<p>Solo verá esto si tiene instalado el addon <strong>Federación Nexus</strong>.</p>
+<p><strong>Importante:</strong> si está en <strong>Xabia Cloud</strong>, marcar o desmarcar esta casilla en esta pantalla <strong>puede no guardarse</strong> como espera; el valor real sigue el que ya tenía el sitio. Para cambiar el modo Puente con seguridad, use <strong>Infraestructura propia</strong> o la pantalla que indique el manual de Nexus.</p>
+<p><strong>Qué es el modo Puente (en pocas palabras):</strong> su WordPress actúa como <strong>servidor de datos</strong> para otros sitios de la federación. No es el modo normal para un hotel o tienda que solo quiere un chat en la página. Si lo activa por error en un sitio público, <strong>es posible</strong> que el shortcode habitual del chat no se muestre como antes; consulte con quien le haya pedido la federación.</p>
+<p><strong>Consejo:</strong> si no sabe para qué es la federación, <strong>no marque</strong> solo modo Puente.</p>
+<hr>
+<h2>4. Editor de un agente: vista general</h2>
+<p>Al pulsar <strong>Editar</strong> o <strong>Nuevo agente</strong>, el formulario usa pestañas. Las predeterminadas del Core son:</p>
+<ol>
+<li><strong>General</strong> — datos básicos, motor de IA solo si usa <strong>infraestructura propia</strong>, fuentes (CSV/SQL…) y cómo etiquetar columnas para el bot.</li>
+<li><strong>Smart QR / Tótems</strong> <em>(Core)</em> — página de aterrizaje, URLs de túnel, generador de QR por ente, modo kiosko. <a href="./manual-usuario-xabia-smart-qr.md">Manual detallado Smart QR</a>.</li>
+<li><strong>Personalidad</strong> — colores, lectura por voz, cuánto contexto usar, límites de respuesta y el “guión” general del asistente.</li>
+<li><strong>Registro de conversaciones</strong> — historial reciente guardado si lo tiene habilitado.</li>
+</ol>
+<p>Los addons pueden añadir <strong>pestañas extra</strong> dentro del mismo agente (por ejemplo <strong>Avirato</strong>).</p>
+<p>Pulse <strong>Guardar agente</strong> al final para aplicar cambios; hasta entonces solo hay borradores en pantalla.</p>
+<hr>
+<h2>5. Pestaña «General»</h2>
+<h3>5.1 Nombre del agente</h3>
+<ul>
+<li>Nombre visible en el panel para usted y su equipo.</li>
+<li>Si crea el agente hoy por primera vez, el <strong>identificador</strong> del shortcode se genera a partir del nombre. Si solo <strong>cambia el nombre</strong> de un agente antiguo, el identificador del shortcode <strong>suele mantenerse</strong> (no cambia la URL pegada antigua).</li>
+</ul>
+<h3>5.2 Shortcode</h3>
+<p>Tras guardar un agente existente se muestra:</p>
+<pre><code class="language-text">[xabia_agent id=&quot;ID_DEL_PROYECTO&quot;]
+</code></pre>
+<p>Al pegarlo en una página de WordPress <strong>publica el chat de ese agente</strong> (si el agente no está <strong>Pausado</strong>).</p>
+<ul>
+<li>Si <strong>Mostrar en el sitio sin shortcode</strong> está activado, el shortcode puede convivir con la interfaz nativa, pero el avatar flotante lo controla la configuración de <strong>Apariencia</strong>.</li>
+<li>Si <strong>Mostrar en el sitio sin shortcode</strong> está desactivado, el shortcode muestra <strong>solo el chatbot embebido</strong> en esa página, sin avatar flotante ni reglas de visibilidad nativa.</li>
+</ul>
+<p>Algunos complementos admiten opciones extra en el mismo shortcode (idioma, modo tótem, nombre visible del asistente en los mensajes, etc.): revíselas en el manual de cada addon que use. El atributo <code>lang</code>, cuando se use, sirve como idioma de interfaz y respaldo; no bloquea el idioma en el que la IA redacta la respuesta (§10.11).</p>
+<h3>5.3 Bloque Xabia Cloud (cuando el UI está en modo Cloud)</h3>
+<p>Mensaje informativo: el agente usa el servicio de Xabia; la licencia y el saldo los gestiona en la <strong>pantalla principal</strong> del plugin, no aquí dentro del agente.</p>
+<p>En esta vista no verá opciones duplicadas de motor o de Google Cloud: el sistema usa lo que ya tiene guardado para ese agente y lo coherente con <strong>Xabia Cloud</strong>.</p>
+<h3>5.4 Motor de inteligencia (solo aparece en infraestructura propia)</h3>
+<p><strong>Motor de Inteligencia:</strong></p>
+<table>
+<thead>
+<tr>
+<th>Opción</th>
+<th>Qué significa en la práctica</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><strong>OpenAI</strong></td>
+<td>Usa los servicios de OpenAI para el chat y, si corresponde, para generar la “memoria” vectorial del conocimiento</td>
+</tr>
+<tr>
+<td><strong>Google Cloud (Vertex)</strong></td>
+<td>Usa Gemini/Vertex según su configuración; necesita la ruta al JSON correcta en servidor</td>
+</tr>
+</tbody></table>
+<p><strong>Archivo JSON de Google por agente (opcional):</strong> si está vacío, se usa la ruta <strong>global</strong> de ajustes generales.</p>
+<p><strong>Clave OpenAI solo para este agente (opcional):</strong></p>
+<ul>
+<li>Si rellena y guarda, <strong>este</strong> agente usa esa clave y no la global.</li>
+<li>Si deja vacío al editar y el agente ya tenía clave, <strong>suele conservarse</strong> la anterior.</li>
+<li>Según su modo global y licencia, si no hay clave local donde haga falta, el sistema puede <strong>derivar por el proxy Xabia</strong>; depende del caso.</li>
+</ul>
+<p><strong>Consejo práctico:</strong> si un agente usa su cuenta OpenAI directa y otro no, pueden aparecer cargos separados por proveedor — anote cuál usa cuál si lo administra más de uno.</p>
+<hr>
+<h2>6. Fuente de información (de dónde aprende el asistente)</h2>
+<p>Aquí decide <strong>qué datos</strong> debe “leer” el sistema antes de crear la memoria que usa el chat (preguntas frecuentes, catálogo, contenidos estructurados, etc.). Es aparte del <strong>contexto automático</strong> que algunos addons añaden en cada mensaje (por ejemplo disponibilidad de reservas).</p>
+<p>El plugin le recordará en pantalla que <strong>los addons activos pueden aportar información adicional sin pasar solo por aquí</strong>; lo que elija en esta lista es la <strong>base de conocimiento</strong> que usted controla con CSV, SQL o conectores.</p>
+<h3>6.1 Archivos CSV</h3>
+<ul>
+<li>Útiles para catálogos en tabla: productos, puntos de interés, listados exportados desde Excel como CSV.</li>
+<li><strong>Subir CSV</strong> guarda el archivo en el sitio y lo enlaza a este agente.</li>
+<li><strong>Eliminar CSV</strong> quita el archivo enlazado y la referencia.</li>
+<li><strong>Explorar / escanear CSV</strong> detecta columnas y prepara el <strong>mapeo</strong> (qué significa cada columna para el bot).</li>
+<li>Por lo general distingue si las columnas van separadas por coma o por punto y coma.</li>
+</ul>
+<p><strong>Recuerde:</strong> hasta que pulse <strong>Sincronizar datos</strong> —y, si usa búsqueda por similitud semántica, <strong>Entrenar</strong>— el asistente puede no “ver” bien esas filas en las respuestas.</p>
+<h3>6.2 Base de datos de WordPress (SQL local)</h3>
+<p>Una consulta sobre la base de datos del propio WordPress. Use el comodín <strong><code>{prefix}</code></strong> cuando la plantilla lo indique: el sistema lo sustituye por el prefijo real de sus tablas (suele ser <code>wp_</code> u otro que haya configurado su alojamiento).</p>
+<p><strong>Consejo:</strong> las consultas muy amplias pueden ralentizar el sitio o sacar datos de más. Pruebe primero en copia de seguridad/desarrollo o con límites razonables.</p>
+<h3>6.3 Base de datos externa (SQL remota)</h3>
+<p>Rellene <strong>Host</strong>, <strong>Nombre de la base</strong>, <strong>Usuario</strong>, <strong>Contraseña</strong> y la consulta cuando el catálogo viva fuera de WordPress.</p>
+<p>Si la base externa es un WordPress con <strong>Modern Events Calendar</strong>, puede usar <strong>Usar preset MEC remoto</strong>. El Core rellenará la consulta SQL de eventos, aplicará el mapeo recomendado (<code>Evento</code>, <code>Fecha</code>, <code>Hora</code>, <code>Lugar</code>, <code>Link</code>, <code>Precio</code>, <code>Descripcion</code>, <code>Categorias_Tags</code>, <code>Imagen_URL</code>) y guardará <code>sql_preset = mec_remote</code>.</p>
+<p>Use este preset cuando no vaya a instalar el addon MEC en el sitio del chat. Si sí tiene <strong>Xabia MEC</strong> activo, el flujo recomendado es <strong>Conectores de addons → MEC</strong> con las credenciales SQL remotas (§6.4), igual que Woo.</p>
+<p><strong>Seguridad:</strong> las credenciales quedan guardadas con el agente; lo ideal es que el servidor remoto solo acepte conexiones desde la IP de su web.</p>
+<h3>6.4 Conectores de addons</h3>
+<p>Solo está disponible con un <strong>addon compatible</strong> instalado y <strong>activo</strong>. Si aparece como no disponible, instale primero ese plugin desde <strong>Plugins</strong>.</p>
+<p>Tras seleccionarlo, use <strong>Conectar y Mapear</strong> para revisar las columnas que expone antes de usarlas.</p>
+<p>Los addons <strong>MEC</strong> y <strong>Woo</strong> también pueden trabajar contra una base de datos remota desde los campos <strong>Host / DB / usuario / contraseña</strong>. En ese caso el modo sigue siendo <strong>Addon nativo</strong> (porque aporta reglas, mapeo y acciones del dominio), pero la lectura SQL se hace contra otro WordPress. Para MEC remoto, si el sitio del chat no tiene Modern Events Calendar local, el asistente usa el enlace remoto del evento y no genera acciones de reserva locales.</p>
+<h3>6.5 Varios orígenes a la vez (“multi‑fuente”)</h3>
+<p>Puede combinar <strong>hasta dos</strong> fuentes (por ejemplo SQL remoto + CSV).</p>
+<ul>
+<li>Cada parte lleva sus propios datos y <strong>su propio mapeo</strong> de columnas.</li>
+<li>En remotos suele poder ayudar un <strong>prefijo</strong> automático con el mismo criterio que <code>{prefix}</code>.</li>
+</ul>
+<p><strong>Consejo:</strong> más fuentes ofrecen flexibilidad, pero también más sitios donde equivocarse; revise cada bloque con tranquilidad.</p>
+<hr>
+<h2>7. Herramientas dentro de la pestaña Datos</h2>
+<h3>7.1 Probar la consulta SQL (una fila)</h3>
+<p>Hace una lectura de prueba (<strong>solo la primera fila</strong>) de su consulta para mostrarle qué columnas detecta y ayudarle en el mapeo. Evite usarlo en picos de visitas en sitios en producción sin control: es una herramienta de comprobación.</p>
+<h3>7.2 Asistente de contenidos WordPress (“Consola de curación”)</h3>
+<p>Un asistente paso a paso que:</p>
+<ol>
+<li>Lista los <strong>tipos de contenido de la fuente activa</strong> (no los del WordPress del chat si la fuente es otra).</li>
+<li>Sugiere <strong>qué campos</strong> son interesantes para el bot (título, texto, metadatos, taxonomías…).</li>
+<li>Puede <strong>transferir</strong> una consulta SQL y un mapeo razonable <strong>al formulario</strong> del agente.</li>
+</ol>
+<p><strong>Segregación por fuente (Core ≥ 1.0.162):</strong></p>
+<table>
+<thead>
+<tr>
+<th>Fuente configurada</th>
+<th>Qué lista el Asistente CPT</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><strong>SQL remoto</strong></td>
+<td><code>post_type</code> publicados en la BD remota (vía SQL Bridge). <strong>Nunca</strong> los CPT locales del sitio del plugin.</td>
+</tr>
+<tr>
+<td><strong>SQL local</strong></td>
+<td>Tipos del WordPress actual (<code>$wpdb</code>).</td>
+</tr>
+<tr>
+<td><strong>Multi-fuente</strong></td>
+<td>Solo la fuente del botón pulsado (índice 1, 2…).</td>
+</tr>
+<tr>
+<td><strong>Addon (MEC / Woo…)</strong></td>
+<td>Solo el CPT nativo del addon (<code>mec-events</code>, <code>product</code>, …). Si el addon usa SQL remoto, valida allí.</td>
+</tr>
+</tbody></table>
+<p>El modal muestra un aviso del origen (p. ej. «Base de Datos Remota»). En deep schema, productos Woo incluyen metas <code>_price</code> / <code>_sku</code> / stock; MEC incluye plazas calculadas cuando aplica.</p>
+<p><strong>Qué es “Ente”:</strong> marque el campo que identifica de forma única cada elemento (útil en experiencias con QR o cuando el visitante “elige” una ficha concreta).</p>
+<p>También tiene un atajo para <strong>añadir metadatos de un tipo de contenido</strong> sin pasar por todo el asistente.</p>
+<h3>7.3 Mapeo de columnas (atributos repetibles)</h3>
+<blockquote>
+<p>💡 <strong>Piénsalo de forma sencilla:</strong> la IA es increíblemente inteligente, pero no puede adivinar qué número de tu Excel es un teléfono, cuál es un precio o qué celda es un enlace a una imagen. Al asignar el rol <strong>Teléfono</strong> o <strong>Imagen</strong> en el mapeador, le estás dando las llaves de tu negocio: le enseñas a rellenar su agenda de contactos para cuando el cliente le pida el teléfono de una empresa.</p>
+</blockquote>
+<p>Por cada fila elija:</p>
+<ul>
+<li><strong>Columna o campo</strong> del CSV/SQL.</li>
+<li><strong>Etiqueta</strong> amigable (“Precio”, “Teléfono de reservas”…).</li>
+<li><strong>Rol visual</strong> en el chat cuando corresponda mostrar tarjeta enriquecida: título, texto, fecha, <strong>imagen</strong> (fotos/galería), <strong>logotipo</strong> (marca corporativa), teléfono, web, email, mapa, etc.</li>
+<li><strong>IDENTIDAD (ENTE)</strong> si ese campo distingue registros únicos en su proyecto.</li>
+</ul>
+<p><strong>Roles clave para catálogos de empresas (Core ≥ 1.0.118):</strong></p>
+<table>
+<thead>
+<tr>
+<th>Rol visual</th>
+<th>Cuándo usarlo</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><strong>Imagen</strong></td>
+<td>Fotos del establecimiento, galería, escaparate</td>
+</tr>
+<tr>
+<td><strong>Logotipo</strong></td>
+<td>Marca corporativa; no mezclar con fotos</td>
+</tr>
+<tr>
+<td><strong>Teléfono</strong></td>
+<td>Contacto telefónico</td>
+</tr>
+<tr>
+<td><strong>Web</strong> / <strong>Email</strong></td>
+<td>Enlaces y correo</td>
+</tr>
+<tr>
+<td><strong>IDENTIDAD (ENTE)</strong></td>
+<td>Campo único por ficha (nombre, código interno, etc.)</td>
+</tr>
+</tbody></table>
+<p>El Core <strong>no</strong> asume nombres fijos de campos de un cliente concreto. Todo se resuelve desde este mapeo.</p>
+<p>Algunas columnas típicas de WordPress muestran un <strong>icono de “cerebro”</strong> para destacar que son buenos candidatos como texto principal del conocimiento — no es obligatorio tocarlo si no lo necesita.</p>
+<hr>
+<h2>8. Smart QR y modo tótem (incluidos en Core)</h2>
+<p>Desde la <strong>v1.0.59</strong>, toda la potencia de <strong>Smart QR</strong> (túnel por ente, generador de códigos, <code>/xabia-box/</code>, modo kiosko) forma parte de <strong>Xabia Agent Core</strong>. No hace falta instalar ni licenciar un plugin aparte.</p>
+<h3>8.1 Resumen en tres pasos</h3>
+<ol>
+<li>Sincronice conocimiento con al menos una columna marcada como <strong>IDENTIDAD (ENTE)</strong> (§7.3).</li>
+<li>Publique una página con <code>[xabia_agent id=&quot;…&quot;]</code> y selecciónela como <strong>Página de aterrizaje</strong> en <strong>Editar agente → Smart QR / Tótems</strong>.</li>
+<li>Pulse <strong>Generar QR</strong> junto al ente deseado, descargue el PNG e imprímalo.</li>
+</ol>
+<p>El escaneo abre el chat con contexto del ente (saludo y RAG acotados). Ejemplo de URL generada:</p>
+<pre><code class="language-text">https://su-dominio.com/asistente/?ente_id=sala-impresionismo
+</code></pre>
+<h3>8.2 Modo tótem (pantallas públicas tipo kiosko)</h3>
+<p>En <strong>Smart QR / Tótems</strong> puede activar <strong>Modo tótem</strong> y definir <strong>minutos de inactividad</strong>: tras ese tiempo sin usar el chat, la sesión vuelve al saludo inicial (útil en tablet en recepción).</p>
+<p>También puede usar la ruta a pantalla completa:</p>
+<pre><code class="language-text">https://su-dominio.com/xabia-box/?x_project=ID_DEL_AGENTE
+</code></pre>
+<p>En el shortcode puede forzar minutos con <code>totem=&quot;10&quot;</code>:</p>
+<pre><code class="language-text">[xabia_agent id=&quot;mi-agente&quot; ente_id=&quot;recepcion&quot; totem=&quot;10&quot;]
+</code></pre>
+<p><strong>Resumen:</strong> Smart QR = carteles y enlaces por ente; modo tótem = quiosco en pantalla fija. No tiene que usar ninguno si solo quiere chat clásico en la web.</p>
+<h3>8.3 Documentación ampliada</h3>
+<p>Casos museo, hotel, retail, POI <code>?xqr=</code>, migración del antiguo plugin <code>xabia-smart-qr</code> y solución de problemas: <strong><a href="./manual-usuario-xabia-smart-qr.md">manual-usuario-xabia-smart-qr.md</a></strong> (PDF/HTML en <a href="https://xabia.ai/docs/manual-usuario-xabia-smart-qr.pdf">xabia.ai/docs/manual-usuario-xabia-smart-qr.pdf</a>).</p>
+<hr>
+<h2>9. Barra lateral (solo agente ya guardado, no «new»)</h2>
+<p>La columna derecha (memoria + Playground) <strong>hace scroll con la página</strong> (Core ≥ 1.0.165): no queda fijada arriba. Así puede revisar el formulario completo sin pelearse con paneles pegados.</p>
+<h3>9.1 Memoria del agente (cifras de la barra lateral)</h3>
+<ul>
+<li><strong>Registros sincronizados:</strong> líneas incorporadas tras la última <strong>Sincronizar datos</strong>.</li>
+<li><strong>Listos para búsqueda inteligente:</strong> cuántos trozos ya llevan preparada la parte “semántica” si usa esa función.</li>
+<li><strong>Tokens hoy:</strong> cuántos ha gastado ese agente hoy comparado con su <strong>tope diario</strong> (véase más abajo en Personalidad).</li>
+</ul>
+<h3>9.2 Botón «1. Sincronizar datos»</h3>
+<p>Vuelve a leer su CSV/SQL/multi‑fuente o conector según lo que configuró en <strong>General</strong>. Hágalo después de cambiar archivos fuente o la consulta.</p>
+<h3>9.3 Botón «2. Entrenar» (cuando aplique vectorización)</h3>
+<p>Prepara los fragmentos de texto para la <strong>búsqueda por similitud</strong>. Si algo falla (permiso de Google, falta de saldo Cloud, etc.) el sistema mostrará un mensaje claro para corregirlo.</p>
+<h3>9.4 «Borrar memoria vectorial»</h3>
+<p>Limpia la memoria matemática asociada a este agente (no borra necesariamente el CSV en disco). Úselo cuando quiera empezar de cero después de mover muchos datos.</p>
+<h3>9.5 Zona de pruebas («Playground»)</h3>
+<p>Un chat de laboratorio igual que usará el visitante pero sin publicar página todavía. Ideal para tunear antes de abrir al público.</p>
+<hr>
+<h2>10. Pestaña «Personalidad»</h2>
+<p>Aquí da “cara y voz” al asistente. Algunos addons pueden añadir más opciones al final de esta pantalla.</p>
+<h3>10.1 Nombre del asistente (en los mensajes)</h3>
+<p>El nombre corto que verá el visitante junto a cada mensaje del bot (por defecto “Xabia”). <strong>No</strong> confundir con el <strong>avatar cinético</strong> del disparador flotante (§2.5). En el shortcode puede usar <code>avatar_name=&quot;…&quot;</code> para personalizarlo.</p>
+<h3>10.2 Colores y tipografía</h3>
+<ul>
+<li><strong>Color identidad:</strong> botones y detalles destacados del chat.</li>
+<li><strong>Color de fondo del chat.</strong></li>
+<li><strong>Tamaño del texto</strong> en píxeles (elija lo que se lea bien en móvil y ordenador).</li>
+</ul>
+<h3>10.3 Voz (lector del navegador)</h3>
+<p>El visitante puede usar <strong>leer en voz alta</strong> si su navegador lo permite.</p>
+<ul>
+<li><strong>Tipo de voz</strong> (por defecto / más femenina / más masculina): es una sugerencia al sistema; el resultado depende del dispositivo.</li>
+<li><strong>Velocidad:</strong> de lenta a rápida dentro del rango permitido.</li>
+<li><strong>Filtros para que suene natural:</strong> puede quitar negritas asteriscos, marcas técnicas tipo <code>[ACCIÓN:…]</code> o emojis, y añadir textos concretos que no quiera que se lean (por ejemplo enlaces larguísimos).</li>
+</ul>
+<p>En el chat, el botón de altavoz alterna entre voz desactivada y lectura en alto. Cuando un botón de acción está activo o resaltado (voz, micrófono o enviar), el icono cambia a blanco sobre fondo de color para mejorar el contraste.</p>
+<h3>10.4 Índice de confianza del contexto</h3>
+<p>Valor entre <strong>0 y 1</strong> (en pantalla suele sugerirse algo cercano a <strong>0,20</strong>).</p>
+<p><strong>En lenguaje claro:</strong> cuánto debe “encajar” el material de su web con la pregunta para que el modelo lo use. Si <strong>sube mucho</strong> este valor, el asistente será <strong>más exigente</strong>: puede volverse <strong>cortante o genérico</strong> porque descarta trozos que no le parecen una coincidencia suficiente. Si <strong>baja</strong> el valor, aceptará más contexto relacionado; a veces aparece algo más de ruido si los datos no están bien ordenados.</p>
+<p><strong>Consejo:</strong> ajuste despacio y pruebe en el Playground antes de abrir al público.</p>
+<h3>10.5 Cuánto puede alargarse cada respuesta</h3>
+<p>Controla el <strong>tamaño máximo</strong> de texto que puede generar cada respuesta (el sistema tiene un rango razonable guardado).</p>
+<p>Si <strong>aumenta</strong> este límite: las respuestas pueden ser <strong>más largas y detalladas</strong>, pero también <strong>gastan más tokens</strong> y pueden tardar algo más. Si <strong>reduce</strong> el límite: ahorra y es más directo, pero quizá no desarrolle tanto el tema.</p>
+<h3>10.6 Tope diario de consumo por agente</h3>
+<p>Número máximo de tokens que este agente puede usar <strong>en un día</strong> (el contador se cierra según el día “técnico” del servicio, habitualmente en horario universal).</p>
+<p>Si se supera, el chat puede entrar en <strong>modo mantenimiento</strong> para ese agente aunque la cartera general tenga saldo: es un <strong>fusible</strong> útil frente a picos o abusos accidentales.</p>
+<h3>10.7 Cuántos trozos de conocimiento enviar en cada pregunta (“contexto”)</h3>
+<p>Número de <strong>fragmentos</strong> de su conocimiento base que se pueden mezclar con la pregunta en cada turno (suele estar en un rango amplio; si lo deja vacío, el sistema usará un valor por defecto).</p>
+<ul>
+<li><strong>Más trozos:</strong> contextualmente <strong>más rico</strong>, pero <strong>más gasto</strong> y a veces más “disperso” si no acierta el contenido.</li>
+<li><strong>Menos trozos:</strong> <strong>más económico</strong> y directo, pero el asistente puede <strong>dejar fuera</strong> datos que estaban en otros fragmentos menos priorizados.</li>
+</ul>
+<h3>10.8 Búsqueda inteligente (“vectorial”) y sensibilidad</h3>
+<ul>
+<li><strong>Activar búsqueda vectorial:</strong> conviene solo si ya ha hecho <strong>Entrenar</strong> y ve en la barra lateral que hay memoria lista. Si no hay nada entrenado, el texto de ayuda le avisará.</li>
+<li><strong>Umbral de similitud (0–1):</strong> qué tan parecido debe ser un trozo a la pregunta para contar. <strong>Valores muy altos</strong> pueden hacer que “no encuentre nada” sobre temas relacionados pero no idénticos.</li>
+</ul>
+<h3>10.9 Saludo inicial</h3>
+<p>Texto HTML sencillo que ve el visitante al abrir el chat. WordPress aplicará sus reglas de seguridad habituales sobre etiquetas permitidas.</p>
+<h3>10.10 Instrucciones generales (personalidad y reglas)</h3>
+<p>Aquí escribe <strong>quién es el asistente</strong>, tono (formal, cercano, breve), límites (“no opina de política”, “no invente precios sin consultar datos”, etc.).</p>
+<p><strong>Consejo práctico:</strong> no hace falta listar todos los sinónimos de su sector; con buenos datos y una memoria bien sincronizada las respuestas son más naturales. Use este cuadro para el <strong>comportamiento estable</strong> del negocio.</p>
+<h3>10.11 Idiomas y respuestas políglotas</h3>
+<p>Xabia responde en el idioma del <strong>último mensaje del usuario</strong>. Si el conocimiento sincronizado está en español pero el visitante pregunta en inglés, francés o euskera, el modelo redacta la respuesta en ese idioma.</p>
+<p>El idioma configurado por WordPress o por el atributo <code>lang</code> del shortcode afecta sobre todo a la <strong>interfaz fija</strong> (placeholder, botones, voz del navegador). No fuerza a la IA a responder siempre en ese idioma.</p>
+<p>Evite en el prompt maestro frases rígidas como «responde exclusivamente en español» salvo que quiera bloquear el comportamiento políglota.</p>
+<h3>10.12 Sitio multilingüe con WPML (saludo + textos del chat)</h3>
+<p>¿Quieres que tu asistente hable <strong>euskera</strong> o <strong>inglés</strong> de forma automática? Con <strong>WPML</strong> + <strong>String Translation</strong>, <strong>Core ≥ 1.0.72</strong> y licencia <strong>Cloud</strong>, sigue esta ruta rápida de <strong>3 pasos</strong>:</p>
+<ol>
+<li>Escribe tu <strong>saludo inicial en castellano</strong> dentro de la pestaña <strong>Personalidad</strong> y <strong>guarda el agente</strong>.</li>
+<li>Xabia detectará tus idiomas activos y se encargará (gracias a tu licencia Cloud) de <strong>traducir el saludo automáticamente</strong> por detrás.</li>
+<li>Ve a <strong>WPML → String Translation</strong> y comprueba que tus traducciones están listas en el contexto <strong>Xabia AI</strong>. ¡Así de fácil!</li>
+</ol>
+<p>Después, vacía la <strong>caché</strong> del sitio (LiteSpeed, Cloudflare…) y prueba en incógnito las URLs <code>/</code>, <code>/eu/</code>, <code>/en/</code> (o las que uses).</p>
+<h4>Un ajuste WPML imprescindible (solo la primera vez)</h4>
+<p>En <strong>WPML → Configuración</strong>, baja hasta <strong>Traducción de cadenas</strong> → <strong>Cambiar el idioma original de las cadenas</strong> → elige <strong>Español</strong>.</p>
+<p>Si no ves ese enlace: <strong>WPML → Traducción de cadenas → Utilidades</strong> y pon <strong>Español</strong> como idioma original de las cadenas del plugin. Así evitas que el saludo aparezca con bandera inglesa aunque el texto esté en castellano.</p>
+<h4>Textos fijos del chat («Escribe aquí…», botones)</h4>
+<p>Al visitar el sitio una vez tras instalar o actualizar, Xabia suele rellenar también las traducciones de la interfaz del chat (placeholder, Enviar, Hablar…). Si algún texto no cambia de idioma: vacía caché, vuelve a entrar al front y revisa String Translation. Si sigue vacío, escribe a soporte: a veces hace falta forzar una re-sincronización.</p>
+<h4>Si algo no cuadra</h4>
+<table>
+<thead>
+<tr>
+<th>Síntoma</th>
+<th>Qué hacer</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Saludo siempre en español en <code>/eu/</code></td>
+<td>Revisa la fila del saludo en <strong>Xabia AI</strong>; vuelve a <strong>guardar el agente</strong></td>
+</tr>
+<tr>
+<td>Bandera incorrecta pero texto en castellano</td>
+<td>Idioma original de cadenas = <strong>Español</strong> (ajuste de arriba)</td>
+</tr>
+<tr>
+<td>«Escribe aquí…» no traduce</td>
+<td>Core actualizado, caché vacía, visita una página del front</td>
+</tr>
+<tr>
+<td>Traducción automática del saludo no arranca</td>
+<td>Licencia Cloud activa + al menos <strong>2 idiomas</strong> en WPML</td>
+</tr>
+</tbody></table>
+<p>¿Sin WPML o sin licencia Cloud? Puedes traducir el saludo a mano en String Translation; el paso automático simplemente no se ejecuta.</p>
+<hr>
+<h2>11. Catálogo, pasaporte remoto y seguimientos por ente (Core ≥ 1.0.118 / 1.0.164+)</h2>
+<p>Desde la <strong>v1.0.118</strong>, Xabia Agent Core incluye un <strong>motor de catálogo</strong> agnóstico: listados y datos de ficha por empresa, producto o punto de interés <strong>sin</strong> depender de nombres de campos de un cliente concreto. Desde la <strong>v1.0.164</strong>, si tus datos viven en una <strong>base remota</strong>, al sincronizar Xabia guarda junto a cada ficha un <strong>anexo</strong> con los atributos que mapeaste en General (teléfono, email, web, etc.).</p>
+<h3>11.1 Qué resuelve</h3>
+<table>
+<thead>
+<tr>
+<th>Pregunta del visitante</th>
+<th>Comportamiento</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Listado por actividad / categoría («¿qué opciones de …?»)</td>
+<td>Listado breve: nombre + detalle corto. <strong>No</strong> vuelca teléfono/email del anexo.</td>
+</tr>
+<tr>
+<td>«¿Tienes el contacto / teléfono de …?»</td>
+<td>Modo ficha: usa el anexo (remoto) o los datos en vivo del WordPress local.</td>
+</tr>
+<tr>
+<td>«¿Y alguna imagen?»</td>
+<td>Fotos con rol <strong>Imagen</strong>; logotipo solo si pregunta por marca o rol <strong>Logotipo</strong>.</td>
+</tr>
+</tbody></table>
+<h3>11.2 Qué necesita configurar (una sola vez)</h3>
+<ol>
+<li><strong>Fuente de datos</strong> coherente con su catálogo (CSV, SQL local/remoto, multi-fuente, addon…).</li>
+<li><strong>Mapeo de columnas</strong> con al menos un campo <strong>IDENTIDAD (ENTE)</strong> y roles de contacto/imagen (§7.3).</li>
+<li>Una <strong>categoría o taxonomía de actividad</strong> reconocible en su proyecto — el Core la deduce del mapeo, sin nombres fijos de un vertical.</li>
+</ol>
+<p><strong>Contenido en el mismo WordPress del chat:</strong> listados y ficha pueden leerse <strong>en vivo</strong> (sin sync obligatorio para ese atajo).</p>
+<p><strong>Datos en SQL remoto / Hub (Core ≥ 1.0.164):</strong> debe <strong>Sincronizar</strong> (y enviar al Hub si usa búsqueda en la nube) para que teléfono, email, etc. viajen con cada ficha. Xabia <strong>no inventa</strong> campos: solo usa lo que usted mapeó en General y tiene valor en la fila.</p>
+<h3>11.3 Flujo conversacional típico</h3>
+<ol>
+<li>Visitante: pregunta de listado (varias entidades).</li>
+<li>Asistente: viñetas concisas; cierra invitando a elegir o pedir más detalle.</li>
+<li>Visitante: «teléfono de [nombre]» / «contacto de la primera».</li>
+<li>Asistente: datos de ficha (anexo o pasaporte).</li>
+<li>Visitante: «y alguna imagen».</li>
+<li>Asistente: muestra la imagen solo si el rol <strong>Imagen</strong> está mapeado y tiene valor.</li>
+</ol>
+<p>El sistema recuerda el listado a partir del <strong>historial del chat</strong> que se envía en cada mensaje.</p>
+<h3>11.4 Modo lista vs ficha (Core ≥ 1.0.165)</h3>
+<table>
+<thead>
+<tr>
+<th>Modo</th>
+<th>Cuándo</th>
+<th>Qué ocurre</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><strong>Lista</strong></td>
+<td>Varias entidades / pregunta abierta de catálogo</td>
+<td>Respuesta breve <strong>sin</strong> volcar teléfono/email del anexo.</td>
+</tr>
+<tr>
+<td><strong>Ficha</strong></td>
+<td>Contacto, imagen, «cuéntame más de …», «la primera / la última»</td>
+<td>Usa el anexo completo de esa ficha.</td>
+</tr>
+</tbody></table>
+<p>Comportamiento <strong>agnóstico</strong>: solo depende de su mapeo, no de un cliente concreto.</p>
+<h3>11.5 Si algo falla en el Playground</h3>
+<p>Tras un listado, pruebe en el mismo chat: «¿teléfono de la primera?» o «¿alguna imagen?». Si no responde bien: Core <strong>≥ 1.0.166</strong>, roles <strong>Teléfono</strong> / <strong>Imagen</strong> en el mapeo (§7.3) y, con SQL remoto, <strong>Sincronizar</strong> de nuevo.</p>
+<p>Detalle técnico para integradores: <a href="./DESARROLLO.md">DESARROLLO.md §11–12</a>.</p>
+<h3>11.6 Hub vs catálogo local vs SQL remoto</h3>
+<table>
+<thead>
+<tr>
+<th>Objetivo</th>
+<th>Acción</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Listados y contacto (contenido <strong>local</strong>)</td>
+<td>Core actualizado + mapeo correcto</td>
+</tr>
+<tr>
+<td>Contacto con <strong>SQL remoto</strong> / Hub</td>
+<td>Mapear atributos → <strong>Sincronizar</strong> (≥ 1.0.164) → enviar al Hub si aplica</td>
+</tr>
+<tr>
+<td>Preguntas abiertas con búsqueda inteligente</td>
+<td><strong>Sincronizar</strong> + <strong>Entrenar</strong></td>
+</tr>
+</tbody></table>
+<p>Un Hub aún sin memoria entrenada <strong>no bloquea</strong> el listado local; sí limita las respuestas semánticas profundas hasta re-sincronizar.</p>
+<h3>11.7 Novedades 1.0.162 – 1.0.168 (resumen)</h3>
+<table>
+<thead>
+<tr>
+<th>Versión</th>
+<th>Cambio</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><strong>1.0.168</strong></td>
+<td>Respuestas más rápidas: caché de preguntas repetidas, menos espera al mostrar el texto en el chat.</td>
+</tr>
+<tr>
+<td><strong>1.0.162</strong></td>
+<td>El asistente de tipos de contenido respeta la fuente (no mezcla CPT locales con SQL remoto).</td>
+</tr>
+<tr>
+<td><strong>1.0.163</strong></td>
+<td>MEC/Woo: catálogo remoto por host SQL; más campos de precio, SKU y plazas.</td>
+</tr>
+<tr>
+<td><strong>1.0.164</strong></td>
+<td>Anexo de atributos mapeados en fichas remotas tras sincronizar.</td>
+</tr>
+<tr>
+<td><strong>1.0.165–166</strong></td>
+<td>Listados breves; barra lateral del admin sin sticky; reglas agnósticas.</td>
+</tr>
+</tbody></table>
+<hr>
+<h2>12. Pestaña «Registro de conversaciones»</h2>
+<p>Aquí aparece, cuando está activado, el <strong>historial reciente</strong>: fecha, mensaje del visitante y respuesta del asistente.</p>
+<p><strong>Privacidad (RGPD):</strong> compruebe con su responsable jurídico si puede guardar conversaciones que incluyan datos personales y si debe informarlo en política de privacidad / cookies como corresponda en su país.</p>
+<hr>
+<h2>13. Precios, licencias y packs</h2>
+<blockquote>
+<p>📢 <strong>Nota sobre tarifas y licencias:</strong> para garantizar que siempre veas las ofertas vigentes, la tabla de precios actualizada, los packs de tokens y las condiciones de renovación se gestionan en tiempo real en nuestra web oficial: <strong><a href="https://xabia.ai/precio">https://xabia.ai/precio</a></strong>.</p>
+</blockquote>
+<p>En la práctica encontrará ahí:</p>
+<ul>
+<li>Licencia <strong>Core</strong> (primer año y renovación), con tokens de cortesía según la oferta vigente.</li>
+<li><strong>Packs de tokens</strong> (Starter, Business, Enterprise u otras denominaciones publicadas).</li>
+<li>Addons (<strong>Avirato</strong>, <strong>Woo</strong>, <strong>MEC</strong>, etc.) y proyectos de <strong>red federada</strong> a medida.</li>
+</ul>
+<p>Las <strong>recargas</strong> se hacen en <strong>Xabia Agent → Cartera / Wallet</strong>. Los addons <strong>añaden funciones</strong>, pero las conversaciones con IA <strong>siguen usando tokens</strong> salvo donde un addon indique lo contrario (respuestas “ligeras” sin modelo).</p>
+<hr>
+<h2>14. Cartera / Wallet</h2>
+<p>Menú: <strong>Xabia Agent → Cartera / Wallet</strong>.</p>
+<h3>13.1 Qué muestra esta pantalla</h3>
+<ul>
+<li><strong>Saldo actual</strong> de tokens asociados a esta instalación cuando el servicio lo confirme.</li>
+<li>Un <strong>identificador de cliente o licencia</strong> que verá también en algunos enlaces de pago. <strong>No</strong> es necesariamente el mismo texto que la cadena secreta <strong><code>xabia_…</code></strong> que pega en <em>Conexión a la IA</em>. Si necesita estar seguro, use <strong>«Ver licencia guardada»</strong> en la pantalla principal.</li>
+<li><strong>Histograma de consumo</strong> de las últimas semanas para hacerse una idea visual del ritmo de gasto.</li>
+<li><strong>Renovar año</strong> aparece habitualmente cuando se acerca la fecha de caducidad (ventana habitual de orden de treinta días).</li>
+</ul>
+<h3>13.2 Cómo <strong>recargar tokens</strong></h3>
+<ol>
+<li>Compruebe que en <strong>Conexión a la IA</strong> tiene la <strong>licencia larga correcta</strong> (la que fue el correo o la clave activable, normalmente formato <code>xabia_…</code>).</li>
+<li>Entre en <strong>Cartera / Wallet</strong> como administrador.</li>
+<li>Pulse <strong>Recargar</strong> en el pack que se ajuste a su público (consulte importes y tamaños vigentes en <a href="https://xabia.ai/precio">xabia.ai/precio</a>).</li>
+<li>Complete el pago en la pasarela que se abre. El sistema ya envía detrás los datos necesarios para <strong>asociar la compra a este sitio</strong>; suele hacer falta esperar <strong>unos minutos</strong> y después pulsar <strong>Actualizar saldo</strong> en la pantalla principal hasta que coincida.</li>
+</ol>
+<p><strong>Comprado desde otro ordenador:</strong> no suele haber problema mientras sea la misma combinación dominio + licencia que espera la tienda para su sitio.</p>
+<p><strong>Multisite o una copia de prueba (staging):</strong> fíjese bien en <strong>desde qué dirección URL</strong> tiene instalado Xabia: la compra puede quedar vinculada a esa máquina concreta.</p>
+<h3>13.3 Renovar solo la licencia</h3>
+<p>El botón de renovación debe <strong>continuar la misma licencia</strong>, no crear otra nueva. El importe vigente figura siempre en <a href="https://xabia.ai/precio">xabia.ai/precio</a>. Si la fecha sigue vieja después de esperar un rato y de <strong>Actualizar saldo</strong>, abra incidente de soporte con el comprobante de pago.</p>
+<h3>13.4 Aviso de saldo bajo</h3>
+<p>Si el saldo baja de orden de las <strong>decenas de miles</strong> de tokens, puede ver un mensaje destacado recordándole revisar Wallet antes de que el público encuentre cortes por falta de créditos.</p>
+<hr>
+<h2>15. Pantalla Addons</h2>
+<p>Cuadrícula de <strong>complementos de pago</strong> (Avirato, Central, MEC, Woo… según instalación): estado, enlaces a <strong>Plugins</strong> y, para los que usan suscripción vía Hub, un <strong>formulario de licencia</strong> propio del addon (no sustituye a la licencia <strong>Xabia del sitio</strong> de la pantalla principal). <strong>Smart QR / tótems no aparece aquí:</strong> está integrado en el Core (pestaña del agente).</p>
+<ul>
+<li><strong>Tienda:</strong> enlace habitual a <strong><a href="https://polar.sh/digixop">polar.sh/digixop</a></strong>.</li>
+<li><strong>Portal del cliente</strong> (gestionar suscripción): <strong><a href="https://polar.sh/digixop/portal">polar.sh/digixop/portal</a></strong>.</li>
+<li>Si un addon con licencia no valida o la suscripción está a punto de caducar, el aviso aparece <strong>aquí</strong>; en el chat público de addons como Avirato el visitante recibe mensajes <strong>genéricos</strong> de contacto, no errores técnicos de licencia.</li>
+</ul>
+<p>El <strong>ZIP</strong> del instalador y el contrato siguen llegando por el canal comercial o el correo habitual de Xabia.</p>
+<hr>
+<h2>16. Orden práctico para no perderse</h2>
+<ol>
+<li>Modalidad <strong>Cloud</strong> vs <strong>infra propia</strong>, licencia y saldo (pantalla principal).  </li>
+<li><strong>Crear agente</strong> — nombre identificativo y cópielo en el shortcode donde quiera chat.  </li>
+<li>Elegir <strong>fuente</strong> de datos — mapear con calma; pruebas en staging si existe.  </li>
+<li><strong>Sincronizar datos</strong> → mirar estadísticas lateral → si usa búsqueda inteligente, <strong>Entrenar</strong> hasta que los contadores pinten coherentes.  </li>
+<li>Afinar <strong>Personalidad</strong> → probar Playground → publicar página con shortcode → vigilar gasto en Wallet.</li>
+</ol>
+<hr>
+<h2>17. Problemas frecuentes (qué revisar antes de escribir a soporte)</h2>
+<table>
+<thead>
+<tr>
+<th>Situación</th>
+<th>Primer chequeo rápido</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>El chat menciona falta licencia o saldo</td>
+<td>Cartera más <strong>Actualizar saldo</strong>; compruebe no haber pegado sólo puntos tipo contraseña falsa donde iba una clave real</td>
+</tr>
+<tr>
+<td>Pagué pero el saldo no sube</td>
+<td>Espere algunos minutos; <strong>Actualizar saldo</strong>; confirme que compró desde el sitio esperado mismo dominio</td>
+</tr>
+<tr>
+<td>Google Cloud dice error al entrenar</td>
+<td>Ruta JSON, permisos y región coherentes su panel Google</td>
+</tr>
+<tr>
+<td>Con Cloud siguen errores extraños entre modelos</td>
+<td>A veces toca soporte porque el lado central puede estar corrigiendo un modelo puntual para su zona</td>
+</tr>
+<tr>
+<td><strong>Avatar parlante no abre a pantalla completa</strong></td>
+<td>Apariencia → <strong>Avatar parlante</strong></td>
+</tr>
+<tr>
+<td><strong>Respuestas sin negrita/listas</strong></td>
+<td>Actualizar Core</td>
+</tr>
+<tr>
+<td>“No encuentra” lo que cargó en CSV</td>
+<td>¿Ejecutó <strong>Sincronizar</strong> tras subir el archivo? ¿Pulsó <strong>Entrenar</strong> si usa búsqueda inteligente? Baje un poco los controles de <strong>confianza del contexto</strong> y de <strong>similitud</strong>: demasiado altos hacen que el asistente “no vea” textos relacionados pero no idénticos</td>
+</tr>
+<tr>
+<td>Listado de empresas lento o incompleto</td>
+<td>Core <strong>≥ 1.0.118</strong>; compruebe mapeo <strong>ENTE</strong> y taxonomía; pruebe listado nativo (§11) antes de depurar Hub</td>
+</tr>
+<tr>
+<td>«La última» no devuelve contacto</td>
+<td>Tras listado, pregunte en el mismo chat; roles <strong>Teléfono</strong>/<strong>Email</strong>/<strong>Web</strong> en mapeo; versión <strong>≥ 1.0.125</strong></td>
+</tr>
+<tr>
+<td>Mezcla confusa con <strong>multi‑fuente</strong></td>
+<td>Revise el <strong>segundo bloque</strong> de mapeo con el mismo cuidado que el primero</td>
+</tr>
+<tr>
+<td>WPML: saludo o placeholder no cambia de idioma</td>
+<td>Core <strong>≥ 1.0.72</strong>, caché vacía, String Translation con traducciones completas (§10.12)</td>
+</tr>
+<tr>
+<td>WPML: cadenas con bandera incorrecta</td>
+<td>Idioma original de cadenas = Español; Utilidades → <code>xabia-intelligence</code></td>
+</tr>
+</tbody></table>
+<hr>
+<h2>18. Preguntas frecuentes</h2>
+<h3>¿Tengo que sincronizar para que liste empresas al instante?</h3>
+<p><strong>No</strong> para listados nativos y seguimientos de contacto/imagen (Core ≥ 1.0.118): el Core consulta WordPress en vivo según su mapeo. <strong>Sí</strong> si quiere RAG vectorial para preguntas abiertas sobre el catálogo.</p>
+<h3>¿Cuántos agentes puedo crear con una licencia?</h3>
+<p>En el uso típico retail, <strong>uno o varios agentes en el mismo dominio</strong> están incluidos sin coste extra por agente. <strong>Confirme</strong> siempre los límites exactos en su <strong>correo de bienvenida</strong>, en la página de precios oficial o con su comercial si el proyecto es grande.</p>
+<h3>¿Qué es exactamente un “token”?</h3>
+<p>Es la unidad con la que se mide cuánto trabajo de lenguaje ocupa una conversación (<strong>texto que entra más texto que sale</strong> cuando se usa el modelo). El <strong>entrenamiento</strong> de la memoria inteligente también consume tokens. Cuando la respuesta viene de una <strong>plantilla fija</strong> (sin modelo), muchas veces <strong>no gasta</strong> ninguno.</p>
+<h3>¿Tengo que pegar mi clave de OpenAI si uso Xabia Cloud?</h3>
+<p>Por lo general <strong>no</strong>. Con <strong>Cloud</strong> y licencia con saldo el tráfico habitual va por Xabia. La clave OpenAI entra en juego sobre todo en <strong>Infraestructura propia</strong>.</p>
+<h3>¿Por qué “no recuerda” mis tablas o PDF si los tengo en el servidor?</h3>
+<p>Debe <strong>incorporar</strong> ese conocimiento con <strong>Sincronizar</strong> (y <strong>Entrenar</strong> si activó búsqueda por similitudes). Los addons que aportan datos en vivo (reservas, etc.) son un <strong>canal aparte</strong> que no sustituye ese paso si usted quiere que el asistente cite su documentación.</p>
+<h3>¿Puedo usar copia de <strong>pruebas</strong> (<code>staging</code>) con la misma licencia que producción?</h3>
+<p>Depende de <strong>condiciones contractuales</strong>: dos direcciones públicas distintas a veces cuentan como <strong>dos instalaciones</strong>. Pregunte antes de mover tráfico real.</p>
+<h3>¿Si elimino la licencia se borran mis agentes?</h3>
+<p><strong>No</strong> desaparecen de la lista ni su configuración borrada automáticamente, pero el <strong>chat dejará de funcionar</strong> bien en Cloud hasta que pegue <strong>otra licencia válida</strong>.</p>
+<h3>¿Hay saldo en la cartera pero el visitante ve “modo mantenimiento”?</h3>
+<p>Mire en <strong>Personalidad</strong> el <strong>tope diario de tokens por agente</strong>. La barra lateral <strong>Tokens hoy</strong> muestra si ya alcanzó ese techo para el día técnico en curso; al día siguiente ese contador vuelve a cero para el agente, aunque su <strong>cartera global</strong> siga teniendo saldo disponible para otros agentes u otros días.</p>
+<h2>Notas de versión (Core)</h2>
+<h3>Core v1.0.201 (agosto 2026)</h3>
+<ul>
+<li>Chat: Markdown básico en respuestas; UI stream sin burbujas; avatar parlante / launcher; preguntas de arranque; empaquetado completo del ZIP.</li>
+</ul>
+<h3>Core v1.0.168–1.0.171</h3>
+<ul>
+<li>Latencia chat, Document-to-RAG, pasaporte remoto, listados, WPML/DTP (ver historial técnico en DESARROLLO.md).</li>
+</ul>
+<div class="manual-pdf-cierre">
+
+<h2>Xabia AI — La web viva</h2>
+<p>Sabiduría natural con inteligencia artificial</p>
+<p>Xabia AI está especialmente indicada para empresas y asociaciones del sector del turismo, instituciones, empresas y tiendas online que quieran incrementar su conversión.</p>
+<p>Xabia AI está desarrollada por Digixop.</p>
+<p><strong>Xabia AI</strong> · Garaizar, 2 · 48004 Bilbao (SPAIN)</p>
+<p><a href="mailto:help@xabia.ai">help@xabia.ai</a></p>
+</div>
+</body>
+</html>
