@@ -23,6 +23,8 @@ import urllib.request
 from pathlib import Path
 
 API = "https://api.polar.sh/v1"
+# Cloudflare on api.polar.sh bans the default Python-urllib User-Agent (error 1010).
+USER_AGENT = "xabia-release-engine/1.0 (+https://xabia.ai; compatible; curl/8.0)"
 
 
 def die(msg: str, code: int = 1) -> None:
@@ -50,6 +52,7 @@ def api_request(method: str, path: str, token: str, body: dict | None = None) ->
     headers = {
         "Authorization": f"Bearer {token}",
         "Accept": "application/json",
+        "User-Agent": USER_AGENT,
     }
     if body is not None:
         data = json.dumps(body).encode("utf-8")
@@ -110,7 +113,9 @@ def upload_file(token: str, org_id: str | None, zip_path: Path, version: str) ->
             ]
         },
     }
-    if org_id:
+    # Organization access tokens reject organization_id on create (422).
+    # Only send it for user PATs that can act across orgs.
+    if org_id and os.environ.get("POLAR_SEND_ORGANIZATION_ID", "").strip() in ("1", "true", "yes"):
         body["organization_id"] = org_id
 
     created = api_request("POST", "/files/", token, body)

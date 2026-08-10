@@ -15,12 +15,22 @@ php_error.log
 .vscode/
 .idea/
 
-# GCP credentials (never commit)
-google-key.json
-**/google-key.json
+# Credenciales y entorno local
 .env
 .env.local
+google-key.json
+**/google-key.json
+
+# Dependencias y artefactos de build
 node_modules/
 vendor/
 build/
 xabia-agent-plugins/dist/
+
+# Copias locales / backups no versionados
+hub-real/
+central-api_BACKUP-*/
+
+# Nota: el código fuente del Core vive en xabia-agent-plugins/packages/xabia-agent-core/
+# La API del chat (class-xabia-api.php) en xabia-agent-plugins/api/ (se empaqueta en el ZIP Core).
+# Addons comerciales: xabia-agent-plugins/packages/xabia-woo|mec|avirato/

@@ -307,13 +307,107 @@
         } catch (eVoices) {}
     }
 
+    function joinImagesBase(base, path) {
+        base = String(base || '').trim().replace(/\/+$/, '');
+        path = String(path || '').trim().replace(/^\/+/, '');
+        if (!path) return '';
+        if (!base) return path;
+        return base + '/' + path;
+    }
+
+    function resolveActionImgSrc(raw, imagesBase) {
+        var url = String(raw || '').trim();
+        if (!url || url.indexOf(' ') !== -1) return '';
+        if (/^https?:\/\//i.test(url)) return url;
+        if (url.indexOf('//') === 0) return 'https:' + url;
+        if (url.charAt(0) === '/') return url;
+        return joinImagesBase(imagesBase, url);
+    }
+
+    function xabiaAmeliaBookingUrl(serviceId) {
+        var sid = String(serviceId || '').replace(/\D/g, '');
+        if (!sid) return '';
+        var tpl = window.xabiaReservas && window.xabiaReservas.ameliaTriggerUrl ? String(window.xabiaReservas.ameliaTriggerUrl) : '';
+        if (tpl.indexOf('{service}') !== -1) {
+            return tpl.split('{service}').join(sid);
+        }
+        return '';
+    }
+
+    function xabiaAmeliaTryNativeOpen(serviceId) {
+        var sid = String(serviceId || '').replace(/\D/g, '');
+        if (!sid) return false;
+        var selectors = [
+            '[data-amelia-service-id="' + sid + '"]',
+            '[data-service-id="' + sid + '"]',
+            '.amelia-v2-booking[data-service="' + sid + '"]',
+            '#amelia-app-booking',
+            '.amelia-app-booking',
+            '[class*="amelia"][class*="booking"]'
+        ];
+        for (var i = 0; i < selectors.length; i++) {
+            var el = document.querySelector(selectors[i]);
+            if (el) {
+                try {
+                    el.click();
+                    return true;
+                } catch (eClick) {}
+            }
+        }
+        return false;
+    }
+
+    function xabiaAmeliaDispatchBookingOpen(serviceId) {
+        var sid = parseInt(serviceId, 10);
+        if (!sid) return;
+        var detail = { serviceId: sid, service_id: sid };
+        try {
+            window.dispatchEvent(new CustomEvent('xabia-amelia-booking-open', { detail: detail, bubbles: true }));
+        } catch (eWin) {}
+        try {
+            document.dispatchEvent(new CustomEvent('xabia-amelia-booking-open', { detail: detail, bubbles: true }));
+        } catch (eDoc) {}
+        if (typeof jQuery !== 'undefined') {
+            jQuery(document.body).trigger('xabia-amelia-booking-open', [sid]);
+        }
+    }
+
+    function xabiaAmeliaHandleBookingOpen(serviceId, opts) {
+        opts = opts || {};
+        var sid = parseInt(serviceId, 10);
+        if (!sid) return false;
+        if (!opts.skipEvent) {
+            xabiaAmeliaDispatchBookingOpen(sid);
+        }
+        if (xabiaAmeliaTryNativeOpen(sid)) return true;
+        var url = xabiaAmeliaBookingUrl(sid);
+        if (url) {
+            window.location.href = url;
+            return true;
+        }
+        var anchor = document.querySelector('#amelia-app-booking, .amelia-v2-booking, [id*="amelia"]');
+        if (anchor && typeof anchor.scrollIntoView === 'function') {
+            anchor.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            return true;
+        }
+        return false;
+    }
+
+    window.addEventListener('xabia-amelia-booking-open', function(ev) {
+        if (!ev || ev.defaultPrevented) return;
+        var sid = ev.detail ? (ev.detail.serviceId || ev.detail.service_id) : null;
+        if (!sid) return;
+        xabiaAmeliaHandleBookingOpen(sid, { skipEvent: true });
+    });
+
     /**
      * Convierte la respuesta del bot en HTML: enlaces, teléfono, imágenes, mapa.
      * [ACTION:CALL:num] -> enlace tel:; [ACTION:URL:url] -> enlace; [ACTION:IMG:url] -> img; [ACTION:MAP:...] -> enlace a mapa.
      */
-    function renderActions(text) {
+    function renderActions(text, imagesBase) {
         if (!text) return '';
         text = String(text);
+        imagesBase = String(imagesBase || '').trim();
         function escAttr(s) {
             return String(s).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/'/g, '&#39;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
         }
@@ -322,6 +416,16 @@
             var t = document.createElement('textarea');
             t.innerHTML = String(s);
             return t.value;
+        }
+        function renderAmeliaBookControl(serviceId) {
+            var sid = String(serviceId || '').replace(/\D/g, '');
+            if (!sid) return '';
+            var label = escAttr(xabiaI18n('actionBook', 'Reservar'));
+            var href = xabiaAmeliaBookingUrl(sid);
+            if (href) {
+                return '<a href="' + escAttr(href) + '" class="xabia-btn-book xabia-book-amelia xabia-book-amelia--link" data-engine="amelia" data-service-id="' + escAttr(sid) + '" target="_blank" rel="noopener">📅 ' + label + '</a>';
+            }
+            return '<button type="button" class="xabia-btn-book xabia-book-amelia" data-engine="amelia" data-service-id="' + escAttr(sid) + '">📅 ' + label + '</button>';
         }
         text = text.replace(/\[ACTION:CALL:([^\]]+)\]/g, function(_, num) {
             var tel = (num || '').replace(/\s+/g, '');
@@ -332,15 +436,9 @@
             return '<a href="' + escAttr(href) + '" target="_blank" rel="noopener" class="xabia-action xabia-action-url">🌐 ' + escAttr(xabiaI18n('actionOpenLink', 'Abrir enlace')) + '</a>';
         });
         text = text.replace(/\[ACTION:IMG:([^\]]+)\]/g, function(_, src) {
-            var url = (src || '').trim();
-            if (!url || url.indexOf(' ') !== -1) return '';
-            if (/^https?:\/\//i.test(url)) {
-                return '<img src="' + escAttr(url) + '" alt="" class="xabia-action-img" loading="lazy" decoding="async">';
-            }
-            if (url.charAt(0) === '/' || url.indexOf('//') === 0) {
-                return '<img src="' + escAttr(url) + '" alt="" class="xabia-action-img" loading="lazy" decoding="async">';
-            }
-            return '';
+            var url = resolveActionImgSrc(src, imagesBase);
+            if (!url) return '';
+            return '<img src="' + escAttr(url) + '" alt="" class="xabia-action-img" loading="lazy" decoding="async">';
         });
         text = text.replace(/\[ACTION:MAP:([^\]]+)\]/g, function(_, q) {
             var query = encodeURIComponent((q || '').trim());
@@ -400,9 +498,7 @@
         });
         
         text = text.replace(/\[ACTION:BOOK:amelia:(\d+)\]/g, function(_, id) {
-            var sid = String(id || '').replace(/\D/g, '');
-            if (!sid) return '';
-            return '<button type="button" class="xabia-btn-book xabia-book-amelia" data-engine="amelia" data-service-id="' + escAttr(sid) + '">📅 ' + escAttr(xabiaI18n('actionBook', 'Reservar')) + '</button>';
+            return renderAmeliaBookControl(id);
         });
         
         text = text.replace(/\[ACTION:BOOK:(\d+)\]/g, function(_, id) {
@@ -410,7 +506,7 @@
             if (!pid) return '';
             var eng = (window.xabiaReservas && window.xabiaReservas.engine) ? String(window.xabiaReservas.engine) : '';
             if (eng === 'amelia') {
-                return '<button type="button" class="xabia-btn-book xabia-book-amelia" data-engine="amelia" data-service-id="' + escAttr(pid) + '">📅 ' + escAttr(xabiaI18n('actionBook', 'Reservar')) + '</button>';
+                return renderAmeliaBookControl(pid);
             }
             if (eng !== 'amelia') {
                 var remote = (window.xabiaReservas && window.xabiaReservas.remoteSiteUrl) ? String(window.xabiaReservas.remoteSiteUrl).replace(/\/$/, '') : '';
@@ -541,7 +637,7 @@
         syncStarterSuggestions($box);
     }
 
-    function renderBotHtml(raw) {
+    function renderBotHtml(raw, imagesBase) {
         if (!raw) return '';
         var text = String(raw);
         /* Desescapar strong ya enviada por el servidor. */
@@ -567,14 +663,23 @@
         text = text.replace(/\n/g, '<br>');
         text = text.replace(/(?:<br>\s*){3,}/g, '<br><br>');
         text = text.replace(/<br>\s*(<ul\b)/gi, '$1').replace(/(<\/ul>)\s*<br>/gi, '$1');
-        return renderActions(text);
+        return renderActions(text, imagesBase);
+    }
+
+    function chatboxImagesBase($box) {
+        if (!$box || !$box.length) return '';
+        var base = $box.data('imagesBase');
+        if (base === undefined || base === null || String(base) === '') {
+            base = $box.attr('data-images-base');
+        }
+        return base ? String(base).trim() : '';
     }
 
     function appendBotMessage($box, $history, raw, opts) {
         opts = opts || {};
         var text = String(raw || '');
         var $botDiv = $('<div class="xabia-msg bot"></div>').attr('data-raw', raw);
-        var $content = $('<span class="xabia-msg-content"></span>').html(renderBotHtml(text));
+        var $content = $('<span class="xabia-msg-content"></span>').html(renderBotHtml(text, chatboxImagesBase($box)));
         $botDiv.append($content);
         $history.append($botDiv);
         finishBotMessage($box, $history, $botDiv, raw, opts);
@@ -1647,9 +1752,9 @@
                             $lastBot.find('.xabia-continue').remove();
                             var $content = $lastBot.find('.xabia-msg-content');
                             if ($content.length) {
-                                $content.html(renderBotHtml(merged));
+                                $content.html(renderBotHtml(merged, chatboxImagesBase($box)));
                             } else {
-                                $lastBot.append($('<span class="xabia-msg-content"></span>').html(renderBotHtml(merged)));
+                                $lastBot.append($('<span class="xabia-msg-content"></span>').html(renderBotHtml(merged, chatboxImagesBase($box))));
                             }
                             if (r.data.truncated) {
                                 $lastBot.append(' ').append(makeContinueButton());
@@ -1766,18 +1871,13 @@
         });
 
         $(document).on('click', '.xabia-book-amelia', function(e) {
+            if ($(this).hasClass('xabia-book-amelia--link')) {
+                return;
+            }
             e.preventDefault();
             var sid = parseInt($(this).attr('data-service-id'), 10);
             if (!sid) return;
-            var detail = { serviceId: sid };
-            try {
-                document.dispatchEvent(new CustomEvent('xabia-amelia-booking-open', { detail: detail, bubbles: true }));
-            } catch (err1) {}
-            $(document.body).trigger('xabia-amelia-booking-open', [sid]);
-            var tpl = window.xabiaReservas && window.xabiaReservas.ameliaTriggerUrl ? String(window.xabiaReservas.ameliaTriggerUrl) : '';
-            if (tpl.indexOf('{service}') !== -1) {
-                window.location.href = tpl.split('{service}').join(String(sid));
-            }
+            xabiaAmeliaHandleBookingOpen(sid);
         });
 
         $(document).on('click', '.xabia-btn-cart', function(e) {
