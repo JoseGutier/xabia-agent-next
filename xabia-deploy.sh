@@ -541,7 +541,8 @@ git_release() {
     log_ok "Tag ${tag} creado"
   fi
 
-  git push origin "$GIT_BRANCH" --tags
+  git push origin "$GIT_BRANCH"
+  git push origin "$tag"
   log_step "[Git Commit & Push Completado] origin/${GIT_BRANCH} + ${tag}"
 }
 
