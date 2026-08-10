@@ -1,6 +1,6 @@
 # Despliegue completo en producción — Xabia Agent Core + Hub
 
-Checklist operativo para publicar **Xabia Agent Core v1.0.201+** (chat UI stream + Markdown, avatar parlante / launcher, starter questions, latencia chat, Document-to-RAG, pasaporte remoto, listados, WPML/DTP) y el **Hub central** en `xabia.ai`.
+Checklist operativo para publicar **Xabia Agent Core v1.0.202+** (acciones IMG/Amelia/MEC remoto, chat UI stream + Markdown, avatar parlante / launcher, starter questions, latencia chat, Document-to-RAG, pasaporte remoto, listados, WPML/DTP) y el **Hub central** en `xabia.ai`.
 
 Use este documento como **lista de verificación** antes de dar por cerrado un despliegue.
 
@@ -30,7 +30,7 @@ ONLY_SLUG=xabia-mec ./scripts/build-plugin-zip.sh
 ONLY_SLUG=xabia-woo ./scripts/build-plugin-zip.sh
 ```
 
-**Salida:** `xabia-agent-plugins/dist/xabia-agent-core-1.0.201.zip` (versión leída de `xabia-intelligence.php`), más ZIPs MEC/Woo.
+**Salida:** `xabia-agent-plugins/dist/xabia-agent-core-1.0.202.zip` (versión leída de `xabia-intelligence.php`), más ZIPs MEC/Woo.
 
 **Opcional — retail con vendor:**
 
@@ -102,7 +102,7 @@ En `.env` del hub, alinear con la versión publicada:
 
 ```env
 XABIA_CORE_LATEST_VERSION=1.0.168
-XABIA_CORE_UPDATE_PACKAGE=https://xabia.ai/downloads/xabia-agent-core-1.0.201.zip
+XABIA_CORE_UPDATE_PACKAGE=https://xabia.ai/downloads/xabia-agent-core-1.0.202.zip
 XABIA_MEC_LATEST_VERSION=1.0.3
 XABIA_MEC_UPDATE_PACKAGE=https://xabia.ai/downloads/xabia-mec-1.0.3.zip
 XABIA_WOO_LATEST_VERSION=1.0.4
@@ -276,7 +276,7 @@ El pipeline `./xabia-deploy.sh` publica el ZIP en **xabia.ai/downloads/** (actua
 
 ```bash
 ./scripts/build-retail-plugin-zips.sh
-# → xabia-agent-plugins/dist/retail/xabia-agent-core-1.0.201-retail.zip
+# → xabia-agent-plugins/dist/retail/xabia-agent-core-1.0.202-retail.zip
 ```
 
 Suba ese ZIP en el panel de Polar (producto Core / packs) sustituyendo el archivo descargable anterior. No hay CLI Polar en el Release Engine: la subida es manual o vía API de Polar con token de organización.
@@ -297,7 +297,7 @@ Las opciones `xabia_*` en `wp_options` se conservan entre versiones del Core sal
 
 ---
 
-## Orden recomendado de despliegue (Hub conocimiento + Core 1.0.201)
+## Orden recomendado de despliegue (Hub conocimiento + Core 1.0.202)
 
 ```
 1. Hub: migraciones 016 + 017 en MySQL
@@ -305,7 +305,7 @@ Las opciones `xabia_*` en `wp_options` se conservan entre versiones del Core sal
 3. Hub: activar cron vectorizer (cada 5 min)
 4. Hub: subir handlers DTP si aún no están (Router, DtpEntitlement, …)
 5. curl smoke test DTP → 401/403 (no 404)
-6. Build ZIP Core 1.0.201 (+ MEC 1.0.3 / Woo 1.0.4) y subir a xabia.ai/downloads/
+6. Build ZIP Core 1.0.202 (+ MEC 1.0.3 / Woo 1.0.4) y subir a xabia.ai/downloads/
 7. WordPress: actualizar Core (Plugins → Actualizar o ZIP manual)
 8. Verificar catálogo nativo en Playground (listado + «contacto de la última»)
 9. Entrenar / sincronizar agente si usa RAG vectorial; comprobar contadores locales
@@ -315,4 +315,4 @@ Las opciones `xabia_*` en `wp_options` se conservan entre versiones del Core sal
 
 ---
 
-*Core v1.0.201 — agosto 2026 — UI chat stream + Markdown, avatar parlante / [xabia_launcher], starter questions; latencia chat, Document-to-RAG, pasaporte remoto, MEC 1.0.3 / Woo 1.0.4; sync Hub, WPML + DTP.*
+*Core v1.0.202 — agosto 2026 — acciones IMG/Amelia/MEC remoto; UI chat stream + Markdown, avatar parlante / [xabia_launcher], starter questions; latencia chat, Document-to-RAG, pasaporte remoto, MEC 1.0.3 / Woo 1.0.4; sync Hub, WPML + DTP.*

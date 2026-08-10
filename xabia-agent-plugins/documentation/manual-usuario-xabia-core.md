@@ -1,13 +1,13 @@
 # Manual de usuario — Xabia Agent Core
 
-> **Versión del producto:** Xabia Agent Core **v1.0.201** (agosto 2026)  
+> **Versión del producto:** Xabia Agent Core **v1.0.202** (agosto 2026)  
 > **Índice de manuales:** [https://xabia.ai/docs/](https://xabia.ai/docs/)  
 > **PDF en línea:** [https://xabia.ai/docs/manual-usuario-xabia-core.pdf](https://xabia.ai/docs/manual-usuario-xabia-core.pdf)  
 > **HTML en línea:** [https://xabia.ai/docs/manual-usuario-xabia-core.html](https://xabia.ai/docs/manual-usuario-xabia-core.html)
 
 ## Guía rápida de instalación
 
-1. Descargue el ZIP de **Xabia Agent Core** (`xabia-agent-core-1.0.201.zip` o paquete retail equivalente).
+1. Descargue el ZIP de **Xabia Agent Core** (`xabia-agent-core-1.0.202.zip` o paquete retail equivalente).
 2. En WordPress, vaya a **Plugins → Añadir nuevo → Subir plugin**, seleccione el ZIP y pulse **Instalar ahora → Activar**.
 3. Abra **Xabia Agent** y configure **Conexión a la IA**: pegue la licencia `XABIA--…`, elija **Xabia Cloud** (recomendado) o **Infraestructura propia**, y guarde.
 4. Cree un agente desde **Nuevo agente**, escriba nombre, saludo e instrucciones básicas.
@@ -368,7 +368,7 @@ Solo está disponible con un **addon compatible** instalado y **activo**. Si apa
 
 Tras seleccionarlo, use **Conectar y Mapear** para revisar las columnas que expone antes de usarlas.
 
-Los addons **MEC** y **Woo** también pueden trabajar contra una base de datos remota desde los campos **Host / DB / usuario / contraseña**. En ese caso el modo sigue siendo **Addon nativo** (porque aporta reglas, mapeo y acciones del dominio), pero la lectura SQL se hace contra otro WordPress. Para MEC remoto, si el sitio del chat no tiene Modern Events Calendar local, el asistente usa el enlace remoto del evento y no genera acciones de reserva locales.
+Los addons **MEC** y **Woo** también pueden trabajar contra una base de datos remota desde los campos **Host / DB / usuario / contraseña**. En ese caso el modo sigue siendo **Addon nativo** (porque aporta reglas, mapeo y acciones del dominio), pero la lectura SQL se hace contra otro WordPress. Para **MEC remoto** (Core **≥ 1.0.202** + addon MEC), si el sitio del chat no tiene Modern Events Calendar local, el asistente **nunca** emite botones de reserva local (`[ACTION:BOOK:ID]`): dirige al visitante con **`[ACTION:URL:Link]`** usando la columma **Link** del evento remoto.
 
 ### 6.5 Varios orígenes a la vez (“multi‑fuente”)
 
@@ -768,6 +768,9 @@ El **ZIP** del instalador y el contrato siguen llegando por el canal comercial o
 | Con Cloud siguen errores extraños entre modelos | A veces toca soporte porque el lado central puede estar corrigiendo un modelo puntual para su zona |
 | **Avatar parlante no abre a pantalla completa** | Apariencia → **Avatar parlante** | Core **≥ 1.0.200**: el mute de voz no desactiva el modo inmersivo; vacíe caché CSS/JS |
 | **Respuestas sin negrita/listas** | Actualizar Core | Core **≥ 1.0.201** renderiza Markdown básico (`**negrita**`, viñetas) en el chat |
+| **Imagen rota o no carga en el chat** | Mapeo + versión Core | Core **≥ 1.0.202**: rutas relativas en `[ACTION:IMG:…]` se resuelven con la base de imágenes del agente; compruebe rol **Imagen** y URL válida |
+| **Reserva Amelia no abre el formulario** | Apariencia / Amelia | Core **≥ 1.0.202**: fallback automático (evento JS → clic en widget → URL trigger); configure URL de reserva Amelia si aplica |
+| **MEC remoto muestra botón de reserva local** | Addon MEC + Core | Core **≥ 1.0.202**: solo enlace `[ACTION:URL:Link]` en catálogos SQL remotos; reserva local solo con MEC instalado en el mismo WordPress |
 | “No encuentra” lo que cargó en CSV | ¿Ejecutó **Sincronizar** tras subir el archivo? ¿Pulsó **Entrenar** si usa búsqueda inteligente? Baje un poco los controles de **confianza del contexto** y de **similitud**: demasiado altos hacen que el asistente “no vea” textos relacionados pero no idénticos |
 | Listado de empresas lento o incompleto | Core **≥ 1.0.118**; compruebe mapeo **ENTE** y taxonomía; pruebe listado nativo (§11) antes de depurar Hub |
 | «La última» no devuelve contacto | Tras listado, pregunte en el mismo chat; roles **Teléfono**/**Email**/**Web** en mapeo; versión **≥ 1.0.125** |
@@ -812,6 +815,10 @@ Depende de **condiciones contractuales**: dos direcciones públicas distintas a 
 Mire en **Personalidad** el **tope diario de tokens por agente**. La barra lateral **Tokens hoy** muestra si ya alcanzó ese techo para el día técnico en curso; al día siguiente ese contador vuelve a cero para el agente, aunque su **cartera global** siga teniendo saldo disponible para otros agentes u otros días.
 
 ## Notas de versión (Core)
+
+### Core v1.0.202 (agosto 2026)
+- Acciones de chat: imágenes relativas en `[ACTION:IMG:…]`; fallback de reserva Amelia; reglas estrictas MEC remoto (`[ACTION:URL:Link]` únicamente).
+- Monorepo alineado con producción: API completa y addons Woo/MEC/Avirato.
 
 ### Core v1.0.201 (agosto 2026)
 - Chat: Markdown básico en respuestas; UI stream sin burbujas; avatar parlante / launcher; preguntas de arranque; empaquetado completo del ZIP.

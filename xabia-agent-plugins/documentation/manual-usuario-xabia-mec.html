@@ -593,7 +593,7 @@ img[alt="Xabia"] {
 </ul>
 <h3>7.2 Botón de reserva</h3>
 <p>Cuando el proyecto usa el motor de <strong>reservas MEC</strong> y el evento tiene <strong>booking</strong> habilitado, la respuesta puede incluir un <strong>enlace o botón</strong> que abre la página del evento (con ancla de reserva por defecto).</p>
-<p>En catálogos <strong>MEC remotos</strong> sin MEC local en el WordPress del chat, Xabia no genera el botón de reserva local porque no puede verificar el formulario de ese sitio. En su lugar, dirige al visitante al campo <strong>Link</strong> del evento remoto. Si el evento tiene reserva en la web origen, esa ficha remota será la que gestione el proceso.</p>
+<p>En catálogos <strong>MEC remotos</strong> sin MEC local en el WordPress del chat, Xabia <strong>no</strong> genera botones de reserva local (<code>[ACTION:BOOK:ID]</code>) desde Core <strong>≥ 1.0.202</strong>: el asistente emite siempre un enlace al campo <strong>Link</strong> del evento remoto (<code>[ACTION:URL:Link]</code>). Si el evento tiene reserva en la web origen, esa ficha remota será la que gestione el proceso.</p>
 <h3>7.3 Privacidad</h3>
 <p>El visitante solo ve lo que el <strong>plugin de chat</strong> muestre. Los mensajes se procesan según la configuración del Core (proveedor de IA, Hub, etc.). Consulte la política de privacidad de su sitio y el <a href="./manual-usuario-xabia-core.md">Manual del Core</a>.</p>
 <hr>

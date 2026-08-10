@@ -5,7 +5,7 @@ Tags: chatbot, ai, gemini, virtual assistant, rag, wordpress
 Requires at least: 6.0
 Tested up to: 6.9
 Requires PHP: 7.4
-Stable tag: 1.0.201
+Stable tag: 1.0.202
 License: GPLv2 or later
 License URI: http://www.gnu.org/licenses/gpl-2.0.html
 
@@ -25,6 +25,12 @@ Documentación: https://xabia.ai/docs/
 4. Cree un agente, sincronice datos y publique con shortcode o modo nativo.
 
 == Changelog ==
+
+= 1.0.202 =
+* Acciones: rutas relativas en [ACTION:IMG:…] resueltas con data-images-base del chatbox.
+* Amelia: fallback de reserva (evento JS → clic DOM → URL trigger → scroll) y enlace directo si hay URL configurada.
+* Addon MEC: catálogo remoto usa solo [ACTION:URL:Link]; prohibido [ACTION:BOOK:ID] en nodos SQL remotos.
+* Monorepo: API completa y paquetes Woo/MEC/Avirato sincronizados con producción.
 
 = 1.0.201 =
 * Chat: renderizado Markdown básico (**negrita**, listas) en mensajes del bot.

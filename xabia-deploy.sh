@@ -268,8 +268,9 @@ deploy_hub_php() {
   local remote_src="${hub_path}/src"
 
   if [[ ! -d "$src_local" ]]; then
-    log_err "No existe $src_local"
-    exit 1
+    log_warn "No existe $src_local — omitiendo deploy Hub PHP (sin cambios en Hub)"
+    log_step "[Hub PHP desplegado] omitido (src no presente en monorepo)"
+    return 0
   fi
 
   # Puente DTP + Router + pipeline conocimiento Hub.

@@ -228,11 +228,11 @@ img[alt="Xabia"] {
 <body>
 <h1>Manual de usuario — Xabia Agent Core</h1>
 <blockquote>
-<p><strong>Versión del producto:</strong> Xabia Agent Core <strong>v1.0.201</strong> (agosto 2026)<br><strong>Índice de manuales:</strong> <a href="https://xabia.ai/docs/">https://xabia.ai/docs/</a><br><strong>PDF en línea:</strong> <a href="https://xabia.ai/docs/manual-usuario-xabia-core.pdf">https://xabia.ai/docs/manual-usuario-xabia-core.pdf</a><br><strong>HTML en línea:</strong> <a href="https://xabia.ai/docs/manual-usuario-xabia-core.html">https://xabia.ai/docs/manual-usuario-xabia-core.html</a></p>
+<p><strong>Versión del producto:</strong> Xabia Agent Core <strong>v1.0.202</strong> (agosto 2026)<br><strong>Índice de manuales:</strong> <a href="https://xabia.ai/docs/">https://xabia.ai/docs/</a><br><strong>PDF en línea:</strong> <a href="https://xabia.ai/docs/manual-usuario-xabia-core.pdf">https://xabia.ai/docs/manual-usuario-xabia-core.pdf</a><br><strong>HTML en línea:</strong> <a href="https://xabia.ai/docs/manual-usuario-xabia-core.html">https://xabia.ai/docs/manual-usuario-xabia-core.html</a></p>
 </blockquote>
 <h2>Guía rápida de instalación</h2>
 <ol>
-<li>Descargue el ZIP de <strong>Xabia Agent Core</strong> (<code>xabia-agent-core-1.0.201.zip</code> o paquete retail equivalente).</li>
+<li>Descargue el ZIP de <strong>Xabia Agent Core</strong> (<code>xabia-agent-core-1.0.202.zip</code> o paquete retail equivalente).</li>
 <li>En WordPress, vaya a <strong>Plugins → Añadir nuevo → Subir plugin</strong>, seleccione el ZIP y pulse <strong>Instalar ahora → Activar</strong>.</li>
 <li>Abra <strong>Xabia Agent</strong> y configure <strong>Conexión a la IA</strong>: pegue la licencia <code>XABIA--…</code>, elija <strong>Xabia Cloud</strong> (recomendado) o <strong>Infraestructura propia</strong>, y guarde.</li>
 <li>Cree un agente desde <strong>Nuevo agente</strong>, escriba nombre, saludo e instrucciones básicas.</li>
@@ -728,7 +728,7 @@ img[alt="Xabia"] {
 <h3>6.4 Conectores de addons</h3>
 <p>Solo está disponible con un <strong>addon compatible</strong> instalado y <strong>activo</strong>. Si aparece como no disponible, instale primero ese plugin desde <strong>Plugins</strong>.</p>
 <p>Tras seleccionarlo, use <strong>Conectar y Mapear</strong> para revisar las columnas que expone antes de usarlas.</p>
-<p>Los addons <strong>MEC</strong> y <strong>Woo</strong> también pueden trabajar contra una base de datos remota desde los campos <strong>Host / DB / usuario / contraseña</strong>. En ese caso el modo sigue siendo <strong>Addon nativo</strong> (porque aporta reglas, mapeo y acciones del dominio), pero la lectura SQL se hace contra otro WordPress. Para MEC remoto, si el sitio del chat no tiene Modern Events Calendar local, el asistente usa el enlace remoto del evento y no genera acciones de reserva locales.</p>
+<p>Los addons <strong>MEC</strong> y <strong>Woo</strong> también pueden trabajar contra una base de datos remota desde los campos <strong>Host / DB / usuario / contraseña</strong>. En ese caso el modo sigue siendo <strong>Addon nativo</strong> (porque aporta reglas, mapeo y acciones del dominio), pero la lectura SQL se hace contra otro WordPress. Para <strong>MEC remoto</strong> (Core <strong>≥ 1.0.202</strong> + addon MEC), si el sitio del chat no tiene Modern Events Calendar local, el asistente <strong>nunca</strong> emite botones de reserva local (<code>[ACTION:BOOK:ID]</code>): dirige al visitante con <strong><code>[ACTION:URL:Link]</code></strong> usando la columma <strong>Link</strong> del evento remoto.</p>
 <h3>6.5 Varios orígenes a la vez (“multi‑fuente”)</h3>
 <p>Puede combinar <strong>hasta dos</strong> fuentes (por ejemplo SQL remoto + CSV).</p>
 <ul>
@@ -1153,6 +1153,18 @@ img[alt="Xabia"] {
 <td>Actualizar Core</td>
 </tr>
 <tr>
+<td><strong>Imagen rota o no carga en el chat</strong></td>
+<td>Mapeo + versión Core</td>
+</tr>
+<tr>
+<td><strong>Reserva Amelia no abre el formulario</strong></td>
+<td>Apariencia / Amelia</td>
+</tr>
+<tr>
+<td><strong>MEC remoto muestra botón de reserva local</strong></td>
+<td>Addon MEC + Core</td>
+</tr>
+<tr>
 <td>“No encuentra” lo que cargó en CSV</td>
 <td>¿Ejecutó <strong>Sincronizar</strong> tras subir el archivo? ¿Pulsó <strong>Entrenar</strong> si usa búsqueda inteligente? Baje un poco los controles de <strong>confianza del contexto</strong> y de <strong>similitud</strong>: demasiado altos hacen que el asistente “no vea” textos relacionados pero no idénticos</td>
 </tr>
@@ -1196,6 +1208,11 @@ img[alt="Xabia"] {
 <h3>¿Hay saldo en la cartera pero el visitante ve “modo mantenimiento”?</h3>
 <p>Mire en <strong>Personalidad</strong> el <strong>tope diario de tokens por agente</strong>. La barra lateral <strong>Tokens hoy</strong> muestra si ya alcanzó ese techo para el día técnico en curso; al día siguiente ese contador vuelve a cero para el agente, aunque su <strong>cartera global</strong> siga teniendo saldo disponible para otros agentes u otros días.</p>
 <h2>Notas de versión (Core)</h2>
+<h3>Core v1.0.202 (agosto 2026)</h3>
+<ul>
+<li>Acciones de chat: imágenes relativas en <code>[ACTION:IMG:…]</code>; fallback de reserva Amelia; reglas estrictas MEC remoto (<code>[ACTION:URL:Link]</code> únicamente).</li>
+<li>Monorepo alineado con producción: API completa y addons Woo/MEC/Avirato.</li>
+</ul>
 <h3>Core v1.0.201 (agosto 2026)</h3>
 <ul>
 <li>Chat: Markdown básico en respuestas; UI stream sin burbujas; avatar parlante / launcher; preguntas de arranque; empaquetado completo del ZIP.</li>

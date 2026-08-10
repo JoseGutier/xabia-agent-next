@@ -250,7 +250,7 @@ Gracias a las **reglas de búsqueda** inyectadas en el router, el modelo tiende 
 
 Cuando el proyecto usa el motor de **reservas MEC** y el evento tiene **booking** habilitado, la respuesta puede incluir un **enlace o botón** que abre la página del evento (con ancla de reserva por defecto).
 
-En catálogos **MEC remotos** sin MEC local en el WordPress del chat, Xabia no genera el botón de reserva local porque no puede verificar el formulario de ese sitio. En su lugar, dirige al visitante al campo **Link** del evento remoto. Si el evento tiene reserva en la web origen, esa ficha remota será la que gestione el proceso.
+En catálogos **MEC remotos** sin MEC local en el WordPress del chat, Xabia **no** genera botones de reserva local (`[ACTION:BOOK:ID]`) desde Core **≥ 1.0.202**: el asistente emite siempre un enlace al campo **Link** del evento remoto (`[ACTION:URL:Link]`). Si el evento tiene reserva en la web origen, esa ficha remota será la que gestione el proceso.
 
 ### 7.3 Privacidad
 
