@@ -1,0 +1,532 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<title>BYOK Google Gemini — Xabia Agent</title>
+	<meta name="description" content="Guía para conectar Xabia Agent con tu propia cuenta de Google Gemini (AI Studio o Vertex AI) mediante BYOK.">
+	<link rel="preconnect" href="https://fonts.googleapis.com">
+	<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+	<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600&family=Source+Sans+3:wght@400;600;700&display=swap" rel="stylesheet">
+	<link rel="stylesheet" href="assets/manual.css">
+	<style>
+		:root {
+			--google-blue: #4285f4;
+			--google-green: #34a853;
+			--google-orange: #ff9966;
+			--google-gray: #ccb3b3;
+			--xabia-sky: #99ccff;
+		}
+
+		.content {
+			background: var(--paper);
+			border: 1px solid var(--line);
+			border-radius: var(--radius);
+			padding: 1.75rem 1.5rem 2rem;
+			box-shadow: 0 1px 0 rgba(26, 31, 36, 0.04);
+		}
+
+		.content h2 {
+			font-family: var(--display);
+			font-size: 1.35rem;
+			color: var(--accent);
+			margin: 2rem 0 0.75rem;
+			padding-left: 0.65rem;
+			border-left: 4px solid var(--accent);
+		}
+
+		.content h2:first-of-type { margin-top: 0; }
+
+		.content h3 {
+			font-size: 1.08rem;
+			color: #185a94;
+			margin: 1.35rem 0 0.5rem;
+		}
+
+		.content p, .content li { color: var(--ink); }
+
+		.lede-box {
+			background: linear-gradient(135deg, #e8f4fc 0%, #fff 60%);
+			border: 1px solid #c5dae8;
+			border-radius: var(--radius);
+			padding: 1.1rem 1.25rem;
+			margin: 1rem 0 1.5rem;
+		}
+
+		.lede-box p:last-child { margin-bottom: 0; }
+
+		/* Diagrama flujo BYOK */
+		.flow-diagram {
+			display: flex;
+			align-items: center;
+			justify-content: center;
+			flex-wrap: wrap;
+			gap: 0.5rem 0.75rem;
+			margin: 1.5rem 0;
+			padding: 1.25rem;
+			background: #fafbfd;
+			border: 1px dashed var(--line);
+			border-radius: var(--radius);
+		}
+
+		.flow-node {
+			text-align: center;
+			min-width: 100px;
+		}
+
+		.flow-node__icon {
+			width: 56px;
+			height: 56px;
+			margin: 0 auto 0.35rem;
+			border-radius: 12px;
+			display: flex;
+			align-items: center;
+			justify-content: center;
+			background: #fff;
+			border: 1px solid var(--line);
+			box-shadow: 0 2px 8px rgba(33, 112, 176, 0.08);
+		}
+
+		.flow-node__icon svg { width: 32px; height: 32px; }
+
+		.flow-node__label {
+			font-size: 0.78rem;
+			font-weight: 600;
+			color: var(--muted);
+			line-height: 1.25;
+		}
+
+		.flow-arrow {
+			color: var(--accent);
+			font-size: 1.25rem;
+			font-weight: 700;
+			padding: 0 0.15rem;
+		}
+
+		/* Tarjetas de opción */
+		.option-grid {
+			display: grid;
+			gap: 1rem;
+			margin: 1.25rem 0;
+		}
+
+		@media (min-width: 720px) {
+			.option-grid { grid-template-columns: 1fr 1fr; }
+		}
+
+		.option-card {
+			border: 1px solid var(--line);
+			border-radius: var(--radius);
+			padding: 1.15rem 1.25rem;
+			background: #fff;
+			position: relative;
+		}
+
+		.option-card--recommended {
+			border-color: var(--accent);
+			box-shadow: 0 4px 16px rgba(33, 112, 176, 0.1);
+		}
+
+		.option-card__badge {
+			display: inline-block;
+			font-size: 0.7rem;
+			font-weight: 700;
+			text-transform: uppercase;
+			letter-spacing: 0.06em;
+			padding: 0.2rem 0.55rem;
+			border-radius: 999px;
+			margin-bottom: 0.5rem;
+		}
+
+		.option-card__badge--rec {
+			background: #e3f0fa;
+			color: var(--accent);
+		}
+
+		.option-card__badge--pro {
+			background: #fce4ec;
+			color: #c2185b;
+		}
+
+		.option-card h3 {
+			margin-top: 0;
+			font-family: var(--display);
+		}
+
+		.option-card__illus {
+			margin: 0.75rem 0 0;
+			text-align: center;
+		}
+
+		.option-card__illus svg {
+			max-width: 100%;
+			height: auto;
+		}
+
+		/* Pasos numerados */
+		.steps {
+			counter-reset: step;
+			list-style: none;
+			padding: 0;
+			margin: 1rem 0;
+		}
+
+		.steps li {
+			counter-increment: step;
+			position: relative;
+			padding: 0.65rem 0 0.65rem 2.75rem;
+			margin: 0;
+			border-left: 2px solid #e3f0fa;
+			margin-left: 0.85rem;
+		}
+
+		.steps li:last-child { border-left-color: transparent; }
+
+		.steps li::before {
+			content: counter(step);
+			position: absolute;
+			left: -0.85rem;
+			top: 0.55rem;
+			width: 1.65rem;
+			height: 1.65rem;
+			background: var(--accent);
+			color: #fff;
+			border-radius: 50%;
+			font-size: 0.82rem;
+			font-weight: 700;
+			display: flex;
+			align-items: center;
+			justify-content: center;
+			line-height: 1;
+		}
+
+		.steps li strong { color: #185a94; }
+
+		/* Tabla comparativa */
+		.compare-wrap {
+			overflow-x: auto;
+			margin: 1.25rem 0;
+		}
+
+		table.compare {
+			width: 100%;
+			border-collapse: collapse;
+			font-size: 0.92rem;
+		}
+
+		table.compare th,
+		table.compare td {
+			border: 1px solid var(--line);
+			padding: 0.65rem 0.75rem;
+			text-align: left;
+			vertical-align: top;
+		}
+
+		table.compare th {
+			background: #e3f0fa;
+			color: #185a94;
+			font-weight: 600;
+		}
+
+		table.compare th:first-child { background: #f4f6f8; }
+
+		table.compare tr:nth-child(even) td { background: #fafbfd; }
+
+		table.compare .col-highlight {
+			background: #f0f7fc !important;
+			border-left: 3px solid var(--accent);
+		}
+
+		.tag {
+			display: inline-block;
+			font-size: 0.78rem;
+			padding: 0.15rem 0.45rem;
+			border-radius: 4px;
+			background: #eef4fb;
+			color: var(--accent);
+			font-weight: 600;
+		}
+
+		.callout {
+			background: var(--warn-bg);
+			border: 1px solid #f0d090;
+			border-radius: var(--radius);
+			padding: 0.85rem 1rem;
+			margin: 1rem 0;
+			font-size: 0.95rem;
+		}
+
+		.callout strong { color: var(--warn); }
+
+		.panel-screenshot {
+			margin: 1rem 0;
+			padding: 1rem;
+			background: #1e293b;
+			border-radius: var(--radius);
+			color: #e2e8f0;
+			font-family: ui-monospace, monospace;
+			font-size: 0.82rem;
+			line-height: 1.5;
+		}
+
+		.panel-screenshot .label {
+			font-size: 0.7rem;
+			text-transform: uppercase;
+			letter-spacing: 0.08em;
+			color: #94a3b8;
+			margin-bottom: 0.5rem;
+		}
+
+		.panel-screenshot .highlight {
+			background: rgba(33, 112, 176, 0.35);
+			border-radius: 4px;
+			padding: 0.1rem 0.25rem;
+		}
+
+		.logo-row {
+			display: flex;
+			align-items: center;
+			gap: 0.75rem;
+			margin-bottom: 0.5rem;
+		}
+
+		.logo-row svg { height: 36px; width: auto; }
+
+		@media print {
+			body { background: #fff; }
+			.wrap { padding: 0; }
+			.content { box-shadow: none; border: none; }
+		}
+	</style>
+</head>
+<body>
+	<div class="wrap">
+		<header class="site-header">
+			<a class="brand" href="./">Xabia AI <span>Manuales</span></a>
+			<p class="meta"><a href="./">← Índice de manuales</a></p>
+		</header>
+
+		<div class="hero">
+			<div class="logo-row" aria-hidden="true">
+				<svg viewBox="0 0 665 227" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="xabia">
+					<polygon points="125.91 224.51 78.25 158.74 123.5 97.26 95.37 97.26 63.94 141.56 31.61 97.26 2.14 97.26 48.42 159.29 0 224.51 28.4 224.51 62.57 176.53 96.71 224.51 125.91 224.51" fill="#99ccff"/>
+					<path d="M244.59 97.26v17.31c-4.38-5.8-9.87-10.46-16.48-13.96-7.59-4.02-16.21-6.03-25.85-6.03-11.79 0-22.37 2.95-31.75 8.84-9.38 5.89-16.79 13.84-22.23 23.84-5.45 10-8.17 21.26-8.17 33.76s2.72 23.75 8.17 33.75c5.45 10 12.86 17.91 22.23 23.71 9.38 5.81 19.96 8.71 31.75 8.71 9.64 0 18.31-2.01 25.99-6.03 6.61-3.46 12.05-8.08 16.34-13.85v17.2h24.38v-127.25h-24.38z" fill="#99ccff"/>
+					<path d="M424.62 127.26c-5.36-10-12.72-17.95-22.1-23.84-9.38-5.89-19.87-8.84-31.48-8.84-9.47 0-18.08 2.01-25.85 6.03-6.85 3.54-12.52 8.27-17.01 14.18V33.23h-24.11v191.28h24.11v-17.41c4.4 5.87 9.98 10.56 16.74 14.06 7.77 4.02 16.47 6.03 26.12 6.03 11.61 0 22.1-2.9 31.48-8.71 9.38-5.8 16.74-13.71 22.1-23.71 5.36-10 8.04-21.25 8.04-33.75s-2.68-23.75-8.04-33.76z" fill="#99ccff"/>
+					<path d="M459.98 224.51v-127.25h24.38v127.25h-24.38z" fill="#99ccff"/>
+					<path d="M616.43 97.26v17.31c-4.38-5.8-9.87-10.46-16.48-13.96-7.59-4.02-16.21-6.03-25.85-6.03-11.79 0-22.37 2.95-31.75 8.84-9.38 5.89-16.79 13.84-22.23 23.84-5.45 10-8.17 21.26-8.17 33.76s2.72 23.75 8.17 33.75c5.45 10 12.86 17.91 22.23 23.71 9.38 5.81 19.96 8.71 31.75 8.71 9.64 0 18.31-2.01 25.99-6.03 6.61-3.46 12.05-8.08 16.34-13.85v17.2h24.38v-127.25h-24.38z" fill="#99ccff"/>
+					<circle cx="627.63" cy="37.59" r="37.59" fill="#ff9966"/>
+					<path d="M549.97 20.95c7.46 0 14.03 2.88 18.87 7.8 4.78 4.87 7.56 11.34 7.56 18.63s-2.83 13.99-7.67 18.87c-4.83 4.86-11.35 7.69-18.76 7.69s-13.93-2.83-18.76-7.69c-4.84-4.88-7.67-11.43-7.67-18.87s2.78-13.76 7.56-18.63c4.84-4.93 11.4-7.8 18.87-7.8z" fill="#ccb3b3"/>
+					<path d="M472.3 72.71c-4.47 0-8.13-1.47-10.98-4.42-2.86-2.95-4.29-6.65-4.29-11.12s1.43-7.9 4.29-10.85c2.86-2.95 6.52-4.42 10.98-4.42s8.12 1.47 10.98 4.42c2.86 2.95 4.29 6.56 4.29 10.85s-1.43 8.17-4.29 11.12c-2.86 2.95-6.52 4.42-10.98 4.42z" fill="#99ccff"/>
+				</svg>
+			</div>
+			<h1>Cómo usar tu propia cuenta de Google Gemini en Xabia Agent</h1>
+			<p class="lede"><strong>BYOK — Bring Your Own Key.</strong> Conecta el plugin directamente con Google: las peticiones del chatbot van desde tu WordPress a la infraestructura de Google, sin pasar por el sistema de recargas de Xabia Cloud (<a href="https://xabia.ai/#wallet">#wallet</a>).</p>
+		</div>
+
+		<article class="content">
+			<div class="lede-box">
+				<p>En <strong>Xabia Agent</strong> tú tienes el control total. Si prefieres no utilizar recargas Xabia Cloud, puedes abonar el consumo directamente a Google — o aprovechar sus créditos gratuitos — manteniendo la clave en tu servidor.</p>
+			</div>
+
+			<!-- Diagrama flujo -->
+			<figure class="flow-diagram" aria-label="Flujo BYOK: WordPress a Google Gemini">
+				<div class="flow-node">
+					<div class="flow-node__icon">
+						<svg viewBox="0 0 24 24" fill="none" stroke="#2170b0" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 3v18"/></svg>
+					</div>
+					<div class="flow-node__label">Tu WordPress<br><small>Visitante escribe</small></div>
+				</div>
+				<span class="flow-arrow" aria-hidden="true">→</span>
+				<div class="flow-node">
+					<div class="flow-node__icon">
+						<svg viewBox="0 0 24 24" fill="none" stroke="#2170b0" stroke-width="1.5"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg>
+					</div>
+					<div class="flow-node__label">Xabia Agent<br><small>Plugin + tu clave</small></div>
+				</div>
+				<span class="flow-arrow" aria-hidden="true">→</span>
+				<div class="flow-node">
+					<div class="flow-node__icon">
+						<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><polygon points="12 2 2 7 12 12 22 7" fill="#4285f4"/><polygon points="2 17 12 22 22 17" fill="#34a853"/><polygon points="2 12 12 17 22 12" fill="#fbbc04"/></svg>
+					</div>
+					<div class="flow-node__label">Google Gemini<br><small>AI Studio o Vertex</small></div>
+				</div>
+				<span class="flow-arrow" aria-hidden="true">→</span>
+				<div class="flow-node">
+					<div class="flow-node__icon">
+						<svg viewBox="0 0 24 24" fill="none" stroke="#2170b0" stroke-width="1.5"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+					</div>
+					<div class="flow-node__label">Respuesta<br><small>Al visitante</small></div>
+				</div>
+			</figure>
+
+			<h2>Dos formas de conectar tu clave de Google</h2>
+
+			<div class="option-grid">
+				<div class="option-card option-card--recommended">
+					<span class="option-card__badge option-card__badge--rec">Recomendada · 95% usuarios</span>
+					<h3>Opción 1: Google AI Studio</h3>
+					<p>La más rápida. No requiere Google Cloud Console ni facturación GCP. Activa en <strong>menos de 2 minutos</strong>.</p>
+					<div class="option-card__illus">
+						<svg viewBox="0 0 280 120" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Google AI Studio">
+							<rect width="280" height="120" rx="8" fill="#f8fafc" stroke="#dadce0"/>
+							<text x="20" y="28" font-family="system-ui,sans-serif" font-size="11" fill="#5f6368" font-weight="600">aistudio.google.com</text>
+							<rect x="20" y="40" width="120" height="28" rx="6" fill="#4285f4"/>
+							<text x="35" y="58" font-family="system-ui,sans-serif" font-size="11" fill="#fff" font-weight="600">Create API Key</text>
+							<rect x="160" y="44" width="100" height="20" rx="4" fill="#fff" stroke="#dadce0"/>
+							<text x="168" y="58" font-family="monospace" font-size="9" fill="#3c4043">AIza••••••••</text>
+							<path d="M145 54 L155 54" stroke="#34a853" stroke-width="2" marker-end="url(#arr)"/>
+							<defs><marker id="arr" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6" fill="#34a853"/></marker></defs>
+							<text x="20" y="95" font-family="system-ui,sans-serif" font-size="10" fill="#2170b0">→ Pegar en Xabia → Opción A (BYOK)</text>
+						</svg>
+					</div>
+				</div>
+
+				<div class="option-card">
+					<span class="option-card__badge option-card__badge--pro">Enterprise · Xabia PRO</span>
+					<h3>Opción 2: Google Vertex AI</h3>
+					<p>Para empresas con GCP, SLA corporativos, facturación consolidada o residencia de datos en regiones concretas (ej. <code>europe-west1</code>).</p>
+					<div class="option-card__illus">
+						<svg viewBox="0 0 280 120" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Google Cloud Vertex">
+							<rect width="280" height="120" rx="8" fill="#f8fafc" stroke="#dadce0"/>
+							<text x="20" y="28" font-family="system-ui,sans-serif" font-size="11" fill="#5f6368" font-weight="600">console.cloud.google.com</text>
+							<rect x="20" y="38" width="70" height="22" rx="4" fill="#e8f0fe" stroke="#4285f4"/>
+							<text x="28" y="53" font-family="system-ui,sans-serif" font-size="9" fill="#185abc">Vertex AI</text>
+							<rect x="98" y="38" width="70" height="22" rx="4" fill="#fef7e0" stroke="#f9ab00"/>
+							<text x="106" y="53" font-family="system-ui,sans-serif" font-size="9" fill="#5f6368">Service Acct</text>
+							<rect x="176" y="38" width="84" height="22" rx="4" fill="#e6f4ea" stroke="#34a853"/>
+							<text x="184" y="53" font-family="system-ui,sans-serif" font-size="9" fill="#137333">clave.json</text>
+							<text x="20" y="85" font-family="system-ui,sans-serif" font-size="10" fill="#2170b0">→ Conector Vertex en Xabia Agent PRO</text>
+						</svg>
+					</div>
+				</div>
+			</div>
+
+			<h2>Opción 1: Google AI Studio (paso a paso)</h2>
+			<p>Es la opción más rápida. No requiere configurar infraestructura en Google Cloud y se activa en menos de 2 minutos.</p>
+
+			<ol class="steps">
+				<li>Accede a <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener noreferrer"><strong>Google AI Studio</strong></a> e inicia sesión con tu cuenta de Google.</li>
+				<li>Haz clic en el botón destacado <strong>«Create API Key»</strong> (o «Crear clave de API»).</li>
+				<li>Selecciona tu proyecto o deja que Google genere uno automático y pulsa <strong>«Create API key in new project»</strong>.</li>
+				<li>Copia la clave alfanumérica generada (formato <code>AIza…</code>).</li>
+				<li>Ve al panel de WordPress → <strong>Xabia Agent</strong> (o <strong>Xabia LITE</strong>) → selecciona <strong>«Opción A: Tu propia clave de Google Gemini (BYOK)»</strong> y pega la clave. Guarda los ajustes.</li>
+			</ol>
+
+			<div class="panel-screenshot">
+				<div class="label">Vista del panel Xabia LITE</div>
+				WordPress Admin → <span class="highlight">Xabia LITE</span><br>
+				◉ Opción A: Tu propia clave de Google Gemini (BYOK - Gratis)<br>
+				&nbsp;&nbsp;Google Gemini API Key: [ •••••••••••••••••••• ]<br>
+				&nbsp;&nbsp;☑ 100% Gratuito. NO requiere cuenta en Xabia.
+			</div>
+
+			<div class="callout">
+				<strong>Ventajas:</strong> Incluye una cuota de uso <strong>gratuita renovable mensualmente</strong> por parte de Google y un modelo de pago por consumo estándar ultra-económico si superas la cuota.
+			</div>
+
+			<h2>Opción 2: Google Vertex AI (Enterprise)</h2>
+			<p>Si tu empresa ya opera con <strong>Google Cloud Platform (GCP)</strong>, requiere acuerdos de nivel de servicio (SLA) corporativos, facturación consolidada o residencia de datos en regiones específicas (ej. Europa-Oeste), puedes conectar Xabia Agent mediante Vertex AI.</p>
+
+			<h3>Pasos para la integración con Vertex AI</h3>
+			<ol class="steps">
+				<li><strong>Crear o seleccionar proyecto:</strong> Accede a la <a href="https://console.cloud.google.com/" target="_blank" rel="noopener noreferrer">Consola de Google Cloud</a> y selecciona tu proyecto.</li>
+				<li><strong>Habilitar la API de Vertex AI:</strong> En el buscador de la consola, busca «Vertex AI API» y haz clic en <strong>Habilitar</strong>.</li>
+				<li><strong>Crear Cuenta de Servicio (Service Account):</strong>
+					<ul>
+						<li>Ve a <strong>IAM y Administración → Cuentas de servicio</strong>.</li>
+						<li>Crea una nueva cuenta con el rol <strong>Usuario de Vertex AI</strong> (<em>Vertex AI User</em>).</li>
+					</ul>
+				</li>
+				<li><strong>Generar clave JSON:</strong> En la cuenta de servicio creada, ve a la pestaña <strong>Claves → Agregar clave → Crear clave nueva</strong> (formato JSON). El archivo <code>.json</code> se descargará en tu equipo.</li>
+				<li><strong>Configuración en Xabia Agent PRO:</strong> En los ajustes avanzados del plugin, selecciona el conector <strong>Vertex AI</strong>, introduce tu <strong>Project ID</strong>, selecciona la región (ej. <code>europe-west1</code>) y carga el contenido del archivo JSON.</li>
+			</ol>
+
+			<figure class="flow-diagram" aria-label="Flujo Vertex AI en GCP">
+				<div class="flow-node">
+					<div class="flow-node__icon"><svg viewBox="0 0 24 24" fill="#4285f4"><rect x="4" y="4" width="16" height="16" rx="2"/></svg></div>
+					<div class="flow-node__label">Proyecto GCP</div>
+				</div>
+				<span class="flow-arrow">→</span>
+				<div class="flow-node">
+					<div class="flow-node__icon"><svg viewBox="0 0 24 24" fill="none" stroke="#4285f4" stroke-width="1.5"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83"/></svg></div>
+					<div class="flow-node__label">Vertex AI API<br><small>Habilitada</small></div>
+				</div>
+				<span class="flow-arrow">→</span>
+				<div class="flow-node">
+					<div class="flow-node__icon"><svg viewBox="0 0 24 24" fill="none" stroke="#34a853" stroke-width="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg></div>
+					<div class="flow-node__label">Service Account<br><small>+ JSON</small></div>
+				</div>
+				<span class="flow-arrow">→</span>
+				<div class="flow-node">
+					<div class="flow-node__icon"><svg viewBox="0 0 24 24" fill="none" stroke="#2170b0" stroke-width="1.5"><circle cx="12" cy="12" r="3"/><path d="M12 1v2M12 21v2"/></svg></div>
+					<div class="flow-node__label">Xabia PRO<br><small>Conector Vertex</small></div>
+				</div>
+			</figure>
+
+			<h2>¿Qué método elegir? — Tabla comparativa</h2>
+			<div class="compare-wrap">
+				<table class="compare">
+					<thead>
+						<tr>
+							<th>Característica</th>
+							<th>Xabia Cloud Wallet</th>
+							<th class="col-highlight">Google AI Studio (BYOK)</th>
+							<th>Google Vertex AI (BYOK)</th>
+						</tr>
+					</thead>
+					<tbody>
+						<tr>
+							<td><strong>Dificultad de inicio</strong></td>
+							<td>⚡ Instantáneo (0 min)</td>
+							<td class="col-highlight">🟢 Muy fácil (2 min)</td>
+							<td>🔴 Complejo (GCP Console)</td>
+						</tr>
+						<tr>
+							<td><strong>Cuenta en Google Cloud</strong></td>
+							<td>No requerida</td>
+							<td class="col-highlight">No requerida</td>
+							<td>Obligatoria (GCP Billing)</td>
+						</tr>
+						<tr>
+							<td><strong>A quién pagas el consumo</strong></td>
+							<td>A Xabia (<a href="https://xabia.ai/#wallet">#wallet</a>)</td>
+							<td class="col-highlight">A Google directamente</td>
+							<td>A Google Cloud (factura GCP)</td>
+						</tr>
+						<tr>
+							<td><strong>Ideal para…</strong></td>
+							<td>Quien busca cero complicaciones</td>
+							<td class="col-highlight">Autónomos, webs y PYMEs</td>
+							<td>Empresas y proyectos Enterprise</td>
+						</tr>
+						<tr>
+							<td><strong>Disponible en</strong></td>
+							<td>Xabia LITE y PRO</td>
+							<td class="col-highlight">Xabia LITE y PRO</td>
+							<td><span class="tag">Xabia Agent PRO</span></td>
+						</tr>
+					</tbody>
+				</table>
+			</div>
+
+			<h2>Enlaces útiles</h2>
+			<ul>
+				<li><a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener noreferrer">Google AI Studio — Crear API Key</a></li>
+				<li><a href="https://console.cloud.google.com/" target="_blank" rel="noopener noreferrer">Google Cloud Console</a></li>
+				<li><a href="https://xabia.ai/#wallet" target="_blank" rel="noopener noreferrer">Xabia Cloud — Recargas (#wallet)</a></li>
+				<li><a href="manual-usuario-xabia-core.html">Manual Xabia Agent Core</a></li>
+				<li><a href="./">Índice de manuales Xabia AI</a></li>
+			</ul>
+
+			<div class="callout" style="background:#e8f4fc;border-color:#c5dae8;">
+				<strong>Privacidad:</strong> En modo BYOK, las peticiones del chat van <strong>directamente de tu servidor WordPress a Google</strong>. La clave se guarda cifrada en tu instalación. Xabia no factura ni proxyea ese tráfico salvo que elijas explícitamente Xabia Cloud.
+			</div>
+		</article>
+
+		<footer class="site-footer">
+			<p>Publicado en <code>xabia.ai/docs/</code></p>
+			<p class="credit">Hecho por Digixop (<a href="https://digixop.com" target="_blank" rel="noopener noreferrer">digixop.com</a>)</p>
+		</footer>
+	</div>
+</body>
+</html>

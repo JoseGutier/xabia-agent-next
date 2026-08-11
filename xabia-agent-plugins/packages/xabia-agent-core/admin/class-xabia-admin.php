@@ -664,13 +664,17 @@ class Xabia_Admin {
      * Registro del Menú en el Panel de WordPress
      */
     public function register_menu() {
+        $icon = class_exists('Xabia_Admin_UI', false)
+            ? Xabia_Admin_UI::menu_icon_url()
+            : 'dashicons-superhero';
+
         add_menu_page(
             'Xabia Agent', 
             'Xabia Agent', 
             'manage_options', 
             'xabia-settings', 
             [$this, 'render_view'], 
-            'dashicons-superhero', 
+            $icon, 
             25
         );
         add_submenu_page(
@@ -702,6 +706,9 @@ class Xabia_Admin {
             ];
         }
         add_action('admin_head', [$this, 'admin_help_menu_open_blank'], 20);
+        if (class_exists('Xabia_Admin_UI', false)) {
+            add_action('admin_head', ['Xabia_Admin_UI', 'print_menu_icon_styles'], 5);
+        }
     }
 
     /**
@@ -785,9 +792,16 @@ class Xabia_Admin {
         ?>
         <div class="wrap xabia-wrapper xabia-admin-app xabia-page-wallet">
             <div class="xabia-card xabia-admin-header xabia-admin-header--wallet">
-                <div class="xabia-admin-header__text">
-                    <h1 class="xabia-page-title"><?php echo esc_html__('Cartera / Wallet', 'xabia-intelligence'); ?></h1>
-                    <p class="xabia-page-subtitle"><?php echo esc_html__('Saldo de tokens de tu licencia Xabia, consumo reciente y packs de recarga.', 'xabia-intelligence'); ?></p>
+                <div class="xabia-admin-header__brand">
+                    <?php
+                    if (class_exists('Xabia_Admin_UI', false)) {
+                        Xabia_Admin_UI::render_brand_icon('xabia-admin-header__icon', 40);
+                    }
+                    ?>
+                    <div class="xabia-admin-header__text">
+                        <h1 class="xabia-page-title"><?php echo esc_html__('Cartera / Wallet', 'xabia-intelligence'); ?></h1>
+                        <p class="xabia-page-subtitle"><?php echo esc_html__('Saldo de tokens de tu licencia Xabia, consumo reciente y packs de recarga.', 'xabia-intelligence'); ?></p>
+                    </div>
                 </div>
                 <a href="<?php echo esc_url(admin_url('admin.php?page=xabia-settings')); ?>" class="button xabia-btn--ghost"><?php echo esc_html__('← Ajustes principales', 'xabia-intelligence'); ?></a>
             </div>
@@ -917,9 +931,16 @@ class Xabia_Admin {
                 </div>
             <?php endif; ?>
             <div class="xabia-card xabia-admin-header xabia-admin-header--addons">
-                <div class="xabia-admin-header__text">
-                    <h1 class="xabia-page-title"><?php echo esc_html__('Addons', 'xabia-intelligence'); ?></h1>
-                    <p class="xabia-page-subtitle"><?php echo esc_html__('Suscripciones Polar y extensiones modulares. Activa cada add-on con su clave; el hub confirma renovación y vigencia.', 'xabia-intelligence'); ?></p>
+                <div class="xabia-admin-header__brand">
+                    <?php
+                    if (class_exists('Xabia_Admin_UI', false)) {
+                        Xabia_Admin_UI::render_brand_icon('xabia-admin-header__icon', 40);
+                    }
+                    ?>
+                    <div class="xabia-admin-header__text">
+                        <h1 class="xabia-page-title"><?php echo esc_html__('Addons', 'xabia-intelligence'); ?></h1>
+                        <p class="xabia-page-subtitle"><?php echo esc_html__('Suscripciones Polar y extensiones modulares. Activa cada add-on con su clave; el hub confirma renovación y vigencia.', 'xabia-intelligence'); ?></p>
+                    </div>
                 </div>
                 <a href="<?php echo esc_url(admin_url('admin.php?page=xabia-settings')); ?>" class="button xabia-btn--ghost"><?php echo esc_html__('← Ajustes principales', 'xabia-intelligence'); ?></a>
             </div>
@@ -3265,11 +3286,26 @@ class Xabia_Admin {
         ?>
         <div class="wrap xabia-wrapper xabia-admin-app xabia-page-settings">
             <div class="xabia-card xabia-admin-header">
-                <div class="xabia-admin-header__text">
+                <div class="xabia-admin-header__brand">
+                    <?php
+                    if (class_exists('Xabia_Admin_UI', false)) {
+                        Xabia_Admin_UI::render_brand_icon('xabia-admin-header__icon', 44);
+                    }
+                    ?>
+                    <div class="xabia-admin-header__text">
+                    <?php if (class_exists('Xabia_Admin_UI', false) && !$edit_id) : ?>
+                        <div class="xabia-admin-header__wordmark-row">
+                            <?php Xabia_Admin_UI::render_brand_logo('xabia-admin-header__wordmark', 32); ?>
+                            <span class="xabia-admin-header__edition"><?php echo esc_html__('Agent PRO', 'xabia-intelligence'); ?></span>
+                        </div>
+                        <p class="xabia-page-subtitle"><?php echo esc_html__('Gestiona agentes de IA y conecta tus datos. Con Conexión Segura Xabia solo necesitas la licencia en la tarjeta de abajo.', 'xabia-intelligence'); ?></p>
+                    <?php else : ?>
                     <h1 class="xabia-page-title"><?php echo $edit_id ? esc_html($data['name'] ?? __('Nuevo agente', 'xabia-intelligence')) : esc_html__('Xabia Agent', 'xabia-intelligence'); ?></h1>
                     <p class="xabia-page-subtitle"><?php echo $edit_id
                         ? esc_html__('Configura fuentes de datos, apariencia del chat e historial. Los cambios se guardan al pulsar «Guardar agente».', 'xabia-intelligence')
                         : esc_html__('Gestiona agentes de IA y conecta tus datos. Con Conexión Segura Xabia solo necesitas la licencia en la tarjeta de abajo.', 'xabia-intelligence'); ?></p>
+                    <?php endif; ?>
+                    </div>
                 </div>
                 <?php if ($edit_id) : ?>
                     <a href="<?php echo esc_url(admin_url('admin.php?page=xabia-settings')); ?>" class="button xabia-btn--ghost"><?php echo esc_html__('← Volver al listado', 'xabia-intelligence'); ?></a>

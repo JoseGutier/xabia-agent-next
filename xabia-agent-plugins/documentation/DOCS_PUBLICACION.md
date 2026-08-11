@@ -22,6 +22,7 @@ Tras regenerar con `./scripts/build-modular-manuals-pdf.sh`, subir desde `xabia-
 |---------------|-------------|
 | `manual-usuario-xabia-core.pdf` | https://xabia.ai/docs/manual-usuario-xabia-core.pdf |
 | `manual-usuario-xabia-core.html` | https://xabia.ai/docs/manual-usuario-xabia-core.html |
+| `manual-usuario-xabia-byok-google.html` | https://xabia.ai/docs/manual-usuario-xabia-byok-google.html |
 | `manual-usuario-xabia-smart-qr.pdf` | https://xabia.ai/docs/manual-usuario-xabia-smart-qr.pdf |
 | `manual-usuario-xabia-smart-qr.html` | https://xabia.ai/docs/manual-usuario-xabia-smart-qr.html |
 | `manual-usuario-xabia-mec.pdf` | https://xabia.ai/docs/manual-usuario-xabia-mec.pdf |

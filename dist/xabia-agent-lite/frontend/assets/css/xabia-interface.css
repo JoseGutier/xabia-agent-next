@@ -1,0 +1,1661 @@
+/* ============================================================
+   Xabia Agent — interfaz nativa (avatar oficial + panel)
+   ============================================================ */
+
+body.xabia-native-interface {
+    /* Avatar anclado (~130px) + bottom (20px) + hueco visual */
+    --xabia-desktop-avatar-clearance: 172px;
+}
+
+/* --- Telón / desenfoque --- */
+.xabia-blur-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    background: rgba(0, 0, 0, 0.2) !important;
+    backdrop-filter: blur(0);
+    -webkit-backdrop-filter: blur(0);
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+    transition: opacity 0.4s ease, visibility 0.4s ease, backdrop-filter 0.4s ease;
+    z-index: 99980;
+}
+
+.xabia-blur-overlay:hover,
+.xabia-blur-overlay:focus,
+.xabia-blur-overlay:focus-visible {
+    background: rgba(0, 0, 0, 0.2) !important;
+}
+
+body.xabia-open .xabia-blur-overlay.is-active,
+body.xabia-open .xabia-blur-overlay:not([hidden]),
+body.xabia-open .xabia-blur-overlay.is-active:hover {
+    opacity: 1;
+    visibility: visible;
+    pointer-events: auto;
+    background: rgba(0, 0, 0, 0.2) !important;
+    backdrop-filter: blur(8px) !important;
+    -webkit-backdrop-filter: blur(8px) !important;
+}
+
+/* --- Contenedor disparador (sticky footer box) --- */
+.xabia-sticky-footer-box,
+#sticky-footer-box {
+    position: fixed;
+    width: 130px;
+    height: 130px;
+    left: auto;
+    right: 30px;
+    bottom: 20px;
+    z-index: 99990;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    padding: 0;
+    pointer-events: none;
+    background: transparent !important;
+    border: none !important;
+    box-shadow: none !important;
+    outline: none !important;
+    transition: transform 0.48s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.32s ease;
+}
+
+body.xabia-open .xabia-sticky-footer-box {
+    z-index: 99988;
+}
+
+body.xabia-open .xabia-chatbox.xabia-panel-shell.is-active {
+    z-index: 99993 !important;
+}
+
+.xabia-sticky-footer-box.xabia-trigger--bottom-left {
+    left: 30px;
+    right: auto;
+}
+
+.xabia-sticky-footer-box.xabia-trigger--bottom-right {
+    left: auto;
+    right: 30px;
+}
+
+.xabia-sticky-footer-box.xabia-trigger--custom {
+    left: auto;
+    right: auto;
+    width: 130px;
+    height: 130px;
+    padding: 0;
+}
+
+/* Botón avatar incrustado vía [xabia_launcher] / [xabia_avatar] */
+.xabia-sticky-footer-box.xabia-trigger--inline {
+    --xabia-trigger-preset-sm: clamp(64px, 18vw, 96px);
+    --xabia-trigger-preset-md: clamp(110px, 28vw, 180px);
+    --xabia-trigger-preset-lg: clamp(160px, 42vw, 300px);
+    --xabia-trigger-preset-xl: clamp(200px, 52vw, 400px);
+    --xabia-trigger-size-desktop: var(--xabia-trigger-preset-md);
+    --xabia-trigger-size-tablet: var(--xabia-trigger-size-desktop);
+    --xabia-trigger-size-mobile: var(--xabia-trigger-size-desktop);
+    --xabia-trigger-size: var(--xabia-trigger-size-desktop);
+    position: relative !important;
+    left: auto !important;
+    right: auto !important;
+    bottom: auto !important;
+    top: auto !important;
+    z-index: 2;
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    width: calc(var(--xabia-trigger-size) + 8px) !important;
+    height: calc(var(--xabia-trigger-size) + 8px) !important;
+    max-width: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    pointer-events: none;
+    transform: none !important;
+    opacity: 1 !important;
+    overflow: visible !important;
+}
+.xabia-sticky-footer-box.xabia-trigger--inline .xabia-interface-trigger {
+    position: relative !important;
+    left: auto !important;
+    right: auto !important;
+    top: auto !important;
+    bottom: auto !important;
+    display: block !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    pointer-events: auto;
+    transform: none !important;
+}
+.xabia-sticky-footer-box.xabia-trigger--inline .xabia-interface-trigger,
+.xabia-sticky-footer-box.xabia-trigger--inline .xabia-kinetic-wrapper,
+.xabia-sticky-footer-box.xabia-trigger--inline .x-avatar-container,
+.xabia-sticky-footer-box.xabia-trigger--inline .xabia-trigger-custom-img {
+    width: var(--xabia-trigger-size) !important;
+    height: var(--xabia-trigger-size) !important;
+    max-width: 100% !important;
+    max-height: none !important;
+    min-width: 0 !important;
+    min-height: 0 !important;
+}
+/* Escala proporcional del SVG (viewBox más ancho que alto) */
+.xabia-sticky-footer-box.xabia-trigger--inline .x-avatar-stage {
+    position: absolute !important;
+    top: 0 !important;
+    left: -29.7% !important;
+    width: 129.7% !important;
+    height: 100% !important;
+    max-width: none !important;
+    max-height: none !important;
+}
+
+/* Presets fluidos (clamp) — desktop base; los breakpoints pisan --xabia-trigger-size */
+.xabia-sticky-footer-box.xabia-trigger-size--sm {
+    --xabia-trigger-size-desktop: var(--xabia-trigger-preset-sm);
+}
+.xabia-sticky-footer-box.xabia-trigger-size--md {
+    --xabia-trigger-size-desktop: var(--xabia-trigger-preset-md);
+}
+.xabia-sticky-footer-box.xabia-trigger-size--lg {
+    --xabia-trigger-size-desktop: var(--xabia-trigger-preset-lg);
+}
+.xabia-sticky-footer-box.xabia-trigger-size--xl {
+    --xabia-trigger-size-desktop: var(--xabia-trigger-preset-xl);
+}
+.xabia-sticky-footer-box.xabia-trigger--inline.xabia-trigger-size--sm,
+.xabia-sticky-footer-box.xabia-trigger--inline.xabia-trigger-size--md,
+.xabia-sticky-footer-box.xabia-trigger--inline.xabia-trigger-size--lg,
+.xabia-sticky-footer-box.xabia-trigger--inline.xabia-trigger-size--xl,
+.xabia-sticky-footer-box.xabia-trigger--inline.xabia-trigger-size--custom {
+    --xabia-trigger-size: var(--xabia-trigger-size-desktop);
+}
+
+/* % del contenedor padre (columna Elementor, etc.) */
+.xabia-sticky-footer-box.xabia-trigger--inline.xabia-trigger-size--pct,
+.xabia-sticky-footer-box.xabia-trigger--inline.xabia-trigger-size-mobile--pct {
+    width: var(--xabia-trigger-size) !important;
+    height: auto !important;
+    aspect-ratio: 1 / 1;
+    max-width: 100% !important;
+}
+.xabia-sticky-footer-box.xabia-trigger--inline.xabia-trigger-size--pct .xabia-interface-trigger,
+.xabia-sticky-footer-box.xabia-trigger--inline.xabia-trigger-size--pct .xabia-kinetic-wrapper,
+.xabia-sticky-footer-box.xabia-trigger--inline.xabia-trigger-size--pct .x-avatar-container,
+.xabia-sticky-footer-box.xabia-trigger--inline.xabia-trigger-size--pct .xabia-trigger-custom-img,
+.xabia-sticky-footer-box.xabia-trigger--inline.xabia-trigger-size-mobile--pct .xabia-interface-trigger,
+.xabia-sticky-footer-box.xabia-trigger--inline.xabia-trigger-size-mobile--pct .xabia-kinetic-wrapper,
+.xabia-sticky-footer-box.xabia-trigger--inline.xabia-trigger-size-mobile--pct .x-avatar-container,
+.xabia-sticky-footer-box.xabia-trigger--inline.xabia-trigger-size-mobile--pct .xabia-trigger-custom-img {
+    width: 100% !important;
+    height: 100% !important;
+}
+
+/* Breakpoints: móvil / tablet / desktop */
+@media (max-width: 768px) {
+    .xabia-sticky-footer-box.xabia-trigger--inline {
+        --xabia-trigger-size: var(--xabia-trigger-size-mobile) !important;
+        width: calc(var(--xabia-trigger-size) + 8px) !important;
+        height: calc(var(--xabia-trigger-size) + 8px) !important;
+        right: auto !important;
+        left: auto !important;
+        bottom: auto !important;
+        top: auto !important;
+        position: relative !important;
+    }
+    .xabia-sticky-footer-box.xabia-trigger--inline.xabia-trigger-size-mobile--pct {
+        width: var(--xabia-trigger-size) !important;
+        height: auto !important;
+        aspect-ratio: 1 / 1;
+    }
+    .xabia-sticky-footer-box.xabia-trigger--inline .xabia-interface-trigger,
+    .xabia-sticky-footer-box.xabia-trigger--inline .xabia-kinetic-wrapper,
+    .xabia-sticky-footer-box.xabia-trigger--inline .x-avatar-container,
+    .xabia-sticky-footer-box.xabia-trigger--inline .xabia-trigger-custom-img {
+        width: var(--xabia-trigger-size) !important;
+        height: var(--xabia-trigger-size) !important;
+    }
+    .xabia-sticky-footer-box.xabia-trigger--inline.xabia-trigger-size-mobile--pct .xabia-interface-trigger,
+    .xabia-sticky-footer-box.xabia-trigger--inline.xabia-trigger-size-mobile--pct .xabia-kinetic-wrapper,
+    .xabia-sticky-footer-box.xabia-trigger--inline.xabia-trigger-size-mobile--pct .x-avatar-container,
+    .xabia-sticky-footer-box.xabia-trigger--inline.xabia-trigger-size-mobile--pct .xabia-trigger-custom-img {
+        width: 100% !important;
+        height: 100% !important;
+    }
+    .xabia-sticky-footer-box.xabia-trigger--inline .x-avatar-stage {
+        left: -29.7% !important;
+        width: 129.7% !important;
+        height: 100% !important;
+        top: 0 !important;
+    }
+}
+@media (min-width: 769px) and (max-width: 1024px) {
+    .xabia-sticky-footer-box.xabia-trigger--inline {
+        --xabia-trigger-size: var(--xabia-trigger-size-tablet) !important;
+    }
+}
+@media (min-width: 1025px) {
+    .xabia-sticky-footer-box.xabia-trigger--inline {
+        --xabia-trigger-size: var(--xabia-trigger-size-desktop) !important;
+    }
+}
+
+body.xabia-open .xabia-sticky-footer-box.xabia-trigger--inline {
+    z-index: 2;
+}
+
+.xabia-sticky-footer-box.footer-hidden {
+    transform: translateY(135%) scale(0.96);
+    opacity: 0;
+}
+
+.xabia-sticky-footer-box.footer-hidden .xabia-interface-trigger {
+    pointer-events: none;
+}
+
+.xabia-sticky-footer-box.is-anchored {
+    position: fixed;
+    bottom: 20px;
+    left: auto;
+    right: 30px;
+    width: 130px;
+    height: 130px;
+    max-width: 130px;
+    padding: 0;
+    transform: translateY(0);
+    opacity: 1;
+}
+
+.xabia-sticky-footer-box.xabia-trigger--bottom-left.is-anchored {
+    left: 30px;
+    right: auto;
+}
+
+.xabia-sticky-footer-box .xabia-interface-trigger {
+    pointer-events: auto;
+}
+
+/* Bocadillo de ayuda del avatar (todas las pantallas, chat cerrado) */
+.xabia-avatar-hint-bubble {
+    display: none;
+    position: absolute;
+    bottom: calc(100% + 12px);
+    right: 8px;
+    left: auto;
+    z-index: 3;
+    max-width: min(200px, 42vw);
+    padding: 9px 14px;
+    border-radius: 14px;
+    background: #fff;
+    color: #1f2937;
+    font-size: 14px;
+    font-weight: 600;
+    line-height: 1.25;
+    text-align: center;
+    white-space: nowrap;
+    box-shadow: 0 6px 22px rgba(15, 23, 42, 0.18);
+    opacity: 0;
+    visibility: hidden;
+    transform: translateY(6px) scale(0.96);
+    transition: opacity 0.28s ease, transform 0.28s ease, visibility 0.28s ease;
+    pointer-events: none;
+}
+
+.xabia-avatar-hint-bubble::after {
+    content: '';
+    position: absolute;
+    right: 22px;
+    bottom: -7px;
+    width: 12px;
+    height: 12px;
+    background: #fff;
+    transform: rotate(45deg);
+    box-shadow: 3px 3px 6px rgba(15, 23, 42, 0.06);
+}
+
+.xabia-sticky-footer-box.xabia-trigger--bottom-left .xabia-avatar-hint-bubble {
+    right: auto;
+    left: 8px;
+}
+
+.xabia-sticky-footer-box.xabia-trigger--bottom-left .xabia-avatar-hint-bubble::after {
+    right: auto;
+    left: 22px;
+}
+
+.xabia-avatar-hint-bubble.is-visible {
+    display: block;
+    opacity: 1;
+    visibility: visible;
+    transform: translateY(0) scale(1);
+}
+
+body.xabia-open .xabia-avatar-hint-bubble {
+    display: none !important;
+    opacity: 0 !important;
+    visibility: hidden !important;
+}
+
+/* --- Botón / trigger (sin borde rojo del tema) --- */
+.xabia-interface-trigger {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 125px;
+    height: 125px;
+    isolation: isolate;
+    border: none !important;
+    padding: 0;
+    margin: 0;
+    background: transparent !important;
+    cursor: pointer;
+    line-height: 0;
+    filter: none !important;
+    -webkit-tap-highlight-color: transparent;
+    box-shadow: none !important;
+    outline: none !important;
+    border-radius: 999px;
+    overflow: visible !important;
+    appearance: none;
+    -webkit-appearance: none;
+    transition: transform 0.25s ease;
+}
+
+.xabia-interface-trigger::before {
+    content: '';
+    position: absolute;
+    inset: -16px;
+    z-index: 0;
+    border-radius: 999px;
+    background:
+        radial-gradient(circle at 58% 42%,
+            color-mix(in srgb, var(--xabia-avatar-bg, #99ccff) 50%, #ffffff) 0%,
+            color-mix(in srgb, var(--xabia-avatar-bg, #99ccff) 32%, transparent) 36%,
+            color-mix(in srgb, var(--xabia-dots-color, #ff9966) 22%, transparent) 62%,
+            transparent 76%);
+    filter: blur(10px);
+    opacity: 0;
+    transform: scale(0.82);
+    pointer-events: none;
+    transition: opacity 0.28s ease, transform 0.28s ease;
+}
+
+.xabia-interface-trigger:hover,
+.xabia-interface-trigger:focus,
+.xabia-interface-trigger:focus-visible,
+.xabia-interface-trigger:active {
+    transform: scale(1.03);
+    background: transparent !important;
+    border: none !important;
+    outline: none !important;
+    box-shadow: none !important;
+}
+
+.xabia-interface-trigger:hover::before,
+.xabia-interface-trigger:focus-visible::before {
+    opacity: 0.95;
+    transform: scale(1);
+}
+
+.xabia-interface-trigger.is-active {
+    transform: scale(0.97);
+}
+
+.xabia-trigger-custom-img {
+    display: block;
+    width: 125px;
+    height: 125px;
+    object-fit: contain;
+}
+
+body.xabia-immersive-open .xabia-sticky-footer-box,
+body.xabia-immersive-open .xabia-interface-trigger {
+    opacity: 0 !important;
+    visibility: hidden !important;
+    pointer-events: none !important;
+}
+
+/* Inline launcher stays visible until panel opens (body.xabia-immersive-open hides it). */
+body.xabia-immersive-open .xabia-sticky-footer-box.xabia-trigger--inline {
+    opacity: 0 !important;
+    visibility: hidden !important;
+}
+
+/* --- Avatar cinético (capas oficiales) --- */
+.xabia-kinetic-wrapper {
+    width: 125px;
+    height: 125px;
+    margin: 0;
+    position: relative;
+    z-index: 1;
+    overflow: visible;
+    pointer-events: none;
+}
+
+.x-avatar-container {
+    width: 125px;
+    height: 125px;
+    position: relative;
+    margin: 0;
+    perspective: 1000px;
+    transform-style: preserve-3d;
+    overflow: visible;
+}
+
+.x-avatar-stage {
+    position: absolute;
+    display: block;
+    top: 0;
+    left: -37.13px;
+    width: 162.14px;
+    height: 125px;
+    overflow: visible;
+    opacity: 1;
+    visibility: visible;
+    pointer-events: none;
+}
+
+.x-avatar-head-layer,
+.x-avatar-sockets-layer,
+.x-avatar-eyes-layer,
+.x-avatar-mouth-layer {
+    transform-style: preserve-3d;
+    will-change: transform;
+}
+
+.x-avatar-mouth {
+    fill: var(--xabia-mouth-color, #FFFFFF);
+    opacity: 0;
+    transform-box: fill-box;
+    transform-origin: center;
+    transform: scaleX(0.9) scaleY(0);
+    transition: opacity 0.12s ease;
+    pointer-events: none;
+    will-change: transform, opacity;
+}
+
+.x-avatar-mouth.is-speaking,
+body.xabia-avatar-speaking .x-avatar-mouth.is-speaking {
+    transition: none;
+}
+
+.x-avatar-thinking-dots {
+    opacity: 0;
+    pointer-events: none;
+    display: none;
+}
+
+.x-avatar-thinking-smile {
+    fill: var(--xabia-mouth-color, #FFFFFF);
+    opacity: 0;
+    pointer-events: none;
+}
+
+.x-avatar-think-dot {
+    transform-box: fill-box;
+    transform-origin: center;
+    opacity: 0.4;
+}
+
+.xabia-is-thinking .x-avatar-mouth,
+body.xabia-avatar-thinking .x-avatar-mouth,
+.xabia-avatar-thinking .x-avatar-mouth {
+    opacity: 0 !important;
+    transform: scaleY(0) !important;
+}
+
+.xabia-is-thinking .x-avatar-thinking-smile,
+body.xabia-avatar-thinking .x-avatar-thinking-smile,
+.xabia-avatar-thinking .x-avatar-thinking-smile {
+    opacity: 1;
+    animation: xAvatarThinkSmile 1.4s ease-in-out infinite;
+}
+
+.xabia-is-thinking .x-avatar-thinking-dots,
+body.xabia-avatar-thinking .x-avatar-thinking-dots,
+.xabia-avatar-thinking .x-avatar-thinking-dots {
+    opacity: 0;
+    display: none;
+}
+
+@keyframes xAvatarThinkSmile {
+    0%, 100% { opacity: 0.85; }
+    50% { opacity: 1; }
+}
+
+.x-avatar-head-layer {
+    filter: drop-shadow(0 2px 5px rgba(0, 0, 0, 0.02));
+}
+
+.x-avatar-fill-bg {
+    fill: var(--xabia-avatar-bg, #99ccff);
+}
+
+.x-avatar-fill-socket {
+    fill: var(--xabia-avatar-shadow, #ffffff);
+}
+
+.x-avatar-fill-dot {
+    fill: var(--xabia-dots-color, #ff9966);
+}
+
+.x-avatar-sockets-layer {
+    filter: drop-shadow(0 4px 9px rgba(15, 23, 42, 0.05));
+}
+
+.x-avatar-eyes-layer {
+    filter: drop-shadow(0 2px 5px rgba(0, 0, 0, 0.05));
+}
+
+.x-avatar-fill-bg {
+    fill: var(--xabia-avatar-bg, #99ccff);
+}
+
+.x-avatar-fill-socket {
+    fill: #ffffff;
+}
+
+.x-avatar-fill-dot {
+    fill: var(--xabia-dots-color, #ff9966);
+}
+
+.x-avatar-fill-secondary {
+    fill: color-mix(in srgb, var(--xabia-dots-color, #ff9966) 18%, #ccb3b3);
+}
+
+/* --- Panel de chat (shell) --- */
+@property --xabia-halo-angle {
+    syntax: '<angle>';
+    inherits: false;
+    initial-value: 0deg;
+}
+
+.xabia-chatbox.xabia-panel-shell {
+    display: none !important;
+    position: fixed;
+    z-index: 99993;
+    flex-direction: column !important;
+    min-height: 0;
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+    --xabia-halo-angle: 0deg;
+    background:
+        linear-gradient(#ffffff, #ffffff) padding-box,
+        conic-gradient(
+            from var(--xabia-halo-angle),
+            transparent 0deg,
+            transparent 235deg,
+            color-mix(in srgb, var(--xabia-accent, #2271b1) 10%, transparent) 265deg,
+            color-mix(in srgb, var(--xabia-accent, #2271b1) 85%, #ffffff) 292deg,
+            color-mix(in srgb, var(--xabia-accent, #2271b1) 55%, #c2185b) 318deg,
+            transparent 350deg,
+            transparent 360deg
+        ) border-box !important;
+    border: 12px solid transparent !important;
+    border-radius: 0;
+    box-shadow:
+        0 4px 6px rgba(0, 0, 0, 0.04),
+        0 24px 64px rgba(0, 0, 0, 0.14),
+        0 0 36px color-mix(in srgb, var(--xabia-accent, #2271b1) 22%, transparent),
+        0 0 0 1px rgba(255, 255, 255, 0.6) inset;
+    overflow: hidden;
+    transition: opacity 0.4s ease, visibility 0.4s ease, transform 0.4s ease, box-shadow 0.4s ease;
+    visibility: hidden;
+    opacity: 0;
+    filter: none !important;
+    width: auto;
+    height: auto;
+    max-width: none;
+    max-height: none;
+}
+
+.xabia-chatbox.xabia-panel-shell.is-active {
+    display: flex !important;
+    visibility: visible !important;
+    opacity: 1 !important;
+    z-index: 99993 !important;
+    pointer-events: auto !important;
+    animation: xabiaPanelHalo 3.6s linear infinite;
+}
+
+@keyframes xabiaPanelHalo {
+    to {
+        --xabia-halo-angle: 360deg;
+    }
+}
+
+body.xabia-open .xabia-chatbox.xabia-panel-shell.is-active {
+    z-index: 99993 !important;
+}
+
+.xabia-chatbox.xabia-panel-shell.is-active .xabia-input-area,
+.xabia-chatbox.xabia-panel-shell.is-active .xabia-input-area * {
+    pointer-events: auto !important;
+}
+
+.xabia-chatbox.xabia-panel-shell .xabia-chat-history {
+    flex: 1 1 auto;
+    min-height: 0;
+    padding: 22px 24px 18px !important;
+    background: linear-gradient(180deg, #f9fafb 0%, #ffffff 48px) !important;
+}
+
+.xabia-chatbox.xabia-panel-shell .xabia-chat-history .xabia-msg.bot:first-child {
+    background: transparent !important;
+    border: none !important;
+    box-shadow: none !important;
+    padding: 0 !important;
+    max-width: 100% !important;
+    font-size: inherit;
+    line-height: 1.55;
+}
+
+.xabia-chatbox.xabia-panel-shell .xabia-input-area,
+.xabia-chatbox.xabia-panel-shell .xabia-powered-by {
+    flex-shrink: 0;
+    background: #fff !important;
+}
+
+/* Cerrar: oculto por defecto; en móvil encaja en esquina superior derecha del panel */
+.xabia-chatbox > .xabia-panel-close {
+    display: none !important;
+    position: absolute;
+    top: 0;
+    right: 0;
+    z-index: 6;
+    width: calc(var(--xabia-panel-inner-r, 14px) * 2 + 10px);
+    height: calc(var(--xabia-panel-inner-r, 14px) * 2 + 10px);
+    min-width: 36px;
+    min-height: 36px;
+    margin: 0;
+    padding: 0;
+    border: none;
+    border-radius: 0 var(--xabia-panel-inner-r, 0px) 0 0;
+    background: #f8d4d8;
+    color: #b71c1c;
+    font-size: 21px;
+    font-weight: 700;
+    line-height: 1;
+    cursor: pointer;
+    align-items: center;
+    justify-content: center;
+    box-shadow: none;
+    -webkit-tap-highlight-color: transparent;
+}
+
+.xabia-chatbox > .xabia-panel-close span {
+    display: block;
+    margin-top: -2px;
+}
+
+.xabia-chatbox.xabia-panel-shell .xabia-continue {
+    display: inline-block;
+    margin: 8px 0 0;
+    padding: 6px 14px;
+    font-size: 13px;
+    line-height: 1.2;
+    cursor: pointer;
+    pointer-events: auto;
+    border: 1px solid color-mix(in srgb, var(--xabia-accent, #2271b1) 35%, #ccc);
+    border-radius: 8px;
+    background: #fff;
+    color: var(--xabia-accent, #2271b1);
+    vertical-align: middle;
+}
+
+.xabia-chatbox.xabia-panel-shell .xabia-continue:hover:not(:disabled) {
+    background: color-mix(in srgb, var(--xabia-accent, #2271b1) 12%, #fff);
+}
+
+.xabia-chatbox.xabia-panel-shell .xabia-continue:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+}
+
+/* Fila de entrada: mic | campo | mute+send (como referencia Mirentxu) */
+.xabia-chatbox.xabia-panel-shell .xabia-input-area {
+    display: flex !important;
+    flex-direction: row !important;
+    flex-wrap: nowrap !important;
+    align-items: center !important;
+    gap: 10px !important;
+    padding: 14px 20px 10px !important;
+    border-top: 1px solid rgba(0, 0, 0, 0.06) !important;
+    background: #fff !important;
+    box-sizing: border-box;
+}
+
+.xabia-chatbox.xabia-panel-shell .xabia-input-field {
+    display: block !important;
+    flex: 1 1 0% !important;
+    width: auto !important;
+    min-width: 0 !important;
+    max-width: none !important;
+    min-height: 44px !important;
+    max-height: 120px !important;
+    margin: 0 !important;
+    border: 1px solid #d2d2d7 !important;
+    border-radius: 22px !important;
+    padding: 11px 18px !important;
+    resize: none !important;
+    box-sizing: border-box;
+    font-size: 1em !important;
+    line-height: 1.4;
+    transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.xabia-chatbox.xabia-panel-shell .xabia-input-field:focus {
+    outline: none !important;
+    border-color: var(--xabia-accent, #2271b1) !important;
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--xabia-accent, #2271b1) 22%, transparent) !important;
+}
+
+.xabia-chatbox.xabia-panel-shell .xabia-input-actions {
+    display: flex !important;
+    flex-direction: row !important;
+    align-items: center !important;
+    justify-content: flex-end !important;
+    gap: 4px !important;
+    flex: 0 0 auto !important;
+    flex-shrink: 0 !important;
+}
+
+.xabia-chatbox.xabia-panel-shell .xabia-input-area .xabia-btn-icon,
+.xabia-chatbox.xabia-panel-shell .xabia-input-actions .xabia-btn-icon {
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    width: 40px !important;
+    height: 40px !important;
+    flex: 0 0 40px !important;
+    margin: 0 !important;
+    float: none !important;
+    font-size: 22px !important;
+    line-height: 1 !important;
+    color: #86868b !important;
+    cursor: pointer;
+    border-radius: 50%;
+    user-select: none;
+    transition: background 0.2s ease, color 0.2s ease, transform 0.15s ease;
+}
+
+.xabia-chatbox.xabia-panel-shell .xabia-btn-icon .xabia-icon-svg,
+.xabia-chatbox.xabia-panel-shell .xabia-btn-icon .xabia-lucide {
+    display: block !important;
+    width: 22px !important;
+    height: 22px !important;
+    color: currentColor !important;
+}
+
+.xabia-chatbox.xabia-panel-shell .xabia-btn-icon .xabia-icon-svg path {
+    fill: currentColor !important;
+}
+
+.xabia-chatbox.xabia-panel-shell .xabia-btn-icon .xabia-lucide {
+    stroke: currentColor !important;
+    fill: none !important;
+}
+
+.xabia-chatbox.xabia-panel-shell .xabia-btn-icon.xabia-mute .xabia-icon-vol-on {
+    display: none !important;
+}
+
+.xabia-chatbox.xabia-panel-shell .xabia-btn-icon.xabia-mute.is-voice-on .xabia-icon-vol-off {
+    display: none !important;
+}
+
+.xabia-chatbox.xabia-panel-shell .xabia-btn-icon.xabia-mute.is-voice-on .xabia-icon-vol-on {
+    display: block !important;
+}
+
+.xabia-chatbox.xabia-ui-modern.xabia-panel-shell .xabia-btn-icon.xabia-mute:not(.is-voice-on),
+.xabia-chatbox.xabia-ui-modern.xabia-panel-shell .xabia-btn-icon.xabia-mute.is-voice-on {
+    color: #9ca3af !important;
+    background: transparent !important;
+}
+
+.xabia-chatbox.xabia-ui-modern.xabia-panel-shell .xabia-btn-icon.xabia-mute.is-voice-on {
+    color: var(--xabia-dots-color, var(--xabia-accent, #2271b1)) !important;
+}
+
+.xabia-chatbox.xabia-ui-modern.xabia-panel-shell .xabia-btn-icon.xabia-send {
+    color: var(--xabia-dots-color, var(--xabia-accent, #2271b1)) !important;
+    background: transparent !important;
+    border-radius: 0 !important;
+}
+
+.xabia-chatbox.xabia-ui-modern.xabia-panel-shell .xabia-btn-icon.xabia-send:hover,
+.xabia-chatbox.xabia-ui-modern.xabia-panel-shell .xabia-btn-icon.xabia-send:focus-visible {
+    color: color-mix(in srgb, var(--xabia-dots-color, var(--xabia-accent, #2271b1)) 85%, #111827) !important;
+    background: transparent !important;
+    transform: none !important;
+}
+
+.xabia-chatbox.xabia-panel-shell .xabia-btn-icon.xabia-mute:not(.is-voice-on) {
+    color: #fff !important;
+    background: #e53935 !important;
+}
+
+.xabia-chatbox.xabia-panel-shell .xabia-btn-icon.xabia-send:hover,
+.xabia-chatbox.xabia-panel-shell .xabia-btn-icon.xabia-send:focus-visible {
+    color: #fff !important;
+    background: var(--xabia-accent, #2271b1) !important;
+}
+
+.xabia-chatbox.xabia-panel-shell .xabia-btn-icon.xabia-mute.is-voice-on {
+    color: #fff !important;
+    background: var(--xabia-accent, #2271b1) !important;
+}
+
+.xabia-chatbox.xabia-panel-shell .xabia-btn-icon.xabia-mic.xabia-mic-listening {
+    color: #fff !important;
+    background: #e53935 !important;
+}
+
+
+.xabia-chatbox.xabia-panel-shell .xabia-powered-by {
+    padding: 6px 20px 16px !important;
+    text-align: center !important;
+    background: #fff !important;
+}
+
+.xabia-chatbox.xabia-panel-shell .xabia-powered-by a {
+    color: #9a9aa0 !important;
+    text-decoration: none !important;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    font-size: 10px;
+}
+
+.xabia-chatbox.xabia-panel-shell .xabia-powered-by a:hover {
+    color: #7a7a82 !important;
+}
+
+/* Flotante lateral — panel moderno (Perplexity / ChatGPT) */
+.xabia-chatbox.xabia-panel-shell.layout-right-float {
+    right: 20px;
+    bottom: 20px;
+    left: auto;
+    top: auto;
+    transform: none;
+    width: 320px;
+    height: 520px;
+    max-height: calc(100vh - 40px);
+}
+
+.xabia-chatbox.xabia-ui-modern.xabia-panel-shell.layout-right-float {
+    bottom: 20px;
+    right: 20px;
+    width: 320px !important;
+    height: 520px !important;
+    max-height: 78vh !important;
+    min-height: 420px !important;
+}
+
+.xabia-chatbox.xabia-panel-shell.layout-right-float.is-active {
+    animation:
+        xabiaPanelIn 0.35s cubic-bezier(0.25, 1, 0.5, 1),
+        xabiaPanelHalo 3.6s linear infinite;
+}
+
+.xabia-chatbox.xabia-panel-shell.layout-left-float {
+    left: 20px;
+    bottom: 20px;
+    right: auto;
+    top: auto;
+    transform: none;
+    width: 320px;
+    height: 520px;
+    max-height: calc(100vh - 40px);
+}
+
+.xabia-chatbox.xabia-panel-shell.layout-left-float.is-active {
+    animation:
+        xabiaPanelIn 0.35s cubic-bezier(0.25, 1, 0.5, 1),
+        xabiaPanelHalo 3.6s linear infinite;
+}
+
+@keyframes xabiaPanelIn {
+    from {
+        opacity: 0;
+        transform: translateY(12px) scale(0.98);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+    }
+}
+
+/* Modal centrado + pantalla completa = caja blanca centrada con margen (no edge-to-edge) */
+.xabia-chatbox.xabia-panel-shell.layout-centered-modal,
+.xabia-chatbox.xabia-panel-shell.layout-full-screen {
+    top: 50% !important;
+    left: 50% !important;
+    right: auto !important;
+    bottom: auto !important;
+    transform: translate(-50%, -50%) !important;
+    width: min(440px, calc(100vw - 48px)) !important;
+    max-width: min(440px, calc(100vw - 48px)) !important;
+    height: min(600px, calc(100vh - 80px)) !important;
+    max-height: min(85vh, 680px) !important;
+    margin: 0;
+}
+
+.xabia-chatbox.xabia-panel-shell.layout-full-screen {
+    width: min(520px, calc(100vw - 56px)) !important;
+    max-width: min(520px, calc(100vw - 56px)) !important;
+    height: min(720px, calc(100vh - 72px)) !important;
+    max-height: min(90vh, 760px) !important;
+}
+
+.xabia-chatbox.xabia-panel-shell.layout-centered-modal.is-active,
+.xabia-chatbox.xabia-panel-shell.layout-full-screen.is-active {
+    animation:
+        xabiaPanelModalIn 0.35s cubic-bezier(0.25, 1, 0.5, 1),
+        xabiaPanelHalo 3.6s linear infinite;
+}
+
+@keyframes xabiaPanelModalIn {
+    from {
+        opacity: 0;
+        transform: translate(-50%, -46%) scale(0.96) !important;
+    }
+    to {
+        opacity: 1;
+        transform: translate(-50%, -50%) scale(1) !important;
+    }
+}
+
+body.xabia-native-interface .xabia-chatbox.xabia-panel-shell:not(.is-active) {
+    visibility: hidden;
+    pointer-events: none;
+}
+
+@media (max-width: 640px) {
+    /* Radio interior del panel = exterior − borde halo (para esquina del botón cerrar) */
+    .xabia-chatbox.xabia-panel-shell {
+        --xabia-panel-outer-r: 0px;
+        --xabia-panel-border-w: 12px;
+        --xabia-panel-inner-r: 0px;
+    }
+
+    .xabia-chatbox.xabia-panel-shell.xabia-mobile-preset-compact {
+        --xabia-panel-border-w: 8px;
+    }
+
+    .xabia-chatbox.xabia-panel-shell.xabia-mobile-preset-ultra-compact {
+        --xabia-panel-border-w: 6px;
+    }
+
+    .xabia-chatbox.xabia-panel-shell.layout-right-float,
+    .xabia-chatbox.xabia-panel-shell.layout-left-float,
+    .xabia-chatbox.xabia-panel-shell.layout-centered-modal,
+    .xabia-chatbox.xabia-panel-shell.layout-full-screen {
+        width: calc(100vw - 16px) !important;
+        max-width: calc(100vw - 16px) !important;
+        border-radius: 0 !important;
+        box-shadow:
+            0 4px 6px rgba(0, 0, 0, 0.04),
+            0 20px 46px rgba(0, 0, 0, 0.13),
+            0 0 20px color-mix(in srgb, var(--xabia-accent, #2271b1) 16%, transparent),
+            0 0 0 1px rgba(255, 255, 255, 0.6) inset !important;
+    }
+
+    .xabia-chatbox.xabia-panel-shell.layout-right-float {
+        right: 8px !important;
+        left: auto !important;
+    }
+
+    .xabia-chatbox.xabia-panel-shell.layout-left-float {
+        left: 8px !important;
+        right: auto !important;
+    }
+
+    .xabia-chatbox.xabia-panel-shell.layout-centered-modal,
+    .xabia-chatbox.xabia-panel-shell.layout-full-screen {
+        top: calc(50% - env(safe-area-inset-top, 0px) * 0.15) !important;
+    }
+
+    /* Preset compacto (por defecto) */
+    .xabia-chatbox.xabia-panel-shell.xabia-mobile-preset-compact.layout-right-float,
+    .xabia-chatbox.xabia-panel-shell.xabia-mobile-preset-compact.layout-left-float,
+    .xabia-chatbox.xabia-panel-shell.xabia-mobile-preset-compact.layout-centered-modal,
+    .xabia-chatbox.xabia-panel-shell.xabia-mobile-preset-compact.layout-full-screen {
+        height: min(66dvh, calc(100dvh - 116px)) !important;
+        max-height: min(66dvh, calc(100dvh - 116px)) !important;
+        min-height: 320px !important;
+        border-width: 8px !important;
+        bottom: calc(env(safe-area-inset-bottom, 0px) + 12px) !important;
+    }
+
+    .xabia-chatbox.xabia-panel-shell.xabia-mobile-preset-compact .xabia-chat-history {
+        padding: 14px 14px 10px !important;
+    }
+
+    .xabia-chatbox.xabia-panel-shell.xabia-mobile-preset-compact .xabia-input-area {
+        gap: 8px !important;
+        padding: 10px 12px 8px !important;
+    }
+
+    .xabia-chatbox.xabia-panel-shell.xabia-mobile-preset-compact .xabia-powered-by {
+        padding: 4px 12px 10px !important;
+    }
+
+    .xabia-sticky-footer-box.xabia-mobile-preset-compact:not(.xabia-trigger--inline) {
+        width: 78px;
+        height: 78px;
+        right: 10px;
+        bottom: calc(env(safe-area-inset-bottom, 0px) + 8px);
+    }
+
+    .xabia-sticky-footer-box.xabia-mobile-preset-compact.xabia-trigger--bottom-left:not(.xabia-trigger--inline) {
+        left: 10px;
+        right: auto;
+    }
+
+    .xabia-sticky-footer-box.xabia-mobile-preset-compact:not(.xabia-trigger--inline) .xabia-interface-trigger,
+    .xabia-sticky-footer-box.xabia-mobile-preset-compact:not(.xabia-trigger--inline) .xabia-kinetic-wrapper,
+    .xabia-sticky-footer-box.xabia-mobile-preset-compact:not(.xabia-trigger--inline) .x-avatar-container,
+    .xabia-sticky-footer-box.xabia-mobile-preset-compact:not(.xabia-trigger--inline) .xabia-trigger-custom-img,
+    body.xabia-mobile-preset-compact .xabia-sticky-footer-box:not(.xabia-trigger--inline) .xabia-interface-trigger,
+    body.xabia-mobile-preset-compact .xabia-sticky-footer-box:not(.xabia-trigger--inline) .xabia-kinetic-wrapper,
+    body.xabia-mobile-preset-compact .xabia-sticky-footer-box:not(.xabia-trigger--inline) .x-avatar-container,
+    body.xabia-mobile-preset-compact .xabia-sticky-footer-box:not(.xabia-trigger--inline) .xabia-trigger-custom-img {
+        width: 72px !important;
+        height: 72px !important;
+    }
+
+    .xabia-sticky-footer-box.xabia-mobile-preset-compact:not(.xabia-trigger--inline) .x-avatar-stage,
+    body.xabia-mobile-preset-compact .xabia-sticky-footer-box:not(.xabia-trigger--inline) .x-avatar-stage {
+        left: -21.38px;
+        width: 93.39px;
+        height: 72px;
+    }
+
+    /* Preset ultra compacto */
+    .xabia-chatbox.xabia-panel-shell.xabia-mobile-preset-ultra-compact.layout-right-float,
+    .xabia-chatbox.xabia-panel-shell.xabia-mobile-preset-ultra-compact.layout-left-float,
+    .xabia-chatbox.xabia-panel-shell.xabia-mobile-preset-ultra-compact.layout-centered-modal,
+    .xabia-chatbox.xabia-panel-shell.xabia-mobile-preset-ultra-compact.layout-full-screen {
+        height: min(58dvh, calc(100dvh - 92px)) !important;
+        max-height: min(58dvh, calc(100dvh - 92px)) !important;
+        min-height: 280px !important;
+        border-width: 6px !important;
+        bottom: calc(env(safe-area-inset-bottom, 0px) + 8px) !important;
+    }
+
+    .xabia-chatbox.xabia-panel-shell.xabia-mobile-preset-ultra-compact .xabia-chat-history {
+        padding: 12px 12px 8px !important;
+    }
+
+    .xabia-chatbox.xabia-panel-shell.xabia-mobile-preset-ultra-compact .xabia-input-area {
+        gap: 6px !important;
+        padding: 8px 10px 6px !important;
+    }
+
+    .xabia-chatbox.xabia-panel-shell.xabia-mobile-preset-ultra-compact .xabia-input-field {
+        min-height: 40px !important;
+        padding: 9px 14px !important;
+        font-size: 1em !important;
+    }
+
+    .xabia-chatbox.xabia-panel-shell.xabia-mobile-preset-ultra-compact .xabia-powered-by {
+        padding: 2px 10px 8px !important;
+    }
+
+    .xabia-sticky-footer-box.xabia-mobile-preset-ultra-compact:not(.xabia-trigger--inline) {
+        width: 51px;
+        height: 51px;
+        right: 8px;
+        bottom: calc(env(safe-area-inset-bottom, 0px) + 6px);
+    }
+
+    .xabia-sticky-footer-box.xabia-mobile-preset-ultra-compact.xabia-trigger--bottom-left:not(.xabia-trigger--inline) {
+        left: 8px;
+        right: auto;
+    }
+
+    .xabia-sticky-footer-box.xabia-mobile-preset-ultra-compact:not(.xabia-trigger--inline) .xabia-interface-trigger,
+    .xabia-sticky-footer-box.xabia-mobile-preset-ultra-compact:not(.xabia-trigger--inline) .xabia-kinetic-wrapper,
+    .xabia-sticky-footer-box.xabia-mobile-preset-ultra-compact:not(.xabia-trigger--inline) .x-avatar-container,
+    .xabia-sticky-footer-box.xabia-mobile-preset-ultra-compact:not(.xabia-trigger--inline) .xabia-trigger-custom-img,
+    body.xabia-mobile-preset-ultra-compact .xabia-sticky-footer-box:not(.xabia-trigger--inline) .xabia-interface-trigger,
+    body.xabia-mobile-preset-ultra-compact .xabia-sticky-footer-box:not(.xabia-trigger--inline) .xabia-kinetic-wrapper,
+    body.xabia-mobile-preset-ultra-compact .xabia-sticky-footer-box:not(.xabia-trigger--inline) .x-avatar-container,
+    body.xabia-mobile-preset-ultra-compact .xabia-sticky-footer-box:not(.xabia-trigger--inline) .xabia-trigger-custom-img {
+        width: 45px !important;
+        height: 45px !important;
+    }
+
+    .xabia-sticky-footer-box.xabia-mobile-preset-ultra-compact:not(.xabia-trigger--inline) .x-avatar-stage,
+    body.xabia-mobile-preset-ultra-compact .xabia-sticky-footer-box:not(.xabia-trigger--inline) .x-avatar-stage {
+        left: -13.37px;
+        width: 58.37px;
+        height: 45px;
+    }
+
+    /* Panel siempre por encima del avatar; barra de entrada opaca */
+    .xabia-chatbox.xabia-panel-shell .xabia-input-area,
+    .xabia-chatbox.xabia-panel-shell .xabia-powered-by {
+        position: relative;
+        z-index: 4;
+    }
+
+    .xabia-chatbox.xabia-panel-shell .xabia-input-area {
+        background: #fff !important;
+        box-shadow: 0 -8px 24px rgba(255, 255, 255, 0.92);
+    }
+
+    /* Móvil + chat abierto: panel arriba, avatar visible abajo */
+    body.xabia-open {
+        --xabia-mobile-avatar-slot: 96px;
+    }
+
+    body.xabia-open.xabia-mobile-preset-ultra-compact {
+        --xabia-mobile-avatar-slot: 68px;
+    }
+
+    body.xabia-open .xabia-sticky-footer-box,
+    body.xabia-open #sticky-footer-box {
+        opacity: 1 !important;
+        visibility: visible !important;
+        transform: none !important;
+        z-index: 99992 !important;
+        pointer-events: none;
+    }
+
+    body.xabia-open .xabia-sticky-footer-box .xabia-interface-trigger {
+        pointer-events: auto;
+    }
+
+    body.xabia-open .xabia-chatbox.xabia-panel-shell.is-active {
+        overflow: hidden !important;
+        border-radius: 0 !important;
+    }
+
+    .xabia-chatbox.xabia-panel-shell.is-active > .xabia-panel-close {
+        display: inline-flex !important;
+    }
+
+    .xabia-chatbox.xabia-panel-shell.is-active .xabia-chat-history {
+        padding-top: 46px !important;
+        padding-right: 16px !important;
+        padding-left: 16px !important;
+    }
+
+    body.xabia-open.xabia-mobile-chat-stack .xabia-chatbox.xabia-panel-shell.is-active.layout-right-float,
+    body.xabia-open.xabia-mobile-chat-stack .xabia-chatbox.xabia-panel-shell.is-active.layout-left-float,
+    body.xabia-open.xabia-mobile-chat-stack .xabia-chatbox.xabia-panel-shell.is-active.layout-centered-modal,
+    body.xabia-open.xabia-mobile-chat-stack .xabia-chatbox.xabia-panel-shell.is-active.layout-full-screen {
+        top: calc(env(safe-area-inset-top, 0px) + 8px) !important;
+        bottom: auto !important;
+        left: 8px !important;
+        right: 8px !important;
+        width: calc(100vw - 16px) !important;
+        max-width: calc(100vw - 16px) !important;
+        height: calc(100dvh - var(--xabia-mobile-avatar-slot) - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px) - 20px) !important;
+        max-height: calc(100dvh - var(--xabia-mobile-avatar-slot) - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px) - 20px) !important;
+        min-height: 280px !important;
+        transform: none !important;
+        margin: 0 !important;
+        animation:
+            xabiaPanelIn 0.35s cubic-bezier(0.25, 1, 0.5, 1),
+            xabiaPanelHalo 3.6s linear infinite !important;
+    }
+
+}
+
+@media (max-width: 640px) and (max-height: 740px) {
+    .xabia-chatbox.xabia-panel-shell.xabia-mobile-preset-compact.layout-right-float,
+    .xabia-chatbox.xabia-panel-shell.xabia-mobile-preset-compact.layout-left-float,
+    .xabia-chatbox.xabia-panel-shell.xabia-mobile-preset-compact.layout-centered-modal,
+    .xabia-chatbox.xabia-panel-shell.xabia-mobile-preset-compact.layout-full-screen {
+        height: min(62dvh, calc(100dvh - 104px)) !important;
+        max-height: min(62dvh, calc(100dvh - 104px)) !important;
+    }
+
+    .xabia-chatbox.xabia-panel-shell.xabia-mobile-preset-ultra-compact.layout-right-float,
+    .xabia-chatbox.xabia-panel-shell.xabia-mobile-preset-ultra-compact.layout-left-float,
+    .xabia-chatbox.xabia-panel-shell.xabia-mobile-preset-ultra-compact.layout-centered-modal,
+    .xabia-chatbox.xabia-panel-shell.xabia-mobile-preset-ultra-compact.layout-full-screen {
+        height: min(54dvh, calc(100dvh - 88px)) !important;
+        max-height: min(54dvh, calc(100dvh - 88px)) !important;
+        min-height: 260px !important;
+    }
+}
+
+body.xabia-keyboard-open.xabia-mobile-chat-stack .xabia-chatbox.xabia-panel-shell.is-active.layout-right-float,
+body.xabia-keyboard-open.xabia-mobile-chat-stack .xabia-chatbox.xabia-panel-shell.is-active.layout-left-float,
+body.xabia-keyboard-open.xabia-mobile-chat-stack .xabia-chatbox.xabia-panel-shell.is-active.layout-centered-modal,
+body.xabia-keyboard-open.xabia-mobile-chat-stack .xabia-chatbox.xabia-panel-shell.is-active.layout-full-screen {
+    top: calc(env(safe-area-inset-top, 0px) + 6px) !important;
+    bottom: auto !important;
+    transform: none !important;
+    max-height: min(48dvh, calc(100dvh - var(--xabia-mobile-avatar-slot, 96px) - env(safe-area-inset-bottom, 0px) - 24px)) !important;
+    height: min(48dvh, calc(100dvh - var(--xabia-mobile-avatar-slot, 96px) - env(safe-area-inset-bottom, 0px) - 24px)) !important;
+}
+
+body.xabia-keyboard-open.xabia-mobile-chat-stack .xabia-chatbox.xabia-panel-shell.xabia-mobile-preset-ultra-compact.is-active.layout-right-float,
+body.xabia-keyboard-open.xabia-mobile-chat-stack .xabia-chatbox.xabia-panel-shell.xabia-mobile-preset-ultra-compact.is-active.layout-left-float,
+body.xabia-keyboard-open.xabia-mobile-chat-stack .xabia-chatbox.xabia-panel-shell.xabia-mobile-preset-ultra-compact.is-active.layout-centered-modal,
+body.xabia-keyboard-open.xabia-mobile-chat-stack .xabia-chatbox.xabia-panel-shell.xabia-mobile-preset-ultra-compact.is-active.layout-full-screen {
+    max-height: min(44dvh, calc(100dvh - var(--xabia-mobile-avatar-slot, 68px) - env(safe-area-inset-bottom, 0px) - 20px)) !important;
+    height: min(44dvh, calc(100dvh - var(--xabia-mobile-avatar-slot, 68px) - env(safe-area-inset-bottom, 0px) - 20px)) !important;
+}
+
+/* ============================================================
+   Xabia UI Modern — overrides panel nativo
+   ============================================================ */
+
+.xabia-chatbox.xabia-ui-modern.xabia-panel-shell {
+    background: #ffffff !important;
+    border: 1px solid rgba(0, 0, 0, 0.08) !important;
+    border-radius: 0 !important;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.08) !important;
+    animation: none !important;
+    width: 320px !important;
+    height: 520px !important;
+    max-height: 78vh !important;
+    min-height: 420px !important;
+}
+
+.xabia-chatbox.xabia-ui-modern.xabia-panel-shell.is-active {
+    animation: xabiaPanelFadeUp 0.32s cubic-bezier(0.22, 1, 0.36, 1) !important;
+}
+
+.xabia-chatbox.xabia-ui-modern.xabia-panel-shell.layout-right-float,
+.xabia-chatbox.xabia-ui-modern.xabia-panel-shell.layout-left-float {
+    width: 320px !important;
+    height: 520px !important;
+    max-height: 78vh !important;
+    min-height: 420px !important;
+}
+
+.xabia-chatbox.xabia-ui-modern.xabia-panel-shell.layout-right-float.is-active,
+.xabia-chatbox.xabia-ui-modern.xabia-panel-shell.layout-left-float.is-active {
+    animation: xabiaPanelFadeUp 0.32s cubic-bezier(0.22, 1, 0.36, 1) !important;
+}
+
+.xabia-chatbox.xabia-ui-modern.xabia-panel-shell .xabia-chat-messages {
+    padding: 16px 16px 8px !important;
+    background: #ffffff !important;
+}
+
+.xabia-chatbox.xabia-ui-modern.xabia-panel-shell .xabia-chat-body {
+    flex: 1 1 auto !important;
+    min-height: 0 !important;
+    display: flex !important;
+    flex-direction: column !important;
+    overflow: hidden !important;
+}
+
+.xabia-chatbox.xabia-ui-modern.xabia-panel-shell .xabia-chat-messages {
+    flex: 1 1 auto !important;
+    min-height: 0 !important;
+}
+
+.xabia-chatbox.xabia-ui-modern.xabia-panel-shell .xabia-input-area {
+    display: block !important;
+    padding: 8px 14px calc(env(safe-area-inset-bottom, 0px) + 10px) !important;
+    border-top: none !important;
+    background: #fff !important;
+    transition: opacity 0.22s ease, transform 0.22s ease !important;
+}
+
+@media (hover: hover) and (pointer: fine) {
+    .xabia-chatbox.xabia-ui-modern.xabia-panel-shell .xabia-input-area {
+        opacity: 0.38 !important;
+        transform: translateY(10px) !important;
+    }
+
+    .xabia-chatbox.xabia-ui-modern.xabia-panel-shell:hover .xabia-input-area,
+    .xabia-chatbox.xabia-ui-modern.xabia-panel-shell:focus-within .xabia-input-area {
+        opacity: 1 !important;
+        transform: none !important;
+    }
+}
+
+.xabia-chatbox.xabia-ui-modern.xabia-panel-shell .xabia-input-pill {
+    display: flex !important;
+    flex-direction: row !important;
+    align-items: center !important;
+    gap: 6px !important;
+    width: 100% !important;
+    padding: 4px 0 !important;
+    border-radius: 0 !important;
+    background: transparent !important;
+    border: none !important;
+    box-shadow: none !important;
+}
+
+.xabia-chatbox.xabia-ui-modern.xabia-panel-shell .xabia-input-pill .xabia-input-field {
+    flex: 1 1 auto !important;
+    order: 4 !important;
+    width: auto !important;
+    min-width: 0 !important;
+    min-height: 36px !important;
+    max-height: 140px !important;
+    margin: 0 !important;
+    padding: 8px 12px !important;
+    border: 1px solid #e5e7eb !important;
+    border-radius: 0 !important;
+    background: #fff !important;
+    box-shadow: none !important;
+}
+
+.xabia-chatbox.xabia-ui-modern.xabia-panel-shell .xabia-input-pill .xabia-btn-icon {
+    width: 28px !important;
+    height: 28px !important;
+    flex: 0 0 28px !important;
+    margin: 0 !important;
+    border: none !important;
+    border-radius: 0 !important;
+    background: transparent !important;
+    box-shadow: none !important;
+    color: #9ca3af !important;
+}
+
+.xabia-chatbox.xabia-ui-modern.xabia-panel-shell .xabia-input-pill .xabia-mic { order: 1 !important; }
+.xabia-chatbox.xabia-ui-modern.xabia-panel-shell .xabia-input-pill .xabia-mute { order: 2 !important; }
+.xabia-chatbox.xabia-ui-modern.xabia-panel-shell .xabia-input-pill .xabia-send { order: 3 !important; }
+
+.xabia-chatbox.xabia-ui-modern.xabia-panel-shell .xabia-input-composer,
+.xabia-chatbox.xabia-ui-modern.xabia-panel-shell .xabia-input-secondary,
+.xabia-chatbox.xabia-ui-modern.xabia-panel-shell .xabia-input-actions {
+    display: none !important;
+}
+
+.xabia-chatbox.xabia-ui-modern > .xabia-panel-close,
+.xabia-chatbox.xabia-ui-modern .xabia-chat-header .xabia-panel-close {
+    display: inline-flex !important;
+    position: static !important;
+    width: 40px !important;
+    height: 40px !important;
+    min-width: 40px !important;
+    min-height: 40px !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    border: none !important;
+    border-radius: 10px !important;
+    background: transparent !important;
+    color: #6b7280 !important;
+    font-size: inherit !important;
+    font-weight: normal !important;
+    box-shadow: none !important;
+}
+
+@media (max-width: 768px) {
+    body.xabia-open .xabia-blur-overlay,
+    body.xabia-open .xabia-blur-overlay.is-active {
+        display: none !important;
+        opacity: 0 !important;
+        visibility: hidden !important;
+        pointer-events: none !important;
+        backdrop-filter: none !important;
+        -webkit-backdrop-filter: none !important;
+    }
+
+    body.xabia-open .xabia-sticky-footer-box,
+    body.xabia-open #sticky-footer-box {
+        display: none !important;
+    }
+
+    .xabia-chatbox.xabia-ui-modern.xabia-panel-shell.is-active,
+    .xabia-chatbox.xabia-ui-modern.xabia-panel-shell.is-active.layout-right-float,
+    .xabia-chatbox.xabia-ui-modern.xabia-panel-shell.is-active.layout-left-float,
+    .xabia-chatbox.xabia-ui-modern.xabia-panel-shell.is-active.layout-centered-modal,
+    .xabia-chatbox.xabia-ui-modern.xabia-panel-shell.is-active.layout-full-screen,
+    body.xabia-open.xabia-mobile-chat-stack .xabia-chatbox.xabia-ui-modern.xabia-panel-shell.is-active.layout-right-float,
+    body.xabia-open.xabia-mobile-chat-stack .xabia-chatbox.xabia-ui-modern.xabia-panel-shell.is-active.layout-left-float,
+    body.xabia-open.xabia-mobile-chat-stack .xabia-chatbox.xabia-ui-modern.xabia-panel-shell.is-active.layout-centered-modal,
+    body.xabia-open.xabia-mobile-chat-stack .xabia-chatbox.xabia-ui-modern.xabia-panel-shell.is-active.layout-full-screen {
+        top: 0 !important;
+        left: 0 !important;
+        right: 0 !important;
+        bottom: 0 !important;
+        width: 100vw !important;
+        width: 100dvw !important;
+        height: 100vh !important;
+        height: 100dvh !important;
+        max-width: none !important;
+        max-height: none !important;
+        min-height: 0 !important;
+        margin: 0 !important;
+        border: none !important;
+        border-radius: 0 !important;
+        box-shadow: none !important;
+        transform: none !important;
+        z-index: 99999 !important;
+        animation: none !important;
+    }
+
+    body.xabia-keyboard-open .xabia-chatbox.xabia-ui-modern.xabia-panel-shell.is-active {
+        height: 100dvh !important;
+        max-height: 100dvh !important;
+    }
+
+    .xabia-chatbox.xabia-ui-modern.xabia-panel-shell.is-active .xabia-chat-history {
+        padding-top: 16px !important;
+    }
+}
+
+@media (min-width: 769px) {
+    .xabia-chatbox.xabia-ui-modern.xabia-panel-shell.layout-right-float.is-active,
+    .xabia-chatbox.xabia-ui-modern.xabia-panel-shell.layout-left-float.is-active {
+        animation: xabiaPanelFadeUp 0.32s cubic-bezier(0.22, 1, 0.36, 1) !important;
+    }
+}
+
+@keyframes xabiaPanelFadeUp {
+    from { opacity: 0; transform: translateY(10px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+/* ============================================================
+   Modo parlante (immersive): debe ganar al layout flotante del panel.
+   El CSS del panel-shell (right/left float) es más específico y
+   dejaba el chat “normal” aunque speaking_avatar estuviera activo.
+   ============================================================ */
+@media (min-width: 769px) {
+    .xabia-chatbox.xabia-ui-modern.xabia-panel-shell.xabia-immersive-mode.is-active,
+    .xabia-chatbox.xabia-ui-modern.xabia-panel-shell.xabia-immersive-mode.is-active.layout-right-float,
+    .xabia-chatbox.xabia-ui-modern.xabia-panel-shell.xabia-immersive-mode.is-active.layout-left-float,
+    .xabia-chatbox.xabia-ui-modern.xabia-panel-shell.xabia-immersive-mode.is-active.layout-centered-modal,
+    .xabia-chatbox.xabia-ui-modern.xabia-panel-shell.xabia-immersive-mode.is-active.layout-full-screen,
+    body.xabia-open .xabia-chatbox.xabia-ui-modern.xabia-panel-shell.xabia-immersive-mode.is-active,
+    body.xabia-open .xabia-chatbox.xabia-ui-modern.xabia-panel-shell.xabia-immersive-mode.is-active.layout-right-float,
+    body.xabia-open .xabia-chatbox.xabia-ui-modern.xabia-panel-shell.xabia-immersive-mode.is-active.layout-left-float {
+        position: fixed !important;
+        inset: 0 !important;
+        top: 0 !important;
+        left: 0 !important;
+        right: 0 !important;
+        bottom: 0 !important;
+        transform: none !important;
+        width: 100vw !important;
+        max-width: none !important;
+        height: 100vh !important;
+        height: 100dvh !important;
+        max-height: none !important;
+        min-height: 0 !important;
+        margin: 0 !important;
+        border: none !important;
+        border-radius: 0 !important;
+        box-shadow: none !important;
+        z-index: 99999 !important;
+        display: flex !important;
+        flex-direction: row !important;
+        background: rgba(0, 0, 0, 0.4) !important;
+        -webkit-backdrop-filter: blur(16px);
+        backdrop-filter: blur(16px);
+        animation: none !important;
+        padding: 0 !important;
+        overflow: hidden !important;
+    }
+
+    .xabia-chatbox.xabia-panel-shell.xabia-immersive-mode.is-active > .xabia-immersive-avatar-stage,
+    .xabia-chatbox.xabia-ui-modern.xabia-panel-shell.xabia-immersive-mode.is-active .xabia-immersive-avatar-stage {
+        display: flex !important;
+        flex: 1 1 66% !important;
+        width: 66% !important;
+        height: 100% !important;
+        align-items: center;
+        justify-content: center;
+        padding: 2rem;
+    }
+
+    .xabia-chatbox.xabia-panel-shell.xabia-immersive-mode.is-active .xabia-kinetic-wrapper--immersive {
+        width: min(48vw, 460px) !important;
+        height: min(37vw, 356px) !important;
+        max-width: 100% !important;
+    }
+
+    .xabia-chatbox.xabia-panel-shell.xabia-immersive-mode.is-active > .xabia-immersive-panel,
+    .xabia-chatbox.xabia-ui-modern.xabia-panel-shell.xabia-immersive-mode.is-active .xabia-immersive-panel {
+        flex: 0 0 34% !important;
+        width: 34% !important;
+        max-width: 480px;
+        height: 100% !important;
+        border-radius: 0 !important;
+        box-shadow: none !important;
+    }
+
+    .xabia-chatbox.xabia-panel-shell.xabia-immersive-mode.is-active .xabia-voice-hero,
+    .xabia-chatbox.xabia-ui-modern.xabia-panel-shell.xabia-immersive-mode.is-active .xabia-voice-hero,
+    body.xabia-immersive-open .xabia-chatbox.xabia-immersive-mode .xabia-voice-hero {
+        display: none !important;
+        visibility: hidden !important;
+        opacity: 0 !important;
+        pointer-events: none !important;
+        height: 0 !important;
+        min-height: 0 !important;
+        max-height: 0 !important;
+        overflow: hidden !important;
+        margin: 0 !important;
+        padding: 0 !important;
+    }
+
+    .xabia-chatbox.xabia-panel-shell.xabia-immersive-mode.is-active .xabia-voice-hero__orb {
+        display: none !important;
+    }
+}
+
+@media (max-width: 768px) {
+    .xabia-chatbox.xabia-ui-modern.xabia-panel-shell.xabia-immersive-mode.is-active,
+    .xabia-chatbox.xabia-ui-modern.xabia-panel-shell.xabia-immersive-mode.is-active.layout-right-float,
+    .xabia-chatbox.xabia-ui-modern.xabia-panel-shell.xabia-immersive-mode.is-active.layout-left-float,
+    body.xabia-open.xabia-mobile-chat-stack .xabia-chatbox.xabia-ui-modern.xabia-panel-shell.xabia-immersive-mode.is-active {
+        position: fixed !important;
+        inset: 0 !important;
+        width: 100vw !important;
+        height: 100dvh !important;
+        max-height: none !important;
+        display: flex !important;
+        flex-direction: column !important;
+        border-radius: 0 !important;
+        z-index: 99999 !important;
+        background: rgba(0, 0, 0, 0.35) !important;
+        animation: none !important;
+    }
+
+    .xabia-chatbox.xabia-panel-shell.xabia-immersive-mode.is-active .xabia-immersive-avatar-stage {
+        display: flex !important;
+        flex: 0 0 auto !important;
+        width: 100% !important;
+        height: auto !important;
+        min-height: 28dvh;
+        padding: 1rem;
+    }
+
+    .xabia-chatbox.xabia-panel-shell.xabia-immersive-mode.is-active .xabia-immersive-panel {
+        flex: 1 1 auto !important;
+        width: 100% !important;
+        min-height: 0 !important;
+        border-radius: 0 !important;
+    }
+
+    .xabia-chatbox.xabia-panel-shell.xabia-immersive-mode.is-active .xabia-voice-hero,
+    body.xabia-immersive-open .xabia-chatbox.xabia-immersive-mode .xabia-voice-hero {
+        display: none !important;
+        height: 0 !important;
+        min-height: 0 !important;
+        max-height: 0 !important;
+        overflow: hidden !important;
+        opacity: 0 !important;
+        pointer-events: none !important;
+    }
+}
+
+/* ============================================================
+   Chat chrome 1.0.198 — stream plano + input libre + radius 0
+   ============================================================ */
+
+.xabia-chatbox.xabia-ui-modern.xabia-panel-shell,
+.xabia-chatbox.xabia-ui-modern.xabia-panel-shell.is-active,
+.xabia-chatbox.xabia-ui-modern .xabia-immersive-panel,
+.xabia-immersive-mode .xabia-immersive-panel {
+    border-radius: 0 !important;
+}
+
+.xabia-chatbox.xabia-ui-modern .xabia-chat-header {
+    border-radius: 0 !important;
+}
+
+.xabia-chatbox.xabia-ui-modern .xabia-msg.user,
+.xabia-chatbox.xabia-ui-modern .xabia-msg.bot:not(.xabia-msg-greeting) {
+    max-width: 100% !important;
+    width: 100% !important;
+    align-self: stretch !important;
+    margin: 0 !important;
+    padding: 4px 0 !important;
+    border: none !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+    background: transparent !important;
+}
+
+.xabia-chatbox.xabia-ui-modern .xabia-msg.user {
+    color: var(--xabia-dots-color, var(--xabia-accent, #ff9966)) !important;
+    font-weight: 700 !important;
+    padding: 8px 0 2px !important;
+}
+
+.xabia-chatbox.xabia-ui-modern .xabia-msg.user .xabia-msg-content {
+    color: inherit !important;
+    font-weight: 700 !important;
+    text-align: justify !important;
+}
+
+.xabia-chatbox.xabia-ui-modern .xabia-msg.bot:not(.xabia-msg-greeting) {
+    color: #111111 !important;
+    padding: 2px 0 10px !important;
+}
+
+.xabia-chatbox.xabia-ui-modern .xabia-msg.bot:not(.xabia-msg-greeting) .xabia-msg-content {
+    color: #111111 !important;
+    text-align: justify !important;
+}
+
+.xabia-chatbox.xabia-ui-modern.xabia-panel-shell .xabia-btn-icon.xabia-mute:not(.is-voice-on),
+.xabia-chatbox.xabia-ui-modern.xabia-panel-shell .xabia-btn-icon.xabia-mute.is-voice-on,
+.xabia-chatbox.xabia-ui-modern.xabia-panel-shell .xabia-btn-icon.xabia-send,
+.xabia-chatbox.xabia-ui-modern.xabia-panel-shell .xabia-btn-icon.xabia-mic,
+.xabia-chatbox.xabia-ui-modern.xabia-panel-shell .xabia-btn-icon.xabia-mic.xabia-mic-listening {
+    background: transparent !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+}
+
+.xabia-chatbox.xabia-ui-modern.xabia-panel-shell .xabia-btn-icon.xabia-mute:not(.is-voice-on) {
+    color: #9ca3af !important;
+}
+
+.xabia-chatbox.xabia-ui-modern.xabia-panel-shell .xabia-btn-icon.xabia-mic.xabia-mic-listening {
+    color: #ef4444 !important;
+}
+

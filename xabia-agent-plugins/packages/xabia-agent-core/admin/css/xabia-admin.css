@@ -90,6 +90,52 @@ body.wp-admin .xabia-wrapper.xabia-admin-app {
 	border-bottom: 3px solid var(--xabia-magenta);
 }
 
+.xabia-admin-header__brand {
+	display: flex;
+	align-items: flex-start;
+	gap: 14px;
+	min-width: 0;
+	flex: 1 1 auto;
+}
+
+.xabia-admin-header__icon {
+	width: 44px;
+	height: 44px;
+	object-fit: contain;
+	flex-shrink: 0;
+	display: block;
+	margin-top: 2px;
+}
+
+.xabia-admin-header__wordmark-row {
+	display: flex;
+	align-items: center;
+	flex-wrap: wrap;
+	gap: 10px;
+	margin-bottom: 6px;
+}
+
+.xabia-admin-header__wordmark {
+	height: 32px;
+	width: auto;
+	max-width: min(200px, 50vw);
+	object-fit: contain;
+	display: block;
+}
+
+.xabia-admin-header__edition {
+	display: inline-flex;
+	align-items: center;
+	padding: 3px 10px;
+	font-size: 11px;
+	font-weight: 700;
+	letter-spacing: 0.04em;
+	text-transform: uppercase;
+	color: var(--xabia-magenta, #c2185b);
+	background: #fce4ec;
+	border-radius: 999px;
+}
+
 .xabia-page-title {
 	margin: 0 0 6px;
 	font-size: 28px;

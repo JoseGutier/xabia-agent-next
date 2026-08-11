@@ -3,7 +3,7 @@
  * Plugin Name: Xabia Agent Core
  * Plugin URI: https://xabia.ai
  * Description: Agente de Inteligencia Artificial de última generación con voz, texto y acciones en la web. Perfecciona la UX mediante interacciones conversacionales inteligentes, hiperpersonalizadas y políglotas. Smart QRs integrados, addons para Woo, MEC, Amelia, etc.
- * Version: 1.0.202
+ * Version: 1.0.203
  * Author: Digixop
  * Author URI: https://digixop.com
  */
@@ -36,6 +36,7 @@ define('XABIA_VERSION', $_xabia_ver !== '' ? trim((string) $_xabia_ver) : '1.0.0
 unset($_xabia_ver);
 
 require_once XABIA_PATH . 'core/class-xabia-mode.php';
+require_once XABIA_PATH . 'includes/class-xabia-features.php';
 
 if (!function_exists('xabia_api_dir')) {
     /**
@@ -78,8 +79,10 @@ require_once XABIA_PATH . 'core/class-xabia-db.php';
 require_once XABIA_PATH . 'core/interface-xabia-database.php';
 require_once XABIA_PATH . 'core/class-xabia-pdo-db-adapter.php';
 require_once XABIA_PATH . 'core/class-xabia-wp-db-adapter.php';
-require_once XABIA_PATH . 'core/class-xabia-document-ingest.php';
-require_once XABIA_PATH . 'core/class-xabia-document-ingest-bridge.php';
+if (Xabia_Features::is_pro()) {
+    require_once XABIA_PATH . 'core/class-xabia-document-ingest.php';
+    require_once XABIA_PATH . 'core/class-xabia-document-ingest-bridge.php';
+}
 require_once XABIA_PATH . 'core/class-xabia-embedding-cache.php';
 require_once XABIA_PATH . 'core/class-xabia-brain.php';
 require_once XABIA_PATH . 'core/class-xabia-router.php';
@@ -100,28 +103,34 @@ require_once XABIA_PATH . 'core/class-xabia-auto-sync.php';
 require_once XABIA_PATH . 'core/class-xabia-cloud-cron-rest.php';
 require_once XABIA_PATH . 'core/class-xabia-cpt-schema-discovery.php';
 
-if (Xabia_Mode::is_pro()) {
+if (Xabia_Features::is_pro()) {
     require_once XABIA_PATH . 'core/class-xabia-digixop-client.php';
     require_once XABIA_PATH . 'core/class-xabia-hub-knowledge.php';
 } else {
     require_once XABIA_PATH . 'core/class-xabia-lite-secrets.php';
     require_once XABIA_PATH . 'core/class-xabia-lite-context.php';
+    require_once XABIA_PATH . 'core/class-xabia-lite-scraper.php';
+    require_once XABIA_PATH . 'core/class-xabia-lite-hub-client.php';
     require_once XABIA_PATH . 'core/class-xabia-lite-api-handler.php';
+    require_once XABIA_PATH . 'core/class-xabia-lite-guard.php';
+    require_once XABIA_PATH . 'core/class-xabia-lite-notices.php';
+    Xabia_Lite_Guard::init();
+    Xabia_Lite_Notices::boot_for_lite();
 }
 
 require_once XABIA_PATH . 'core/class-xabia-addons-manager.php';
 require_once XABIA_PATH . 'core/class-xabia-analytics.php';
 
-if (Xabia_Mode::is_pro()) {
+if (Xabia_Features::is_pro()) {
     require_once XABIA_PATH . 'core/class-xabia-updater.php';
     require_once XABIA_PATH . 'core/class-xabia-addon-updater.php';
 }
 
-if (Xabia_Mode::is_pro()) {
+if (Xabia_Features::is_pro()) {
     require_once xabia_api_dir() . 'class-xabia-api.php';
 }
 
-if (Xabia_Mode::is_pro()) {
+if (Xabia_Features::is_pro()) {
     require_once xabia_api_dir() . 'class-xabia-wallet-api.php';
     require_once XABIA_PATH . 'core/class-xabia-federation-nexus.php';
 }
@@ -151,10 +160,10 @@ function register_xabia_addon($slug, $args) {
     });
 }
 
-foreach (glob(XABIA_PATH . 'integrations/*.php') as $file) {
-    require_once $file;
-}
-if (Xabia_Mode::is_pro()) {
+if (Xabia_Features::is_pro()) {
+    foreach (glob(XABIA_PATH . 'integrations/*.php') as $file) {
+        require_once $file;
+    }
     foreach (['central', 'reservas'] as $xabia_integration_subdir) {
         $subdir_files = glob(XABIA_PATH . 'integrations/' . $xabia_integration_subdir . '/*.php');
         if (is_array($subdir_files)) {
@@ -165,19 +174,24 @@ if (Xabia_Mode::is_pro()) {
     }
 }
 
-$xabia_addon_glob = glob(XABIA_PATH . 'addons/*/xabia-addon-*.php');
-if (is_array($xabia_addon_glob)) {
-    foreach ($xabia_addon_glob as $file) {
-        if (is_readable($file)) {
-            require_once $file;
+if (Xabia_Features::is_pro()) {
+    $xabia_addon_glob = glob(XABIA_PATH . 'addons/*/xabia-addon-*.php');
+    if (is_array($xabia_addon_glob)) {
+        foreach ($xabia_addon_glob as $file) {
+            if (is_readable($file)) {
+                require_once $file;
+            }
         }
     }
+    unset($xabia_addon_glob);
 }
-unset($xabia_addon_glob);
 
-require_once XABIA_PATH . 'core/class-xabia-smart-qr.php';
+if (Xabia_Features::is_pro()) {
+    require_once XABIA_PATH . 'core/class-xabia-smart-qr.php';
+    Xabia_Smart_QR::init();
+}
+
 require_once XABIA_PATH . 'core/class-xabia-box-route.php';
-Xabia_Smart_QR::init();
 Xabia_Box_Route::init();
 
 require_once XABIA_PATH . 'frontend/class-xabia-interface.php';
@@ -208,7 +222,7 @@ add_action('init', static function (): void {
 }, 20);
 
 add_action('init', static function (): void {
-    if (!Xabia_Mode::is_pro()) {
+    if (!Xabia_Features::is_pro()) {
         return;
     }
     if (class_exists('Xabia_Auto_Sync', false)) {
@@ -399,12 +413,13 @@ function xabia_intercept_keywords(string $project_id, string $message, array $co
     return null;
 }
 
-if (class_exists('Xabia_Federation_Nexus')) {
+if (class_exists('Xabia_Federation_Nexus') && Xabia_Features::is_pro()) {
     Xabia_Federation_Nexus::init();
 }
 
 if (is_admin()) {
-    if (Xabia_Mode::is_pro()) {
+    require_once XABIA_PATH . 'admin/class-xabia-admin-ui.php';
+    if (Xabia_Features::is_pro()) {
         require_once XABIA_PATH . 'admin/class-xabia-admin.php';
         Xabia_Admin::init();
         Xabia_Updater::init();
@@ -473,7 +488,7 @@ function xabia_agent_next_activate() {
         Xabia_DB::install_tables();
     }
 
-    if (class_exists('Xabia_Central_Setup') && Xabia_Mode::is_pro()) {
+    if (class_exists('Xabia_Central_Setup') && Xabia_Features::is_pro()) {
         Xabia_Central_Setup::install();
     }
 
@@ -529,6 +544,24 @@ add_action('init', static function (): void {
         Xabia_Starter_Questions::maybe_seed_project_defaults();
     }
 }, 20);
+
+// Limpieza de duplicados de manuales (migración antigua Elementor → páginas nuevas /documentacion/).
+// No dependemos de post_content porque Elementor renderiza desde `_elementor_data`.
+add_action('template_redirect', static function (): void {
+    if (is_admin()) {
+        return;
+    }
+
+    if (function_exists('is_page') && is_page('guia-de-usuario-xabia-agent-core')) {
+        wp_redirect(home_url('/documentacion/xabia-agent-core/'), 301);
+        exit;
+    }
+
+    if (function_exists('is_page') && is_page('guia-de-usuario-xabia-para-avirato')) {
+        wp_redirect(home_url('/documentacion/avirato/'), 301);
+        exit;
+    }
+});
 
 $xabia_chat_shortcode_cb = static function ($atts) {
     $file = XABIA_PATH . 'frontend/widgets/chatbox.php';

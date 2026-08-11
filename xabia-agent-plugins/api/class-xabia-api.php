@@ -47,6 +47,15 @@ if (!class_exists('Xabia_API')) {
         }
 
         /**
+         * Bloquea endpoints PRO si el runtime es LITE (licencia ausente o build WP.org).
+         */
+        private static function assert_pro_runtime(string $feature = 'pro_only'): void {
+            if (class_exists('Xabia_Features', false) && Xabia_Features::is_lite()) {
+                Xabia_Features::reject_pro_json($feature);
+            }
+        }
+
+        /**
          * Compatibilidad: delega en {@see xabia_trace()}.
          *
          * Desactivar fichero: define('XABIA_DISABLE_CHAT_TRACE', true) en wp-config.php.
@@ -65,6 +74,7 @@ if (!class_exists('Xabia_API')) {
          * Rutas con '/' → baseurl + path. Solo nombre → búsqueda en biblioteca de medios (una query por lote).
          */
         public static function handle_resolve_image() {
+            self::assert_pro_runtime('vector_rag');
             $paths = [];
             if (isset($_REQUEST['paths']) && is_array($_REQUEST['paths'])) {
                 $paths = array_map(function ($p) {
@@ -94,6 +104,7 @@ if (!class_exists('Xabia_API')) {
          * Orden: Google Cloud TTS → OpenAI audio/speech → say (solo Darwin local).
          */
         public static function handle_tts_request(): void {
+            self::assert_pro_runtime('voice_tts');
             $text = isset($_POST['text']) ? wp_strip_all_tags(wp_unslash((string) $_POST['text'])) : '';
             $text = trim(preg_replace('/\s+/u', ' ', $text) ?? '');
             if ($text === '') {
@@ -1337,6 +1348,7 @@ if (!class_exists('Xabia_API')) {
         }
 
         public static function handle_chat_request() {
+            self::assert_pro_runtime('vector_rag');
             xabia_trace('[XABIA_CORE] xabia_ask_ai entry', [
                 'project_id'  => sanitize_text_field((string) ($_POST['project_id'] ?? '')),
                 'message_len' => strlen((string) wp_unslash($_POST['message'] ?? '')),

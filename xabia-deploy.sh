@@ -30,6 +30,7 @@ DEPLOY_ZIP_OK=0
 # Manuales del ecosistema (md + pdf + html si existen localmente)
 MANUAL_BASES=(
   manual-usuario-xabia-core
+  manual-usuario-xabia-byok-google
   manual-usuario-xabia-smart-qr
   manual-usuario-xabia-mec
   manual-usuario-xabia-woo
