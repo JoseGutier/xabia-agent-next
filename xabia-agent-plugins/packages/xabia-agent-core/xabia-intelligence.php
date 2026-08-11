@@ -3,7 +3,7 @@
  * Plugin Name: Xabia Agent Core
  * Plugin URI: https://xabia.ai
  * Description: Agente de Inteligencia Artificial de última generación con voz, texto y acciones en la web. Perfecciona la UX mediante interacciones conversacionales inteligentes, hiperpersonalizadas y políglotas. Smart QRs integrados, addons para Woo, MEC, Amelia, etc.
- * Version: 1.0.203
+ * Version: 1.0.204
  * Author: Digixop
  * Author URI: https://digixop.com
  */
@@ -546,18 +546,21 @@ add_action('init', static function (): void {
 }, 20);
 
 // Limpieza de duplicados de manuales (migración antigua Elementor → páginas nuevas /documentacion/).
-// No dependemos de post_content porque Elementor renderiza desde `_elementor_data`.
+// Elementor suele renderizar desde `_elementor_data`, así que resolvemos duplicados por `post_name`.
 add_action('template_redirect', static function (): void {
     if (is_admin()) {
         return;
     }
 
-    if (function_exists('is_page') && is_page('guia-de-usuario-xabia-agent-core')) {
+    $obj = function_exists('get_queried_object') ? get_queried_object() : null;
+    $post_name = is_object($obj) && isset($obj->post_name) ? (string) $obj->post_name : '';
+
+    if ($post_name === 'guia-de-usuario-xabia-agent-core') {
         wp_redirect(home_url('/documentacion/xabia-agent-core/'), 301);
         exit;
     }
 
-    if (function_exists('is_page') && is_page('guia-de-usuario-xabia-para-avirato')) {
+    if ($post_name === 'guia-de-usuario-xabia-para-avirato') {
         wp_redirect(home_url('/documentacion/avirato/'), 301);
         exit;
     }
