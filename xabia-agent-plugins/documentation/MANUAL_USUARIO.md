@@ -4,7 +4,7 @@
 >
 > Use el **manual modular canónico**:
 >
-> **→ [manual-usuario-xabia-core.md](./manual-usuario-xabia-core.md)** (Core v1.0.202+)
+> **→ [manual-usuario-xabia-core.md](./manual-usuario-xabia-core.md)** (Core v1.0.208+)
 >
 > Complementos:
 >

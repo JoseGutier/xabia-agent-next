@@ -1,6 +1,6 @@
 # Guía de desarrollo — Xabia Agent Next
 
-**Versión de la guía:** 1.0.201 (alineada con Xabia Agent Core **v1.0.201** — UI chat stream + Markdown, avatar parlante / launcher, starter questions; latencia, embeddings, Document-to-RAG)
+**Versión de la guía:** 1.0.208 (alineada con Xabia Agent Core **v1.0.208** — actualizaciones WP, activación PRO retail, Polar checkout; UI chat stream + Markdown, avatar parlante / launcher; latencia, embeddings, Document-to-RAG)
 
 **Manual de usuario canónico:** [manual-usuario-xabia-core.md](./manual-usuario-xabia-core.md)  
 **Despliegue:** [DESPLIEGUE_PRODUCCION_CORE.md](./DESPLIEGUE_PRODUCCION_CORE.md)  
@@ -518,4 +518,4 @@ Tras un listado en Playground (modo desarrollador), `rag_debug` puede incluir `n
 ### Core v1.0.162–1.0.163
 - Asistente CPT por fuente; MEC/Woo remoto + deep schema.
 
-*Última actualización: agosto 2026 — Core **v1.0.201**; manuales en https://xabia.ai/docs/.*
+*Última actualización: agosto 2026 — Core **v1.0.208**; manuales en https://xabia.ai/docs/.*

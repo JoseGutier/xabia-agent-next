@@ -228,11 +228,11 @@ img[alt="Xabia"] {
 <body>
 <h1>Manual de usuario — Xabia Agent Core</h1>
 <blockquote>
-<p><strong>Versión del producto:</strong> Xabia Agent Core <strong>v1.0.202</strong> (agosto 2026)<br><strong>Índice de manuales:</strong> <a href="https://xabia.ai/docs/">https://xabia.ai/docs/</a><br><strong>PDF en línea:</strong> <a href="https://xabia.ai/docs/manual-usuario-xabia-core.pdf">https://xabia.ai/docs/manual-usuario-xabia-core.pdf</a><br><strong>HTML en línea:</strong> <a href="https://xabia.ai/docs/manual-usuario-xabia-core.html">https://xabia.ai/docs/manual-usuario-xabia-core.html</a></p>
+<p><strong>Versión del producto:</strong> Xabia Agent Core <strong>v1.0.208</strong> (agosto 2026)<br><strong>Índice de manuales:</strong> <a href="https://xabia.ai/docs/">https://xabia.ai/docs/</a><br><strong>PDF en línea:</strong> <a href="https://xabia.ai/docs/manual-usuario-xabia-core.pdf">https://xabia.ai/docs/manual-usuario-xabia-core.pdf</a><br><strong>HTML en línea:</strong> <a href="https://xabia.ai/docs/manual-usuario-xabia-core.html">https://xabia.ai/docs/manual-usuario-xabia-core.html</a></p>
 </blockquote>
 <h2>Guía rápida de instalación</h2>
 <ol>
-<li>Descargue el ZIP de <strong>Xabia Agent Core</strong> (<code>xabia-agent-core-1.0.202.zip</code> o paquete retail equivalente).</li>
+<li>Descargue el ZIP de <strong>Xabia Agent Core</strong> (<code>xabia-agent-core-1.0.208.zip</code> o paquete retail equivalente).</li>
 <li>En WordPress, vaya a <strong>Plugins → Añadir nuevo → Subir plugin</strong>, seleccione el ZIP y pulse <strong>Instalar ahora → Activar</strong>.</li>
 <li>Abra <strong>Xabia Agent</strong> y configure <strong>Conexión a la IA</strong>: pegue la licencia <code>XABIA--…</code>, elija <strong>Xabia Cloud</strong> (recomendado) o <strong>Infraestructura propia</strong>, y guarde.</li>
 <li>Cree un agente desde <strong>Nuevo agente</strong>, escriba nombre, saludo e instrucciones básicas.</li>
@@ -1208,6 +1208,25 @@ img[alt="Xabia"] {
 <h3>¿Hay saldo en la cartera pero el visitante ve “modo mantenimiento”?</h3>
 <p>Mire en <strong>Personalidad</strong> el <strong>tope diario de tokens por agente</strong>. La barra lateral <strong>Tokens hoy</strong> muestra si ya alcanzó ese techo para el día técnico en curso; al día siguiente ese contador vuelve a cero para el agente, aunque su <strong>cartera global</strong> siga teniendo saldo disponible para otros agentes u otros días.</p>
 <h2>Notas de versión (Core)</h2>
+<h3>Core v1.0.208 (agosto 2026)</h3>
+<ul>
+<li>Actualizaciones: corrige el aviso en <strong>Plugins</strong> cuando WordPress aún no había creado el transient <code>update_plugins</code>.</li>
+<li>Actualizaciones: revalidación del Hub cada 5 minutos si la caché local coincide con la versión instalada.</li>
+</ul>
+<h3>Core v1.0.207 (agosto 2026)</h3>
+<ul>
+<li>Actualizaciones automáticas también en modo LITE (sin licencia PRO activa).</li>
+<li>Panel de versión en el admin LITE con «Comprobar ahora».</li>
+</ul>
+<h3>Core v1.0.206 (agosto 2026)</h3>
+<ul>
+<li>Checkout Polar: enlaces «Contratar suscripción» envían <code>domain</code> y <code>license_key</code> al Hub.</li>
+<li>Addons: badge «Hub Polar» debajo del título del panel.</li>
+</ul>
+<h3>Core v1.0.205 (agosto 2026)</h3>
+<ul>
+<li>Retail: si Core arranca sin licencia (UI limitada), permite pegar la licencia Xabia y activar PRO sin WP-CLI.</li>
+</ul>
 <h3>Core v1.0.202 (agosto 2026)</h3>
 <ul>
 <li>Acciones de chat: imágenes relativas en <code>[ACTION:IMG:…]</code>; fallback de reserva Amelia; reglas estrictas MEC remoto (<code>[ACTION:URL:Link]</code> únicamente).</li>

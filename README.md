@@ -4,7 +4,7 @@ Plugin de WordPress: asistente conversacional con **RAG**, memoria de sesión, v
 
 **Código y manuales de producto** viven en **`xabia-agent-plugins/`** (plugins instalables, documentación, salida de ZIPs).
 
-**Versión actual (Core):** **v1.0.202** — `XABIA_VERSION` / cabecera de [`xabia-intelligence.php`](xabia-agent-plugins/packages/xabia-agent-core/xabia-intelligence.php). Addons de referencia: **MEC 1.0.3**, **Woo 1.0.4**. Incluye correcciones de acciones de chat (IMG relativas, fallback Amelia, MEC remoto), UI stream + Markdown, avatar parlante / launcher, latencia chat, pasaporte remoto, listados breves, Smart QR / tótems e integraciones addon.
+**Versión actual (Core):** **v1.0.208** — `XABIA_VERSION` / cabecera de [`xabia-intelligence.php`](xabia-agent-plugins/packages/xabia-agent-core/xabia-intelligence.php). Addons de referencia: **MEC 1.0.3**, **Woo 1.0.4**. Incluye activación PRO desde UI LITE retail, checkout Polar con dominio/licencia, corrección del aviso de actualización en WordPress, acciones de chat (IMG/Amelia/MEC remoto), UI stream + Markdown, avatar parlante / launcher y Smart QR / tótems.
 
 ## Instalación desde ZIP
 

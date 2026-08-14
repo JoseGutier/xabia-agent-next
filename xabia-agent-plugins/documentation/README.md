@@ -8,7 +8,7 @@
 | [MANUAL_USUARIO.md](./MANUAL_USUARIO.md) | **Deprecado** — solo redirige al manual modular. Use [manual-usuario-xabia-core.md](./manual-usuario-xabia-core.md). |
 | [manual-usuario-xabia-avirato.md](./manual-usuario-xabia-avirato.md) | **Manual de usuario** del addon **Xabia Avirato**: guía rápida, instalación, pestaña Avirato del agente, campos (webcode, motor, filtros), experiencia en el chat, idioma políglota del Core, tokens y solución de problemas. |
 | [index.html](./index.html) | **Portada «Manuales de Xabia AI»** (estilo limpio Aktiba). En vivo: [xabia.ai/docs/](https://xabia.ai/docs/). |
-| [manual-usuario-xabia-core.md](./manual-usuario-xabia-core.md) | **Manual Core** (**v1.0.202**): acciones IMG/Amelia/MEC remoto, UI chat stream + Markdown, avatar parlante / launcher, CPT por fuente (§7.2), pasaporte remoto (§11), WPML, Smart QR, Wallet. PDF/HTML en [xabia.ai/docs/](https://xabia.ai/docs/manual-usuario-xabia-core.pdf). |
+| [manual-usuario-xabia-core.md](./manual-usuario-xabia-core.md) | **Manual Core** (**v1.0.208**): activación PRO retail, actualizaciones automáticas, Polar checkout, acciones IMG/Amelia/MEC remoto, UI chat stream + Markdown, avatar parlante / launcher, CPT por fuente (§7.2), pasaporte remoto (§11), WPML, Smart QR, Wallet. PDF/HTML en [xabia.ai/docs/](https://xabia.ai/docs/manual-usuario-xabia-core.pdf). |
 | [manual-usuario-xabia-mec.md](./manual-usuario-xabia-mec.md) | **Manual MEC** (addon **1.0.3**, Core ≥ 1.0.168): eventos, reservas, SQL remoto híbrido, deep schema. |
 | [manual-usuario-xabia-woo.md](./manual-usuario-xabia-woo.md) | **Manual Woo** (addon **1.0.4**, Core ≥ 1.0.168): catálogo, carrito, remoto híbrido, metas `_price`/`_sku`. |
 | [manual-usuario-xabia-smart-qr.md](./manual-usuario-xabia-smart-qr.md) | **Manual Smart QR / tótems** (Core): guía extendida con ejemplos museo, hotel, retail, `/xabia-box/`, generador QR, POI `?xqr=`, migración del plugin legacy. PDF/HTML vía script de build. |
@@ -42,7 +42,7 @@ Addon Central (federación en WordPress): [README del addon Central](../packages
 
 ---
 
-*Última actualización del índice: agosto 2026 — Core **v1.0.202** (acciones IMG/Amelia, MEC remoto); manuales en **https://xabia.ai/docs/** (ver [DOCS_PUBLICACION.md](./DOCS_PUBLICACION.md)).*
+*Última actualización del índice: agosto 2026 — Core **v1.0.208**; manuales en **https://xabia.ai/docs/** (ver [DOCS_PUBLICACION.md](./DOCS_PUBLICACION.md)).*
 
 Actualización operativa (abril 2026):
 - Hub SaaS en `https://xabia.ai/api/xabia/v1/` (gateway público) con normalización automática de base path en router; despliegue legacy `api-xabia-saas` aún soportado.

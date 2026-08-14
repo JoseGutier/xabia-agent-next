@@ -816,6 +816,21 @@ Mire en **Personalidad** el **tope diario de tokens por agente**. La barra later
 
 ## Notas de versión (Core)
 
+### Core v1.0.208 (agosto 2026)
+- Actualizaciones: corrige el aviso en **Plugins** cuando WordPress aún no había creado el transient `update_plugins`.
+- Actualizaciones: revalidación del Hub cada 5 minutos si la caché local coincide con la versión instalada.
+
+### Core v1.0.207 (agosto 2026)
+- Actualizaciones automáticas también en modo LITE (sin licencia PRO activa).
+- Panel de versión en el admin LITE con «Comprobar ahora».
+
+### Core v1.0.206 (agosto 2026)
+- Checkout Polar: enlaces «Contratar suscripción» envían `domain` y `license_key` al Hub.
+- Addons: badge «Hub Polar» debajo del título del panel.
+
+### Core v1.0.205 (agosto 2026)
+- Retail: si Core arranca sin licencia (UI limitada), permite pegar la licencia Xabia y activar PRO sin WP-CLI.
+
 ### Core v1.0.202 (agosto 2026)
 - Acciones de chat: imágenes relativas en `[ACTION:IMG:…]`; fallback de reserva Amelia; reglas estrictas MEC remoto (`[ACTION:URL:Link]` únicamente).
 - Monorepo alineado con producción: API completa y addons Woo/MEC/Avirato.
