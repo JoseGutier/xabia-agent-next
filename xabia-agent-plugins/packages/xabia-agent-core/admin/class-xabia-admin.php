@@ -470,6 +470,32 @@ class Xabia_Admin {
         return $out;
     }
 
+    /**
+     * @param array<string, mixed> $post
+     * @return list<int>
+     */
+    private static function parse_web_page_ids_from_post(array $post, ?int $multi_idx = null): array {
+        if (!class_exists('Xabia_Web_Pages_Source', false)) {
+            return [];
+        }
+        if ($multi_idx !== null) {
+            $src = isset($post['sources'][$multi_idx]) && is_array($post['sources'][$multi_idx])
+                ? $post['sources'][$multi_idx]
+                : [];
+            $from_cb = $src['web_page_ids'] ?? [];
+            $manual = (string) ($src['web_page_ids_manual'] ?? '');
+        } else {
+            $from_cb = $post['web_page_ids'] ?? [];
+            $manual = (string) ($post['web_page_ids_manual'] ?? '');
+        }
+        $ids = Xabia_Web_Pages_Source::parse_page_ids($from_cb);
+        if ($manual !== '') {
+            $ids = array_merge($ids, Xabia_Web_Pages_Source::parse_page_ids($manual));
+        }
+
+        return array_values(array_unique($ids));
+    }
+
     private static function purge_project_response_cache(string $project_id): void
     {
         global $wpdb;
@@ -1518,13 +1544,16 @@ class Xabia_Admin {
             
             $sources = [];
             $source_type = sanitize_key($post['source_type'] ?? 'csv');
-            if (!in_array($source_type, ['csv', 'addon', 'multi', 'local_sql', 'sql'], true)) {
+            if (!in_array($source_type, ['csv', 'addon', 'multi', 'local_sql', 'sql', 'web_pages'], true)) {
                 $source_type = 'csv';
+            }
+            if ($source_type === 'web_pages' && class_exists('Xabia_Web_Pages_Source', false) && $attributes === []) {
+                $attributes = Xabia_Web_Pages_Source::default_mapping_fields();
             }
             if ($source_type === 'multi' && !empty($post['sources']) && is_array($post['sources'])) {
                 foreach ($post['sources'] as $idx => $src) {
                     $st = sanitize_key($src['type'] ?? '');
-                    if (!in_array($st, ['csv', 'sql', 'local_sql'], true)) continue;
+                    if (!in_array($st, ['csv', 'sql', 'local_sql', 'web_pages'], true)) continue;
                     $attrs = [];
                     if (!empty($src['attributes']) && is_array($src['attributes'])) {
                         foreach ($src['attributes'] as $attr) {
@@ -1545,6 +1574,12 @@ class Xabia_Admin {
                     $entry = ['type' => $st, 'attributes' => $attrs];
                     if ($st === 'csv') {
                         $entry['csv_filename'] = sanitize_file_name($src['csv_filename'] ?? '');
+                    } elseif ($st === 'web_pages') {
+                        $entry['web_page_ids'] = self::parse_web_page_ids_from_post($post, (int) $idx);
+                        $entry['web_pages_use_public_html'] = !empty($src['web_pages_use_public_html']) ? 1 : 0;
+                        if ($attrs === [] && class_exists('Xabia_Web_Pages_Source', false)) {
+                            $entry['attributes'] = Xabia_Web_Pages_Source::default_mapping_fields();
+                        }
                     } else {
                         $entry['sql_config'] = [
                             'host'  => sanitize_text_field($src['sql_host'] ?? ''),
@@ -1643,6 +1678,12 @@ class Xabia_Admin {
                 $project_language = preg_match('/^([a-z]{2})/', $pl_raw, $pl_m) ? $pl_m[1] : 'es';
             }
 
+            $web_page_ids = self::parse_web_page_ids_from_post($post);
+            $web_pages_use_public_html = !empty($post['web_pages_use_public_html']) ? 1 : 0;
+            if ($source_type === 'web_pages' && $attributes === [] && class_exists('Xabia_Web_Pages_Source', false)) {
+                $attributes = Xabia_Web_Pages_Source::default_mapping_fields();
+            }
+
             $projects[$id] = [
                 'name'             => sanitize_text_field($post['name']),
                 'source_type'      => $source_type,
@@ -1688,6 +1729,8 @@ class Xabia_Admin {
                     : absint(is_array($existing_project) ? ($existing_project['smart_qr_landing_page_id'] ?? 0) : 0),
                 'paused' => is_array($existing_project) && !empty($existing_project['paused']) ? 1 : 0,
                 'auto_sync' => $auto_sync_cfg,
+                'web_page_ids' => $web_page_ids,
+                'web_pages_use_public_html' => $web_pages_use_public_html,
             ];
             if (class_exists('Xabia_Interface', false)) {
                 $projects[$id]['interface'] = Xabia_Interface::build_config_from_post($post);
@@ -2960,7 +3003,7 @@ class Xabia_Admin {
         $config = ($project_id !== '' && is_array($projects[$project_id] ?? null)) ? $projects[$project_id] : [];
 
         $source_type = sanitize_key((string) wp_unslash($_POST['source_type'] ?? ''));
-        if ($source_type !== '' && in_array($source_type, ['csv', 'addon', 'multi', 'local_sql', 'sql'], true)) {
+        if ($source_type !== '' && in_array($source_type, ['csv', 'addon', 'multi', 'local_sql', 'sql', 'web_pages'], true)) {
             $config['source_type'] = $source_type;
         }
         $addon_slug = sanitize_key((string) wp_unslash($_POST['addon_slug'] ?? ''));
@@ -3240,6 +3283,9 @@ class Xabia_Admin {
         $data_cfg = is_array($data) ? $data : [];
         if (($data_cfg['source_type'] ?? '') === 'addon' && ($data_cfg['addon_slug'] ?? '') === 'mec' && self::xabia_attributes_need_mec_defaults($data_cfg['attributes'] ?? [])) {
             $data_cfg['attributes'] = self::xabia_mec_remote_default_mapping_fields();
+        }
+        if (($data_cfg['source_type'] ?? '') === 'web_pages' && ($data_cfg['attributes'] ?? []) === [] && class_exists('Xabia_Web_Pages_Source', false)) {
+            $data_cfg['attributes'] = Xabia_Web_Pages_Source::default_mapping_fields();
         }
         $legacy_addon_slug = (string) ($data_cfg['addon_slug'] ?? '');
         if ($legacy_addon_slug !== '' && $legacy_addon_slug !== $central_slug_ui && !isset($available_addons_rag[$legacy_addon_slug]) && isset($available_addons[$legacy_addon_slug])) {
@@ -3750,6 +3796,7 @@ class Xabia_Admin {
                                         <option value="addon" disabled>🔌 <?php echo esc_html__('Addon nativo (instala y activa Xabia MEC o Xabia Woo)', 'xabia-intelligence'); ?></option>
                                     <?php endif; ?>
                                     <option value="multi" <?php selected($source_type, 'multi'); ?>>🔀 <?php echo esc_html__('Multi-fuente (varias fuentes)', 'xabia-intelligence'); ?></option>
+                                    <option value="web_pages" <?php selected($source_type, 'web_pages'); ?>>🌐 <?php echo esc_html__('Páginas web (este sitio)', 'xabia-intelligence'); ?></option>
                                 </select>
 
                                 <div id="xabia-sql-remote-default-anchor">
@@ -3848,6 +3895,51 @@ class Xabia_Admin {
                                     <div id="csv-feedback" style="margin-top:10px;"></div>
                                 </div>
 
+                                <?php
+                                $saved_web_page_ids = class_exists('Xabia_Web_Pages_Source', false)
+                                    ? Xabia_Web_Pages_Source::parse_page_ids($data_cfg['web_page_ids'] ?? [])
+                                    : [];
+                                $web_pages_public_html = !empty($data_cfg['web_pages_use_public_html']);
+                                ?>
+                                <div id="section-web_pages" class="source-section" style="display:none;">
+                                    <p class="description"><?php echo esc_html__('Indexa páginas o entradas publicadas de este WordPress en la memoria del agente (RAG). Respeta el idioma del proyecto (WPML).', 'xabia-intelligence'); ?></p>
+                                    <?php
+                                    if (class_exists('Xabia_Web_Pages_Source', false)) {
+                                        Xabia_Web_Pages_Source::render_page_picker(
+                                            'web_page_ids',
+                                            'web_page_ids_manual',
+                                            $saved_web_page_ids,
+                                            __('Páginas a indexar', 'xabia-intelligence'),
+                                            __('Marca las páginas institucionales (qué es Ondarea, jornadas, contacto…). Tras guardar, pulsa «Sincronizar datos».', 'xabia-intelligence')
+                                        );
+                                    }
+                                    ?>
+                                    <label style="display:flex;align-items:center;gap:8px;margin:10px 0 0;">
+                                        <input type="checkbox" name="web_pages_use_public_html" value="1" <?php checked($web_pages_public_html); ?>>
+                                        <?php echo esc_html__('Leer HTML público (recomendado con Elementor/page builders)', 'xabia-intelligence'); ?>
+                                    </label>
+                                    <p class="description" style="margin:6px 0 0;"><?php echo esc_html__('Si está activo, descarga la URL pública de cada página (como la demo de xabia.ai) además del contenido de la base de datos.', 'xabia-intelligence'); ?></p>
+                                </div>
+
+                                <div id="xabia-supplemental-web-pages" class="xabia-panel-muted" style="display:none;margin-top:12px;">
+                                    <p style="margin:0 0 8px;"><strong><?php echo esc_html__('Páginas web complementarias', 'xabia-intelligence'); ?></strong></p>
+                                    <p class="description" style="margin:0 0 10px;"><?php echo esc_html__('Opcional: añade contenido institucional además de la fuente principal (p. ej. Addon MEC + páginas «Qué es Ondarea»).', 'xabia-intelligence'); ?></p>
+                                    <?php
+                                    if (class_exists('Xabia_Web_Pages_Source', false)) {
+                                        Xabia_Web_Pages_Source::render_page_picker(
+                                            'web_page_ids',
+                                            'web_page_ids_manual',
+                                            $saved_web_page_ids,
+                                            __('Páginas complementarias', 'xabia-intelligence')
+                                        );
+                                    }
+                                    ?>
+                                    <label style="display:flex;align-items:center;gap:8px;margin:8px 0 0;">
+                                        <input type="checkbox" name="web_pages_use_public_html" value="1" <?php checked($web_pages_public_html); ?>>
+                                        <?php echo esc_html__('Leer HTML público de esas páginas', 'xabia-intelligence'); ?>
+                                    </label>
+                                </div>
+
                                 <div id="section-multi" class="source-section" style="display:none;">
                                     <p class="description"><?php echo esc_html__('Combina hasta dos fuentes (por ejemplo tabla WordPress y un CSV). Cada una tiene su consulta o archivo y su mapeo.', 'xabia-intelligence'); ?></p>
                                     <?php
@@ -3857,6 +3949,10 @@ class Xabia_Admin {
                                         $st = $sd['type'] ?? ($si === 0 ? 'local_sql' : 'csv');
                                         $sc = $sd['sql_config'] ?? [];
                                         $csv_fn = $sd['csv_filename'] ?? '';
+                                        $multi_web_ids = class_exists('Xabia_Web_Pages_Source', false)
+                                            ? Xabia_Web_Pages_Source::parse_page_ids($sd['web_page_ids'] ?? [])
+                                            : [];
+                                        $multi_web_html = !empty($sd['web_pages_use_public_html']);
                                     ?>
                                     <div class="xabia-multi-source-box">
                                         <h4 style="margin-top:0;">Fuente <?php echo $si + 1; ?></h4>
@@ -3865,6 +3961,7 @@ class Xabia_Admin {
                                             <option value="local_sql" <?php selected($st, 'local_sql'); ?>>🗄️ <?php echo esc_html__('Base de Datos WordPress (Mismo Sitio)', 'xabia-intelligence'); ?></option>
                                             <option value="sql" <?php selected($st, 'sql'); ?>>🌐 <?php echo esc_html__('Base de Datos Externa (SQL Remoto)', 'xabia-intelligence'); ?></option>
                                             <option value="csv" <?php selected($st, 'csv'); ?>>📂 <?php echo esc_html__('Archivos CSV', 'xabia-intelligence'); ?></option>
+                                            <option value="web_pages" <?php selected($st, 'web_pages'); ?>>🌐 <?php echo esc_html__('Páginas web (este sitio)', 'xabia-intelligence'); ?></option>
                                         </select>
                                         <div class="multi-source-sql multi-source-panel" data-idx="<?php echo $si; ?>" style="display:<?php echo ($st === 'sql' || $st === 'local_sql') ? 'block' : 'none'; ?>;">
                                             <div class="multi-source-remote-fields" data-idx="<?php echo $si; ?>" style="display:<?php echo $st === 'sql' ? 'block' : 'none'; ?>; margin-bottom:8px;">
@@ -3899,6 +3996,22 @@ class Xabia_Admin {
                                             </div>
                                             <button type="button" class="button multi-scan-csv" data-idx="<?php echo $si; ?>">🔍 Scan CSV y mapear</button>
                                             <span class="multi-csv-feedback" data-idx="<?php echo $si; ?>" style="display:block;margin-top:8px;"></span>
+                                        </div>
+                                        <div class="multi-source-web_pages multi-source-panel" data-idx="<?php echo $si; ?>" style="display:<?php echo $st === 'web_pages' ? 'block' : 'none'; ?>;">
+                                            <?php
+                                            if (class_exists('Xabia_Web_Pages_Source', false)) {
+                                                Xabia_Web_Pages_Source::render_page_picker(
+                                                    'sources[' . $si . '][web_page_ids]',
+                                                    'sources[' . $si . '][web_page_ids_manual]',
+                                                    $multi_web_ids,
+                                                    __('Páginas a indexar (fuente ' . ($si + 1) . ')', 'xabia-intelligence')
+                                                );
+                                            }
+                                            ?>
+                                            <label style="display:flex;align-items:center;gap:8px;margin:8px 0 0;">
+                                                <input type="checkbox" name="sources[<?php echo $si; ?>][web_pages_use_public_html]" value="1" <?php checked($multi_web_html); ?>>
+                                                <?php echo esc_html__('Leer HTML público', 'xabia-intelligence'); ?>
+                                            </label>
                                         </div>
                                         <h4 style="margin:15px 0 8px;">Mapeo Fuente <?php echo $si + 1; ?></h4>
                                         <div class="multi-attr-container" data-idx="<?php echo $si; ?>">
@@ -4742,6 +4855,19 @@ class Xabia_Admin {
                 $('#xabia-premium-connector-sync-notice').toggle(!!locked);
             }
 
+            function xabiaUpdateWebPagesUi() {
+                var v = $('#xabia-source-select').val();
+                var showSupplemental = (v === 'addon' || v === 'local_sql' || v === 'sql' || v === 'csv');
+                $('#xabia-supplemental-web-pages').toggle(!!showSupplemental);
+                if (v === 'web_pages') {
+                    $('#label-single-attr').hide();
+                    $('#attr-container').hide();
+                } else if (v !== 'multi') {
+                    $('#label-single-attr').show();
+                    $('#attr-container').show();
+                }
+            }
+
             $('#xabia-source-select').change(function(){ 
                 let v = $(this).val();
                 if (v !== 'sql' && $('#xabia_sql_preset').val() === 'mec_remote') {
@@ -4752,6 +4878,7 @@ class Xabia_Admin {
                     xabiaCopySingleSourceIntoMultiSource0(xabiaPrevSourceVal);
                     $('.source-section').hide();
                     $('#section-multi').show();
+                    $('#xabia-supplemental-web-pages').hide();
                     $('#label-single-attr').hide();
                     $('#attr-container').hide();
                     $('#section-sql-remote-fields').hide();
@@ -4762,10 +4889,11 @@ class Xabia_Admin {
                     $('#attr-container').show();
                     $('.source-section').hide();
                     if (v === 'local_sql') $('#section-sql').show();
-                    else $('#section-'+v).show();
+                    else if ($('#section-'+v).length) $('#section-'+v).show();
                     if(v === 'sql' || v === 'addon') $('#section-sql-remote-fields').show();
                     else $('#section-sql-remote-fields').hide();
                     if(v === 'csv') loadCsvFiles();
+                    xabiaUpdateWebPagesUi();
                 }
                 xabiaPrevSourceVal = v;
                 xabiaUpdatePremiumConnectorUi();

@@ -98,6 +98,20 @@ class Xabia_Knowledge_Sync {
                             $total += Xabia_DB_Bridge::process_csv_knowledge($project_id, $file_path, $attrs);
                         }
                     }
+                } elseif ($type === 'web_pages' && class_exists('Xabia_Web_Pages_Source', false)) {
+                    $page_ids = Xabia_Web_Pages_Source::parse_page_ids($src['web_page_ids'] ?? []);
+                    if ($page_ids !== []) {
+                        $src_cfg = array_merge($config, [
+                            'web_pages_use_public_html' => !empty($src['web_pages_use_public_html']),
+                        ]);
+                        $total += Xabia_Web_Pages_Source::sync(
+                            $project_id,
+                            $page_ids,
+                            is_array($attrs) && $attrs !== [] ? $attrs : null,
+                            is_array($sync_opts) ? $sync_opts : [],
+                            $src_cfg
+                        );
+                    }
                 } elseif ($type === 'sql' || $type === 'local_sql') {
                     $sql_config = $src['sql_config'] ?? [];
                     if (!empty($sql_config['query'])) {
@@ -204,6 +218,9 @@ class Xabia_Knowledge_Sync {
             }
             $sql_config['query'] = $sql;
             $count = Xabia_DB_Bridge::process_sql_knowledge($project_id, $sql_config, null, $sync_opts);
+        } elseif (($config['source_type'] ?? '') === 'web_pages' && class_exists('Xabia_Web_Pages_Source', false)) {
+            $page_ids = Xabia_Web_Pages_Source::parse_page_ids($config['web_page_ids'] ?? []);
+            $count = Xabia_Web_Pages_Source::sync($project_id, $page_ids, null, is_array($sync_opts) ? $sync_opts : [], $config);
         } elseif (($config['source_type'] ?? '') === 'local_sql' || ($config['source_type'] ?? '') === 'sql') {
             if (($config['source_type'] ?? '') === 'local_sql') {
                 $local_sql = $config['sql_config'] ?? [];
@@ -217,6 +234,14 @@ class Xabia_Knowledge_Sync {
             if ($file_path !== '' && file_exists($file_path)) {
                 $count = Xabia_DB_Bridge::process_csv_knowledge($project_id, $file_path);
             }
+        }
+
+        if (class_exists('Xabia_Web_Pages_Source', false)) {
+            $count += Xabia_Web_Pages_Source::sync_supplemental(
+                $project_id,
+                $config,
+                is_array($sync_opts) ? $sync_opts : []
+            );
         }
 
         do_action('xabia_after_knowledge_sync', $project_id, $config, (int) $count);
