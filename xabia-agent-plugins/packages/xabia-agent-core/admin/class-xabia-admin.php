@@ -658,6 +658,28 @@ class Xabia_Admin {
         add_action('wp_ajax_xabia_digixop_validate_license', [$self, 'ajax_digixop_validate_license']);
         add_action('wp_ajax_xabia_digixop_reveal_saved_license', [$self, 'ajax_digixop_reveal_saved_license']);
         add_action('wp_ajax_xabia_addon_sync_license', [$self, 'ajax_addon_sync_license']);
+        add_action('admin_notices', [$self, 'maybe_notice_pro_unlocked']);
+    }
+
+    /**
+     * Aviso tras activar PRO desde el panel LITE temporal del retail.
+     */
+    public function maybe_notice_pro_unlocked(): void {
+        if (!current_user_can('manage_options')) {
+            return;
+        }
+        if (!isset($_GET['page'], $_GET['xabia_pro_unlocked'])) {
+            return;
+        }
+        if (sanitize_key(wp_unslash((string) $_GET['page'])) !== 'xabia-settings') {
+            return;
+        }
+        if ((string) wp_unslash($_GET['xabia_pro_unlocked']) !== '1') {
+            return;
+        }
+        echo '<div class="notice notice-success is-dismissible"><p>'
+            . esc_html__('Xabia Agent PRO activado. Revisa la licencia en Ajustes generales y valida la conexión con el Hub si hace falta.', 'xabia-intelligence')
+            . '</p></div>';
     }
 
     /**
@@ -697,7 +719,7 @@ class Xabia_Admin {
         // Enlace externo a la portada de manuales (no crea página admin).
         global $submenu;
         if (isset($submenu['xabia-settings']) && is_array($submenu['xabia-settings'])) {
-            $help_url = (string) apply_filters('xabia_admin_help_docs_url', 'https://xabia.ai/docs/');
+            $help_url = (string) apply_filters('xabia_admin_help_docs_url', 'https://xabia.ai/documentacion/');
             $submenu['xabia-settings'][] = [
                 __('Ayuda', 'xabia-intelligence'),
                 'manage_options',
@@ -712,10 +734,10 @@ class Xabia_Admin {
     }
 
     /**
-     * Abre «Ayuda» en pestaña nueva (manuales en xabia.ai/docs/).
+     * Abre «Ayuda» en pestaña nueva (manuales en xabia.ai/documentacion/).
      */
     public function admin_help_menu_open_blank(): void {
-        $help_url = (string) apply_filters('xabia_admin_help_docs_url', 'https://xabia.ai/docs/');
+        $help_url = (string) apply_filters('xabia_admin_help_docs_url', 'https://xabia.ai/documentacion/');
         if ($help_url === '') {
             return;
         }
@@ -1016,7 +1038,9 @@ class Xabia_Admin {
                         if ($activeSub && !empty($status['addon_activated_ts'])) {
                             $activationFmt = wp_date('d/m/Y', (int) $status['addon_activated_ts']);
                         }
-                        $polarPrimaryHref = $polarShop;
+                        $polarPrimaryHref = class_exists('Xabia_Addons', false)
+                            ? Xabia_Addons::polar_checkout_url_with_site_context($polarShop)
+                            : $polarShop;
                         $polarPrimaryLabel = __('Contratar suscripción', 'xabia-intelligence');
                         if ($activeSub) {
                             $polarPrimaryHref = $polarPortal;
@@ -1039,12 +1063,6 @@ class Xabia_Admin {
                         }
                         ?>
                         <article class="<?php echo esc_attr(implode(' ', $cardMods)); ?>" role="listitem">
-                            <span class="xabia-addon-status-badge xabia-addon-status-badge--<?php echo $activeSub ? 'active' : 'inactive'; ?>" role="status" title="<?php echo esc_attr__('Suscripción del add-on según Xabia Hub / Polar (no es el estado del plugin en WordPress).', 'xabia-intelligence'); ?>">
-                                <?php if (!$activeSub) : ?>
-                                    <span class="dashicons dashicons-warning" aria-hidden="true"></span>
-                                <?php endif; ?>
-                                <span class="xabia-addon-status-badge__label"><?php echo $activeSub ? esc_html__('Hub Polar: activa', 'xabia-intelligence') : esc_html__('Hub Polar: inactiva', 'xabia-intelligence'); ?></span>
-                            </span>
                             <?php if ($activeSub && !empty($renewHint['expiring_soon']) && isset($renewHint['days_left']) && (int) $renewHint['days_left'] >= 0) : ?>
                                 <div class="xabia-addon-sub-card__renewal-banner<?php echo !empty($renewHint['urgent']) ? ' xabia-addon-sub-card__renewal-banner--urgent' : ''; ?>" role="status">
                                     <?php
@@ -1073,6 +1091,12 @@ class Xabia_Admin {
                                 <div class="xabia-addon-sub-card__icon" aria-hidden="true"><?php self::render_addon_lucide_icon($lucide); ?></div>
                                 <div class="xabia-addon-sub-card__headlines">
                                     <h2 class="xabia-addon-sub-card__title"><?php echo esc_html($title); ?></h2>
+                                    <span class="xabia-addon-status-badge xabia-addon-status-badge--<?php echo $activeSub ? 'active' : 'inactive'; ?>" role="status" title="<?php echo esc_attr__('Suscripción del add-on según Xabia Hub / Polar (no es el estado del plugin en WordPress).', 'xabia-intelligence'); ?>">
+                                        <?php if (!$activeSub) : ?>
+                                            <span class="dashicons dashicons-warning" aria-hidden="true"></span>
+                                        <?php endif; ?>
+                                        <span class="xabia-addon-status-badge__label"><?php echo $activeSub ? esc_html__('Hub Polar: activa', 'xabia-intelligence') : esc_html__('Hub Polar: inactiva', 'xabia-intelligence'); ?></span>
+                                    </span>
                                     <?php if ($price !== '') : ?>
                                         <p class="xabia-addon-sub-card__price"><?php echo esc_html($price); ?></p>
                                     <?php endif; ?>
@@ -1376,11 +1400,11 @@ class Xabia_Admin {
         wp_add_inline_style(
             'xabia-admin',
             '.xabia-wrapper.xabia-admin-app .xabia-addon-catalog-mini{position:relative;padding-top:40px!important;}'
-            . '.xabia-wrapper.xabia-admin-app .xabia-addon-status-badge{position:absolute;top:10px;right:10px;z-index:3;display:inline-flex;align-items:center;gap:5px;'
+            . '.xabia-wrapper.xabia-admin-app .xabia-addon-catalog-mini .xabia-addon-status-badge{position:absolute;top:10px;right:10px;z-index:3;display:inline-flex;align-items:center;gap:5px;'
             . 'padding:5px 11px;border-radius:999px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.03em;box-shadow:0 1px 3px rgba(0,0,0,.08);}'
-            . '.xabia-wrapper.xabia-admin-app .xabia-addon-status-badge--active{background:#d1fae5;color:#059669;border:1px solid #6ee7b7;}'
-            . '.xabia-wrapper.xabia-admin-app .xabia-addon-status-badge--inactive{background:#fef2f2;color:#b91c1c;border:1px solid #fecaca;}'
-            . '.xabia-wrapper.xabia-admin-app .xabia-addon-status-badge .dashicons{font-size:14px;width:14px;height:14px;line-height:1;}'
+            . '.xabia-wrapper.xabia-admin-app .xabia-addon-catalog-mini .xabia-addon-status-badge--active{background:#d1fae5;color:#059669;border:1px solid #6ee7b7;}'
+            . '.xabia-wrapper.xabia-admin-app .xabia-addon-catalog-mini .xabia-addon-status-badge--inactive{background:#fef2f2;color:#b91c1c;border:1px solid #fecaca;}'
+            . '.xabia-wrapper.xabia-admin-app .xabia-addon-catalog-mini .xabia-addon-status-badge .dashicons{font-size:14px;width:14px;height:14px;line-height:1;}'
             . '.xabia-wrapper.xabia-admin-app .xabia-agent-tile--paused{opacity:.72;}'
             . '.xabia-wrapper.xabia-admin-app .xabia-agent-paused-badge{display:inline-block;margin-left:8px;padding:2px 8px;font-size:11px;font-weight:600;border-radius:999px;background:#fef3c7;color:#92400e;}'
             . '.xabia-wrapper.xabia-admin-app .xabia-btn--pause{border-color:#d97706;color:#b45309;}'

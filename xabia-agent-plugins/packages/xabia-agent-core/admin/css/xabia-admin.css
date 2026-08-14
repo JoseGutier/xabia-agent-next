@@ -2183,38 +2183,50 @@ body.wp-admin .xabia-curate-empty {
 	transform: none;
 }
 
-/* Badge Hub: más visible (píldora), solo dentro de tarjetas de suscripción */
+/* Badge Hub en tarjetas de suscripción: bajo el título, en flujo (no absolute) */
 .xabia-wrapper.xabia-page-addons .xabia-addon-sub-card .xabia-addon-status-badge {
-	top: 22px;
-	right: 26px;
-	padding: 8px 16px;
-	font-size: 12px;
+	position: static;
+	display: inline-flex;
+	align-self: flex-start;
+	align-items: center;
+	gap: 5px;
+	margin: 8px 0 0;
+	padding: 6px 12px;
+	border-radius: 999px;
+	font-size: 11px;
 	font-weight: 700;
-	letter-spacing: 0.04em;
-	box-shadow: 0 2px 8px rgba(5, 150, 105, 0.12);
-	z-index: 3;
+	letter-spacing: 0.03em;
+	text-transform: uppercase;
+	box-shadow: 0 1px 3px rgba(60, 64, 67, 0.1);
+	z-index: auto;
 }
 
 .xabia-wrapper.xabia-page-addons .xabia-addon-sub-card .xabia-addon-status-badge--inactive {
-	box-shadow: 0 2px 8px rgba(185, 28, 28, 0.1);
+	box-shadow: 0 1px 3px rgba(185, 28, 28, 0.1);
 }
 
 .xabia-wrapper.xabia-page-addons .xabia-addon-sub-card .xabia-addon-status-badge .dashicons {
-	font-size: 16px;
-	width: 16px;
-	height: 16px;
+	font-size: 14px;
+	width: 14px;
+	height: 14px;
+}
+
+.xabia-wrapper.xabia-page-addons .xabia-addon-sub-card__headlines {
+	flex: 1;
+	min-width: 0;
+	display: flex;
+	flex-direction: column;
+	align-items: flex-start;
 }
 
 @media (max-width: 600px) {
 	.xabia-wrapper.xabia-page-addons .xabia-addon-sub-card .xabia-addon-status-badge {
-		top: 16px;
-		right: 18px;
-		padding: 6px 12px;
-		font-size: 11px;
+		padding: 5px 10px;
+		font-size: 10px;
 	}
 }
 
-.xabia-wrapper.xabia-admin-app .xabia-addon-status-badge {
+.xabia-wrapper.xabia-admin-app .xabia-addon-catalog-mini .xabia-addon-status-badge {
 	position: absolute;
 	top: 14px;
 	right: 18px;
@@ -2231,7 +2243,7 @@ body.wp-admin .xabia-curate-empty {
 	box-shadow: 0 1px 3px rgba(60, 64, 67, 0.12);
 }
 
-.xabia-wrapper.xabia-admin-app .xabia-addon-status-badge .dashicons {
+.xabia-wrapper.xabia-admin-app .xabia-addon-catalog-mini .xabia-addon-status-badge .dashicons {
 	font-size: 14px;
 	width: 14px;
 	height: 14px;
@@ -2258,7 +2270,7 @@ body.wp-admin .xabia-curate-empty {
 }
 
 @media (max-width: 600px) {
-	.xabia-wrapper.xabia-admin-app .xabia-addon-status-badge {
+	.xabia-wrapper.xabia-admin-app .xabia-addon-catalog-mini .xabia-addon-status-badge {
 		top: 10px;
 		right: 12px;
 		font-size: 10px;
@@ -2288,7 +2300,7 @@ body.wp-admin .xabia-curate-empty {
 	display: flex;
 	align-items: flex-start;
 	gap: 16px;
-	padding: 0 96px 8px 0;
+	padding: 0 0 8px;
 }
 
 .xabia-wrapper.xabia-page-addons .xabia-addon-sub-card__icon {

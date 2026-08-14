@@ -17,6 +17,7 @@ final class Xabia_Lite_Admin {
     private const RECHARGES_URL = 'https://xabia.ai/#wallet';
     private const GOOGLE_AI_STUDIO_URL = 'https://aistudio.google.com/app/apikey';
     private const INDEX_WEB_ACTION = 'xabia_lite_index_web';
+    private const ACTIVATE_PRO_ACTION = 'xabia_lite_activate_pro';
 
     public static function init(): void {
         if (!class_exists('Xabia_Features', false) || !Xabia_Features::is_lite()) {
@@ -47,9 +48,13 @@ final class Xabia_Lite_Admin {
             ? Xabia_Admin_UI::menu_icon_url()
             : 'dashicons-superhero';
 
+        $menu_title = Xabia_Mode::can_unlock_pro_from_lite_ui()
+            ? __('Xabia Agent', 'xabia-intelligence')
+            : __('Xabia LITE', 'xabia-intelligence');
+
         add_menu_page(
-            __('Xabia LITE', 'xabia-intelligence'),
-            __('Xabia LITE', 'xabia-intelligence'),
+            $menu_title,
+            $menu_title,
             'manage_options',
             self::PAGE_SLUG,
             [$this, 'render_page'],
@@ -59,7 +64,7 @@ final class Xabia_Lite_Admin {
 
         global $submenu;
         if (isset($submenu[self::PAGE_SLUG]) && is_array($submenu[self::PAGE_SLUG])) {
-            $help_url = (string) apply_filters('xabia_admin_help_docs_url', 'https://xabia.ai/docs/');
+            $help_url = (string) apply_filters('xabia_admin_help_docs_url', 'https://xabia.ai/documentacion/');
             $submenu[self::PAGE_SLUG][] = [
                 __('Ayuda', 'xabia-intelligence'),
                 'manage_options',
@@ -75,7 +80,7 @@ final class Xabia_Lite_Admin {
      * Abre «Ayuda» en pestaña nueva.
      */
     public function admin_help_menu_open_blank(): void {
-        $help_url = (string) apply_filters('xabia_admin_help_docs_url', 'https://xabia.ai/docs/');
+        $help_url = (string) apply_filters('xabia_admin_help_docs_url', 'https://xabia.ai/documentacion/');
         if ($help_url === '') {
             return;
         }
@@ -126,6 +131,11 @@ final class Xabia_Lite_Admin {
         }
 
         check_admin_referer(self::NONCE_ACTION, self::NONCE_FIELD);
+
+        if (!empty($_POST[self::ACTIVATE_PRO_ACTION])) {
+            $this->handle_activate_pro();
+            return;
+        }
 
         if (!empty($_POST[self::INDEX_WEB_ACTION])) {
             $this->handle_web_index();
@@ -224,6 +234,55 @@ final class Xabia_Lite_Admin {
     }
 
     /**
+     * Retail/Core sin licencia: guarda la clave y redirige al panel PRO.
+     */
+    private function handle_activate_pro(): void {
+        if (!Xabia_Mode::can_unlock_pro_from_lite_ui()) {
+            add_settings_error(
+                'xabia_lite',
+                'xabia_lite_activate_pro',
+                __('Esta instalación LITE no admite activación por licencia. Descarga Xabia Agent Core (PRO).', 'xabia-intelligence'),
+                'error'
+            );
+            return;
+        }
+
+        $license_key = isset($_POST['xabia_lite_core_license_key'])
+            ? sanitize_text_field(wp_unslash((string) $_POST['xabia_lite_core_license_key']))
+            : '';
+        $license_key = trim($license_key);
+        if ($license_key === '') {
+            add_settings_error(
+                'xabia_lite',
+                'xabia_lite_activate_pro',
+                __('Pega tu licencia Xabia (XABIA--…) para activar PRO.', 'xabia-intelligence'),
+                'error'
+            );
+            return;
+        }
+
+        if (!Xabia_Mode::store_core_license_key($license_key)) {
+            add_settings_error(
+                'xabia_lite',
+                'xabia_lite_activate_pro',
+                __('No se pudo guardar la licencia.', 'xabia-intelligence'),
+                'error'
+            );
+            return;
+        }
+
+        $redirect = add_query_arg(
+            [
+                'page'               => 'xabia-settings',
+                'xabia_pro_unlocked' => '1',
+            ],
+            admin_url('admin.php')
+        );
+        wp_safe_redirect($redirect);
+        exit;
+    }
+
+    /**
      * @param array<string, mixed> $settings
      */
     private function maybe_handle_csv_upload(array &$settings): string {
@@ -314,6 +373,7 @@ final class Xabia_Lite_Admin {
         $csv_size = $csv_exists ? (int) filesize($csv_path) : 0;
         $upgrade_url = Xabia_Mode::pro_upgrade_url();
         $version = defined('XABIA_VERSION') ? (string) XABIA_VERSION : '1.0.0';
+        $can_unlock_pro = Xabia_Mode::can_unlock_pro_from_lite_ui();
         ?>
         <div class="wrap xabia-page-lite">
             <header class="xabia-lite-hero">
@@ -334,21 +394,68 @@ final class Xabia_Lite_Admin {
                                 echo '<h1 class="xabia-lite-hero__title">' . esc_html__('xabia', 'xabia-intelligence') . '</h1>';
                             }
                             ?>
-                            <span class="xabia-lite-badge"><?php echo esc_html(sprintf(__('LITE %s', 'xabia-intelligence'), $version)); ?></span>
+                            <span class="xabia-lite-badge"><?php
+                                echo esc_html(
+                                    $can_unlock_pro
+                                        ? sprintf(__('Core %s · sin licencia', 'xabia-intelligence'), $version)
+                                        : sprintf(__('LITE %s', 'xabia-intelligence'), $version)
+                                );
+                            ?></span>
                         </div>
                         <p class="xabia-lite-hero__subtitle">
-                            <?php echo esc_html__('Plugin independiente y gratuito con BYOK de Google Gemini. Opcionalmente puedes usar recargas Xabia Cloud sin configurar Google Cloud.', 'xabia-intelligence'); ?>
+                            <?php
+                            echo esc_html(
+                                $can_unlock_pro
+                                    ? __('Este es Xabia Agent Core. Sin licencia funciona en modo limitado; pega tu licencia Xabia abajo para activar PRO.', 'xabia-intelligence')
+                                    : __('Plugin independiente y gratuito con BYOK de Google Gemini. Opcionalmente puedes usar recargas Xabia Cloud sin configurar Google Cloud.', 'xabia-intelligence')
+                            );
+                            ?>
                         </p>
                     </div>
                 </div>
+                <?php if (!$can_unlock_pro) : ?>
                 <a class="xabia-lite-btn-pro" href="<?php echo esc_url($upgrade_url); ?>" target="_blank" rel="noopener noreferrer">
                     <?php echo esc_html__('Pásate a PRO', 'xabia-intelligence'); ?>
                 </a>
+                <?php endif; ?>
             </header>
 
             <div class="xabia-lite-notices">
                 <?php settings_errors('xabia_lite'); ?>
             </div>
+
+            <?php if ($can_unlock_pro) : ?>
+            <form method="post" action="" class="xabia-lite-form xabia-lite-form--unlock">
+                <?php wp_nonce_field(self::NONCE_ACTION, self::NONCE_FIELD); ?>
+                <section class="xabia-lite-card xabia-lite-card--unlock">
+                    <div class="xabia-lite-card__head">
+                        <span class="xabia-lite-card__icon"><?php echo self::icon('key'); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?></span>
+                        <h2 class="xabia-lite-card__title"><?php echo esc_html__('Activar Xabia Agent PRO', 'xabia-intelligence'); ?></h2>
+                    </div>
+                    <p class="xabia-lite-card__desc">
+                        <?php echo esc_html__('Pega la licencia que recibiste al comprar (empieza por XABIA--). Al guardar se abrirá el panel completo de Xabia Agent.', 'xabia-intelligence'); ?>
+                    </p>
+                    <div class="xabia-lite-field">
+                        <label class="xabia-lite-field-label" for="xabia_lite_core_license_key"><?php echo esc_html__('Licencia Xabia', 'xabia-intelligence'); ?></label>
+                        <input
+                            type="text"
+                            class="xabia-lite-input"
+                            id="xabia_lite_core_license_key"
+                            name="xabia_lite_core_license_key"
+                            value=""
+                            autocomplete="off"
+                            spellcheck="false"
+                            placeholder="<?php echo esc_attr__('XABIA--…', 'xabia-intelligence'); ?>"
+                        />
+                    </div>
+                    <p class="xabia-lite-actions xabia-lite-submit">
+                        <button type="submit" name="<?php echo esc_attr(self::ACTIVATE_PRO_ACTION); ?>" value="1" class="button button-primary">
+                            <?php echo esc_html__('Activar PRO', 'xabia-intelligence'); ?>
+                        </button>
+                    </p>
+                </section>
+            </form>
+            <?php endif; ?>
 
             <form method="post" action="" enctype="multipart/form-data" class="xabia-lite-form">
                 <?php wp_nonce_field(self::NONCE_ACTION, self::NONCE_FIELD); ?>

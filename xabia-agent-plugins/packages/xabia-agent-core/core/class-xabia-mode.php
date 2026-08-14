@@ -60,6 +60,39 @@ final class Xabia_Mode {
     }
 
     /**
+     * Build retail/Core (no WordPress.org): la UI LITE temporal puede activar PRO con licencia.
+     */
+    public static function can_unlock_pro_from_lite_ui(): bool {
+        if (self::is_pro()) {
+            return false;
+        }
+        if ((defined('XABIA_LITE_BUILD') && XABIA_LITE_BUILD) || (defined('XABIA_AGENT_LITE') && XABIA_AGENT_LITE)) {
+            return false;
+        }
+
+        return true;
+    }
+
+    /**
+     * Guarda la licencia Core y limpia meta cacheada para que el siguiente request arranque en PRO.
+     */
+    public static function store_core_license_key(string $license_key): bool {
+        $license_key = trim($license_key);
+        if ($license_key === '') {
+            return false;
+        }
+        if ((defined('XABIA_LITE_BUILD') && XABIA_LITE_BUILD) || (defined('XABIA_AGENT_LITE') && XABIA_AGENT_LITE)) {
+            return false;
+        }
+
+        update_option('xabia_digixop_license_key', $license_key, false);
+        delete_transient('xabia_digixop_license_meta');
+        self::$is_pro = null;
+
+        return true;
+    }
+
+    /**
      * Detección PRO sin cargar clases Premium (solo opciones/transientes WP).
      */
     private static function has_valid_stored_license(): bool {

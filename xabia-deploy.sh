@@ -284,44 +284,50 @@ deploy_hub_php() {
     KnowledgeSearchHandler.php
     KnowledgeVectorsRepository.php
     KnowledgeSlug.php
+    LicenseRepository.php
+    PolarProductMap.php
   )
   local -a hub_worker_files=(
     Workers/VectorizationWorker.php
   )
+  local -a hub_handler_files=(
+    Handlers/PolarWebhookHandler.php
+  )
 
-  log_info "Subiendo Hub PHP (${#hub_files[@]} archivos) → ${XABIA_PROD_SERVER}:${remote_src}/"
-
-  local f missing=0
-  for f in "${hub_files[@]}"; do
-    if [[ ! -f "${src_local}/${f}" ]]; then
-      log_err "Falta ${src_local}/${f}"
-      missing=1
+  local -a to_upload=()
+  local f
+  for f in "${hub_files[@]}" "${hub_worker_files[@]}" "${hub_handler_files[@]}"; do
+    if [[ -f "${src_local}/${f}" ]]; then
+      to_upload+=("$f")
+    else
+      log_warn "Omitido (no en monorepo): ${f}"
     fi
   done
-  if [[ "$missing" -eq 1 ]]; then
-    exit 1
+
+  if [[ ${#to_upload[@]} -eq 0 ]]; then
+    log_warn "No hay archivos Hub PHP locales — omitiendo deploy Hub"
+    log_step "[Hub PHP desplegado] omitido (sin archivos locales)"
+    return 0
   fi
 
+  log_info "Subiendo Hub PHP (${#to_upload[@]} archivo(s)) → ${XABIA_PROD_SERVER}:${remote_src}/"
+
   if [[ "$DRY_RUN" -eq 0 ]]; then
-    run_ssh "mkdir -p $(printf '%q' "$remote_src") $(printf '%q' "${remote_src}/Workers")"
-    local abs_files=()
-    for f in "${hub_files[@]}"; do
-      abs_files+=("${src_local}/${f}")
-    done
-    run_scp "${abs_files[@]}" "${XABIA_PROD_SERVER}:${remote_src}/"
-    for f in "${hub_worker_files[@]}"; do
-      if [[ -f "${src_local}/${f}" ]]; then
-        run_scp "${src_local}/${f}" "${XABIA_PROD_SERVER}:${remote_src}/${f}"
+    run_ssh "mkdir -p $(printf '%q' "$remote_src") $(printf '%q' "${remote_src}/Workers") $(printf '%q' "${remote_src}/Handlers")"
+    for f in "${to_upload[@]}"; do
+      local remote_dir="${remote_src}"
+      if [[ "$f" == */* ]]; then
+        remote_dir="${remote_src}/$(dirname "$f")"
       fi
+      run_scp "${src_local}/${f}" "${XABIA_PROD_SERVER}:${remote_dir}/$(basename "$f")"
     done
   else
-    local f
-    for f in "${hub_files[@]}"; do
+    for f in "${to_upload[@]}"; do
       log_info "[dry-run]   ${f}"
     done
   fi
 
-  log_step "[Hub PHP desplegado] ${remote_src}/ (${#hub_files[@]} archivos)"
+  log_step "[Hub PHP desplegado] ${remote_src}/ (${#to_upload[@]} archivo(s))"
 }
 
 deploy_docs() {

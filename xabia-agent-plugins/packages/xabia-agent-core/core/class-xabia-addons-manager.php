@@ -161,6 +161,42 @@ final class Xabia_Addons {
     }
 
     /**
+     * Checkout Polar con contexto del sitio (custom field «domain» + license_key).
+     * Org Polar comparte el slug «domain» con Digixop Translator Pro: solo host, sin https/www.
+     */
+    public static function polar_checkout_url_with_site_context(string $checkoutUrl): string {
+        $checkoutUrl = trim($checkoutUrl);
+        if ($checkoutUrl === '') {
+            return '';
+        }
+        $args = [];
+        $site = home_url('/');
+        if (is_string($site) && $site !== '') {
+            $host = wp_parse_url($site, PHP_URL_HOST);
+            if (!is_string($host) || $host === '') {
+                $host = preg_replace('#^https?://#i', '', $site);
+                $host = preg_replace('#/.*$#', '', (string) $host);
+            }
+            $host = strtolower(trim((string) $host));
+            if (str_starts_with($host, 'www.')) {
+                $host = substr($host, 4);
+            }
+            if ($host !== '') {
+                $args['domain'] = $host;
+            }
+        }
+        $coreLicense = trim((string) get_option('xabia_digixop_license_key', ''));
+        if ($coreLicense !== '') {
+            $args['license_key'] = $coreLicense;
+        }
+        if ($args === []) {
+            return $checkoutUrl;
+        }
+
+        return add_query_arg($args, $checkoutUrl);
+    }
+
+    /**
      * Clave usada al validar en el hub: la del campo del addon; si está vacía, la licencia Core.
      */
     public static function effective_license_key(string $slug): string {

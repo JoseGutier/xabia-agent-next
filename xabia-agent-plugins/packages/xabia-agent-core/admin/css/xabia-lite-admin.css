@@ -135,6 +135,16 @@
 	filter: brightness(1.05);
 }
 
+.xabia-lite-card--unlock {
+	border-color: #93c5fd;
+	background: linear-gradient(180deg, #f8fbff 0%, #ffffff 55%);
+	box-shadow: 0 10px 28px rgba(33, 112, 176, 0.12);
+}
+
+.xabia-lite-form--unlock {
+	margin-bottom: 20px;
+}
+
 .xabia-lite-card {
 	background: var(--xabia-lite-card);
 	border: 1px solid var(--xabia-lite-border);

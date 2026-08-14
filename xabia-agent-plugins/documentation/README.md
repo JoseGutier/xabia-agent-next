@@ -14,6 +14,7 @@
 | [manual-usuario-xabia-smart-qr.md](./manual-usuario-xabia-smart-qr.md) | **Manual Smart QR / tótems** (Core): guía extendida con ejemplos museo, hotel, retail, `/xabia-box/`, generador QR, POI `?xqr=`, migración del plugin legacy. PDF/HTML vía script de build. |
 | [DOCS_PUBLICACION.md](./DOCS_PUBLICACION.md) | **Publicar manuales** en el servidor (`xabia.ai/docs/`), regenerar PDF y CDN. |
 | [DESPLIEGUE_PRODUCCION_CORE.md](./DESPLIEGUE_PRODUCCION_CORE.md) | **Despliegue completo** Core + Hub DTP + WPML + manuales (checklist fases A–F). |
+| [POLAR_CHECKOUT_HUB.md](./POLAR_CHECKOUT_HUB.md) | **Polar → Hub:** custom fields (`client_url`), resolución de licencia en webhooks, troubleshooting. |
 | [DESARROLLO.md](./DESARROLLO.md) | **Guía de desarrollo** a fondo: arranque del plugin, pipeline de chat, ingestión, **§12 filtros/hooks/HMAC**, frontend, admin, empaquetado. |
 | [INFORME_ESTRATEGIA_CORE_MAPEADOR_TOKENS.md](./INFORME_ESTRATEGIA_CORE_MAPEADOR_TOKENS.md) | Estrategia de mapeo y tokens (notas de producto/diseño). |
 | [PLAN_VISION_XABIA_STANDALONE_Y_FEDERACION.md](./PLAN_VISION_XABIA_STANDALONE_Y_FEDERACION.md) | Visión standalone y federación; **v1.2** alineada con producto **v1.0.0**, addon Central, carpeta **`addons/`**, REST MEC en `addons/xabia-mec/`, y lo pendiente (Tools, standalone, fases red). |

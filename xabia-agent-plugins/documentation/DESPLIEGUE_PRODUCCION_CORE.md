@@ -281,6 +281,8 @@ El pipeline `./xabia-deploy.sh` publica el ZIP en **xabia.ai/downloads/** (actua
 
 Suba ese ZIP en el panel de Polar (producto Core / packs) sustituyendo el archivo descargable anterior. No hay CLI Polar en el Release Engine: la subida es manual o vía API de Polar con token de organización.
 
+**Checkout Polar → Hub:** configure campos personalizados (`client_url` obligatorio en addons; ver [POLAR_CHECKOUT_HUB.md](./POLAR_CHECKOUT_HUB.md)). El parche Hub (ago 2026) evita asignar compras al email equivocado cuando hay varias licencias.
+
 ## Sitio marketing (tema hijo «Prueba tu web»)
 
 Los cambios del sandbox **Prueba tu web**, modal AJAX y email de bienvenida viven en el **tema hijo** `hello-elementor-child` (Local: `home-xabia/`), **no** en el ZIP del Core. Despliéguelos aparte en el WordPress de marketing (`xabia.ai`) si aplica.

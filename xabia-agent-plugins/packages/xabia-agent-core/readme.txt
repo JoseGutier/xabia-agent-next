@@ -5,7 +5,7 @@ Tags: chatbot, ai, gemini, virtual assistant, rag, wordpress
 Requires at least: 6.0
 Tested up to: 6.9
 Requires PHP: 7.4
-Stable tag: 1.0.202
+Stable tag: 1.0.206
 License: GPLv2 or later
 License URI: http://www.gnu.org/licenses/gpl-2.0.html
 
@@ -15,7 +15,7 @@ Agente de IA conversacional para WordPress: chat nativo, RAG, Smart QR, Wallet y
 
 **Xabia Agent Core** es el plugin premium de Xabia AI para WordPress. Incluye interfaz de chat nativa, avatar cinético, modo parlante, shortcodes, sincronización de conocimiento, búsqueda vectorial, Smart QR / tótems y cartera de tokens vía Xabia Cloud.
 
-Documentación: https://xabia.ai/docs/
+Documentación: https://xabia.ai/documentacion/
 
 == Installation ==
 
@@ -25,6 +25,13 @@ Documentación: https://xabia.ai/docs/
 4. Cree un agente, sincronice datos y publique con shortcode o modo nativo.
 
 == Changelog ==
+
+= 1.0.206 =
+* Checkout Polar: enlaces «Contratar suscripción» envían domain y license_key al Hub.
+* Addons: badge «Hub Polar» debajo del título (sin solapamiento en la cabecera).
+
+= 1.0.205 =
+* Retail: si Core arranca sin licencia (UI limitada), permite pegar la licencia Xabia y activar PRO sin WP-CLI.
 
 = 1.0.202 =
 * Acciones: rutas relativas en [ACTION:IMG:…] resueltas con data-images-base del chatbox.
