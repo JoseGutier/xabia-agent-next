@@ -2422,14 +2422,19 @@ class Xabia_Admin {
 
             return;
         }
-        $pending_sql = Xabia_DB::knowledge_vectors_sql_pending_embedding();
-        $has_emb = Xabia_DB::knowledge_vectors_sql_has_embedding();
+        $projects = get_option('xabia_projects_config', []);
+        $config = isset($projects[$pid]) && is_array($projects[$pid]) ? $projects[$pid] : [];
+        $use_vector = !empty($config['rules']['use_vector_search']);
+        $ready_sql = $use_vector
+            ? Xabia_DB::knowledge_vectors_sql_has_embedding()
+            : Xabia_DB::knowledge_vectors_sql_has_usable_content();
         // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- nombre de tabla desde helper acotado.
         $total = (int) $wpdb->get_var($wpdb->prepare("SELECT COUNT(*) FROM `{$t}` WHERE project_id = %s", $pid));
         // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
-        $ready = (int) $wpdb->get_var($wpdb->prepare("SELECT COUNT(*) FROM `{$t}` WHERE project_id = %s AND ({$has_emb})", $pid));
-        // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
-        $pending = (int) $wpdb->get_var($wpdb->prepare("SELECT COUNT(*) FROM `{$t}` WHERE project_id = %s AND ({$pending_sql})", $pid));
+        $ready = (int) $wpdb->get_var($wpdb->prepare("SELECT COUNT(*) FROM `{$t}` WHERE project_id = %s AND ({$ready_sql})", $pid));
+        $pending = class_exists('Xabia_Knowledge_Train', false)
+            ? Xabia_Knowledge_Train::count_pending($pid)
+            : 0;
         $cm = Xabia_DB::knowledge_vectors_column_map();
         $has_ente = isset($cm['ente_id']);
         if ($has_ente) {
@@ -2468,6 +2473,8 @@ class Xabia_Admin {
         $hint = '';
         if ($total === 0) {
             $hint = __('No hay filas para este agente en la tabla de conocimiento. El playground solo usa lo que «Sincronizar datos» (SQL/CSV/multi) escribe para este project_id. Otras pantallas de sincronización solo cuentan si su código importa a la misma tabla con el mismo id de agente.', 'xabia-intelligence');
+        } elseif (!$use_vector && $ready > 0) {
+            $hint = __('Búsqueda vectorial desactivada: estos registros ya están listos para el chat por palabras clave; no hace falta entrenar embeddings.', 'xabia-intelligence');
         } elseif ($ready === 0 && class_exists('Xabia_Hub_Knowledge', false) && Xabia_Hub_Knowledge::is_hub_rag_enabled($pid)) {
             $hint = __('Hay registros de texto pero aún no hay embeddings útiles (vector_json distinto de vacío). Usa «Entrenar IA» y luego «Sincronizar Cerebro con Xabia Cloud» para RAG semántico en el Hub; el Hub y el plugin también pueden recuperar por palabras clave si están actualizados.', 'xabia-intelligence');
         }
@@ -3611,9 +3618,10 @@ class Xabia_Admin {
                     <input type="hidden" name="project_id" value="<?php echo esc_attr($edit_id === 'new' ? '' : $edit_id); ?>">
 
                     <?php if ($edit_id !== 'new') :
-                        $summary_stats = self::get_vector_counts((string) $edit_id);
+                        $summary_stats = self::get_vector_counts((string) $edit_id, is_array($data) ? $data : []);
                         $summary_total = (int) ($summary_stats['total'] ?? 0);
                         $summary_ready = (int) ($summary_stats['ready'] ?? 0);
+                        $summary_vector_search = !empty($data['rules']['use_vector_search']);
                         $summary_train_pending = class_exists('Xabia_Knowledge_Train', false)
                             ? (int) Xabia_Knowledge_Train::count_pending((string) $edit_id)
                             : 0;
@@ -3632,6 +3640,8 @@ class Xabia_Admin {
                                     )); ?>
                                     <?php if ($summary_train_pending > 0) : ?>
                                         <?php echo ' · ' . esc_html(sprintf(__('Pendientes de entrenar: %s', 'xabia-intelligence'), number_format_i18n($summary_train_pending))); ?>
+                                    <?php elseif (!$summary_vector_search && $summary_total > 0) : ?>
+                                        <?php echo ' · ' . esc_html__('Modo palabras clave (sin embeddings)', 'xabia-intelligence'); ?>
                                     <?php endif; ?>
                                 <?php endif; ?>
                             </span>
@@ -4264,7 +4274,7 @@ class Xabia_Admin {
 
                         <aside class="xabia-sidebar">
                             <?php do_action('xabia_admin_sidebar_top', $edit_id, $data ?? []); ?>
-                            <?php if($edit_id!=='new'): $stats=self::get_vector_counts($edit_id); $today_tokens = self::get_today_token_usage($edit_id);
+                            <?php if($edit_id!=='new'): $stats=self::get_vector_counts($edit_id, is_array($data_cfg) ? $data_cfg : []); $today_tokens = self::get_today_token_usage($edit_id);
                             if (class_exists('Xabia_Digixop_Client', false)) {
                                 Xabia_Digixop_Client::refresh_license_meta_from_hub_if_stale();
                             }
@@ -4275,6 +4285,7 @@ class Xabia_Admin {
                             $pipeline_alert = self::build_pipeline_alert_html($pipeline_status);
                             $tokens_depleted_ui = !empty($pipeline_status['tokens_depleted']);
                             $kv_table_name = class_exists('Xabia_DB', false) ? Xabia_DB::table('knowledge_vectors') : 'xabia_knowledge_vectors';
+                            $vector_search_ui = !empty($data_cfg['rules']['use_vector_search']);
                             ?>
                             <div class="xabia-status-box" id="xabia-agent-memory-panel">
                                 <div class="xabia-memory-panel-head">
@@ -4282,8 +4293,11 @@ class Xabia_Admin {
                                     <a href="#xabia-playground-card" class="xabia-playground-jump"><?php echo esc_html__('Ir al Playground ↓', 'xabia-intelligence'); ?></a>
                                 </div>
                                 <div id="xabia-pipeline-alert" class="xabia-pipeline-alert<?php echo $pipeline_alert !== '' ? ' xabia-pipeline-alert--visible xabia-pipeline-alert--error' : ''; ?>"<?php echo $pipeline_alert === '' ? ' style="display:none;"' : ''; ?>><?php echo $pipeline_alert; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- build_pipeline_alert_html escapa ?></div>
-                                <?php if ((int) ($stats['ready'] ?? 0) === 0) : ?>
+                                <?php if ((int) ($stats['total'] ?? 0) === 0) : ?>
                                     <p class="xabia-stat-line"><?php echo esc_html__('Agente listo: Esperando datos de entrenamiento', 'xabia-intelligence'); ?></p>
+                                <?php elseif (!$vector_search_ui) : ?>
+                                    <p class="xabia-stat-line"><?php echo esc_html(sprintf(__('Registros sincronizados: %1$s · Listos para el chat: %2$s', 'xabia-intelligence'), number_format_i18n($stats['total']), number_format_i18n($stats['ready']))); ?></p>
+                                    <p class="xabia-stat-line description"><?php echo esc_html__('Búsqueda vectorial desactivada: el chat recupera por palabras clave; «Entrenar IA» no es necesario.', 'xabia-intelligence'); ?></p>
                                 <?php else : ?>
                                     <p class="xabia-stat-line"><?php echo esc_html(sprintf(__('Registros sincronizados: %1$s · Vectores listos: %2$s', 'xabia-intelligence'), number_format_i18n($stats['total']), number_format_i18n($stats['ready']))); ?></p>
                                 <?php endif; ?>
@@ -4311,7 +4325,6 @@ class Xabia_Admin {
                                     : !empty($auto_sync_cfg_ui['auto_cloud']);
                                 $hub_cloud_available_ui = class_exists('Xabia_Hub_Knowledge', false)
                                     && Xabia_Hub_Knowledge::is_hub_rag_enabled((string) $edit_id);
-                                $vector_search_ui = !empty($data_cfg['rules']['use_vector_search']);
                                 $is_remote_source_ui = class_exists('Xabia_Knowledge_Sync', false) && Xabia_Knowledge_Sync::is_remote_config($data_cfg);
                                 $auto_sync_options = class_exists('Xabia_Auto_Sync', false) ? Xabia_Auto_Sync::interval_options() : [];
                                 ?>
@@ -4354,8 +4367,16 @@ class Xabia_Admin {
                                 </p>
                                 <button type="button" id="btn-sync-ajax" class="button xabia-sidebar-action"<?php echo !empty($xabia_premium_addon_sync_locked) ? ' disabled="disabled" aria-disabled="true"' : ''; ?>><?php echo esc_html__('1. Sincronizar datos (manual)', 'xabia-intelligence'); ?></button>
                                 <p class="description" style="margin:6px 0 0;"><?php echo esc_html__('Solo añade o actualiza lo que ha cambiado; no borra el resto. Para empezar de cero usa «Borrar memoria vectorial».', 'xabia-intelligence'); ?></p>
-                                <button type="button" id="btn-train-ajax" class="button button-primary xabia-sidebar-action"<?php echo $tokens_depleted_ui ? ' disabled="disabled" aria-disabled="true" title="' . esc_attr__('Saldo de tokens agotado. Recarga en Cartera / Wallet.', 'xabia-intelligence') . '"' : ''; ?>><?php echo esc_html__('2. Entrenar IA — 1 lote', 'xabia-intelligence'); ?></button>
-                                <p class="description" style="margin:6px 0 0;"><?php echo esc_html__('Cada clic entrena como máximo 20 registros (no todo de golpe). Revisa el saldo antes de continuar.', 'xabia-intelligence'); ?></p>
+                                <button type="button" id="btn-train-ajax" class="button button-primary xabia-sidebar-action"<?php
+                                    echo $tokens_depleted_ui
+                                        ? ' disabled="disabled" aria-disabled="true" title="' . esc_attr__('Saldo de tokens agotado. Recarga en Cartera / Wallet.', 'xabia-intelligence') . '"'
+                                        : (!$vector_search_ui
+                                            ? ' disabled="disabled" aria-disabled="true" title="' . esc_attr__('Activa «Usar búsqueda vectorial» en General para generar embeddings.', 'xabia-intelligence') . '"'
+                                            : '');
+                                ?>><?php echo esc_html__('2. Entrenar IA — 1 lote', 'xabia-intelligence'); ?></button>
+                                <p class="description" style="margin:6px 0 0;"><?php echo $vector_search_ui
+                                    ? esc_html__('Cada clic entrena como máximo 20 registros (no todo de golpe). Revisa el saldo antes de continuar.', 'xabia-intelligence')
+                                    : esc_html__('Con búsqueda vectorial desactivada el chat usa palabras clave sobre los registros sincronizados; no hace falta entrenar.', 'xabia-intelligence'); ?></p>
                                 <button type="button" id="btn-sync-brain-cloud" class="button button-primary xabia-sidebar-action" style="width:100%;margin-top:10px;"><?php echo esc_html__('Subir cerebro al Hub (manual)', 'xabia-intelligence'); ?></button>
                                 <button type="button" id="btn-knowledge-preview" class="button xabia-sidebar-action" style="width:100%;margin-top:8px;"><?php echo esc_html__('Vista previa del conocimiento (esta base)', 'xabia-intelligence'); ?></button>
                                 <div id="xabia-knowledge-preview" class="xabia-knowledge-preview" style="display:none;margin-top:10px;padding:10px;background:#f6f7f7;border:1px solid #c3c4c7;border-radius:4px;max-height:260px;overflow:auto;font-size:12px;line-height:1.45;white-space:pre-wrap;word-break:break-word;"></div>
@@ -5962,6 +5983,8 @@ class Xabia_Admin {
                     .replace('%2$s', ready.toLocaleString());
                 if (pending > 0) {
                     line += ' · <?php echo esc_js(__('Pendientes de entrenar: %s', 'xabia-intelligence')); ?>'.replace('%s', pending.toLocaleString());
+                } else if (data.vector_search_enabled === false) {
+                    line += ' · <?php echo esc_js(__('Modo palabras clave (sin embeddings)', 'xabia-intelligence')); ?>';
                 }
                 $stats.text(line);
             }
@@ -6403,26 +6426,42 @@ class Xabia_Admin {
         $config = isset($projects[$project_id]) && is_array($projects[$project_id]) ? $projects[$project_id] : [];
         $status = self::get_agent_pipeline_status($project_id, $config);
         $alert_html = self::build_pipeline_alert_html($status);
-        $vector_stats = self::get_vector_counts($project_id);
+        $vector_stats = self::get_vector_counts($project_id, $config);
+        $vector_search_enabled = !empty($config['rules']['use_vector_search']);
 
         return [
-            'train_pending'     => (int) ($status['train_pending'] ?? 0),
-            'tokens_remaining'  => $status['tokens_remaining'],
-            'tokens_depleted'   => !empty($status['tokens_depleted']),
-            'pipeline_alert'    => $alert_html,
-            'knowledge_table'   => (string) ($status['table'] ?? 'xabia_knowledge_vectors'),
-            'vector_total'      => (int) ($vector_stats['total'] ?? 0),
-            'vector_ready'      => (int) ($vector_stats['ready'] ?? 0),
+            'train_pending'          => (int) ($status['train_pending'] ?? 0),
+            'tokens_remaining'       => $status['tokens_remaining'],
+            'tokens_depleted'        => !empty($status['tokens_depleted']),
+            'pipeline_alert'         => $alert_html,
+            'knowledge_table'        => (string) ($status['table'] ?? 'xabia_knowledge_vectors'),
+            'vector_total'           => (int) ($vector_stats['total'] ?? 0),
+            'vector_ready'           => (int) ($vector_stats['ready'] ?? 0),
+            'vector_search_enabled'  => $vector_search_enabled,
         ];
     }
 
-    private static function get_vector_counts($pid) { 
-        global $wpdb; 
+    /**
+     * @param array<string, mixed> $config
+     * @return array{total:int,ready:int}
+     */
+    private static function get_vector_counts($pid, array $config = []) {
+        global $wpdb;
         $t = Xabia_DB::table('knowledge_vectors');
-        $pending_sql = class_exists('Xabia_DB', false) ? Xabia_DB::knowledge_vectors_sql_has_embedding() : 'vector_data IS NOT NULL';
-        $total = $wpdb->get_var($wpdb->prepare("SELECT COUNT(*) FROM $t WHERE project_id=%s",$pid));
-        $ready = $wpdb->get_var($wpdb->prepare("SELECT COUNT(*) FROM $t WHERE project_id=%s AND ({$pending_sql})",$pid)); 
-        return ['total'=>(int)$total, 'ready'=>(int)$ready]; 
+        if ($config === []) {
+            $projects = get_option('xabia_projects_config', []);
+            $config = isset($projects[$pid]) && is_array($projects[$pid]) ? $projects[$pid] : [];
+        }
+        $use_vector = !empty($config['rules']['use_vector_search']);
+        $ready_sql = $use_vector && class_exists('Xabia_DB', false)
+            ? Xabia_DB::knowledge_vectors_sql_has_embedding()
+            : (class_exists('Xabia_DB', false)
+                ? Xabia_DB::knowledge_vectors_sql_has_usable_content()
+                : 'content_chunk IS NOT NULL AND TRIM(content_chunk) <> \'\'');
+        $total = $wpdb->get_var($wpdb->prepare("SELECT COUNT(*) FROM $t WHERE project_id=%s", $pid));
+        $ready = $wpdb->get_var($wpdb->prepare("SELECT COUNT(*) FROM $t WHERE project_id=%s AND ({$ready_sql})", $pid));
+
+        return ['total' => (int) $total, 'ready' => (int) $ready];
     }
 
     private static function get_today_token_usage($pid) {

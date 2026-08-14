@@ -763,6 +763,13 @@ class Xabia_DB {
     }
 
     /**
+     * Fragmento SQL AND… para filas con texto utilizable en el chat (sin embedding).
+     */
+    public static function knowledge_vectors_sql_has_usable_content(): string {
+        return "(content_chunk IS NOT NULL AND TRIM(content_chunk) <> '')";
+    }
+
+    /**
      * Tabla para listados de catálogo EMPRESA: si Hub y WP comparten MySQL, usa xabia_knowledge_store (68 filas)
      * en lugar de xabia_site_knowledge_vectors (cerebro de sync parcial del sitio).
      */

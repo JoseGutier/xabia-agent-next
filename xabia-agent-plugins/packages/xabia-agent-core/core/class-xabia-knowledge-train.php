@@ -18,10 +18,27 @@ class Xabia_Knowledge_Train {
         return !empty($config['rules']['use_vector_search']);
     }
 
+    /**
+     * @return array<string, mixed>
+     */
+    public static function get_project_config(string $project_id): array {
+        $project_id = sanitize_key($project_id);
+        if ($project_id === '') {
+            return [];
+        }
+        $projects = get_option('xabia_projects_config', []);
+
+        return isset($projects[$project_id]) && is_array($projects[$project_id]) ? $projects[$project_id] : [];
+    }
+
     public static function count_pending(string $project_id): int {
         global $wpdb;
         $project_id = sanitize_key($project_id);
         if ($project_id === '') {
+            return 0;
+        }
+        $config = self::get_project_config($project_id);
+        if (!self::should_train_for_config($config)) {
             return 0;
         }
         $t = Xabia_DB::table('knowledge_vectors');
@@ -111,7 +128,13 @@ class Xabia_Knowledge_Train {
             return self::result(0, 0, 0, false, __('Proyecto no encontrado.', 'xabia-intelligence'));
         }
         if (!self::should_train_for_config($config)) {
-            return self::result(0, 0, 0, true, __('Búsqueda vectorial desactivada.', 'xabia-intelligence'));
+            return self::result(
+                0,
+                0,
+                0,
+                true,
+                __('Búsqueda vectorial desactivada: el chat usa los registros sincronizados por palabras clave; no hace falta entrenar embeddings.', 'xabia-intelligence')
+            );
         }
 
         if (class_exists('Xabia_Digixop_Client', false)) {
