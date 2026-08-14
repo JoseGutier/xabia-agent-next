@@ -3,7 +3,7 @@
  * Permalinks públicos de eventos MEC (sync RAG y respuestas del chat).
  *
  * Catálogo remoto: la URL pública es la del sitio fuente (mec_remote_site_url),
- * nunca el home del agente (p. ej. xabia.ai hospedando la demo de bilbaobizkaiapride.com).
+ * nunca el home del agente (p. ej. el chat en cliente.com enlazando eventos de otro-dominio.com).
  */
 
 if (!defined('ABSPATH')) {

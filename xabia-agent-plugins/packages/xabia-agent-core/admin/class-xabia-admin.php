@@ -3790,11 +3790,11 @@ class Xabia_Admin {
                                     </div>
                                     <div id="xabia-mec-remote-site-row" style="margin-top:12px;<?php echo (($source_type === 'addon' && ($data_cfg['addon_slug'] ?? '') === 'mec') || ($data_cfg['sql_preset'] ?? '') === 'mec_remote') ? '' : 'display:none;'; ?>">
                                         <label for="mec_remote_site_url"><strong><?php echo esc_html__('URL pública del sitio con eventos MEC (remoto)', 'xabia-intelligence'); ?></strong></label>
-                                        <input type="url" name="mec_remote_site_url" id="mec_remote_site_url" class="widefat" value="<?php echo esc_attr($data['rules']['mec_remote_site_url'] ?? ''); ?>" placeholder="https://bilbaobizkaiapride.com">
-                                        <p class="description"><?php echo esc_html__('Obligatoria si el catálogo es remoto: base de los enlaces de ficha/reserva (p. ej. https://bilbaobizkaiapride.com). Sin esto, los links apuntarían al sitio del agente.', 'xabia-intelligence'); ?></p>
+                                        <input type="url" name="mec_remote_site_url" id="mec_remote_site_url" class="widefat" value="<?php echo esc_attr($data['rules']['mec_remote_site_url'] ?? ''); ?>" placeholder="https://tu-sitio-con-eventos.com">
+                                        <p class="description"><?php echo esc_html__('Obligatoria si el catálogo es remoto: URL pública del WordPress donde viven los eventos MEC (p. ej. https://tu-sitio-con-eventos.com). Sin esto, los enlaces de ficha apuntarían al dominio del agente.', 'xabia-intelligence'); ?></p>
                                         <label for="mec_events_rewrite_slug" style="display:block;margin-top:10px;"><strong><?php echo esc_html__('Slug de archivo de eventos', 'xabia-intelligence'); ?></strong></label>
                                         <input type="text" name="mec_events_rewrite_slug" id="mec_events_rewrite_slug" class="regular-text" value="<?php echo esc_attr($data['rules']['mec_events_rewrite_slug'] ?? 'actividades'); ?>" placeholder="actividades">
-                                        <p class="description"><?php echo esc_html__('Segmento de URL entre dominio y slug del evento. En BBH Pride suele ser «actividades».', 'xabia-intelligence'); ?></p>
+                                        <p class="description"><?php echo esc_html__('Segmento de URL entre el dominio y el slug del evento (p. ej. actividades, eventos, ekintzak). Debe coincidir con la configuración de permalinks del sitio remoto.', 'xabia-intelligence'); ?></p>
                                     </div>
                                     <div id="xabia-addon-button-default-anchor">
                                     <button type="button" id="btn-test-addon" class="button button-primary" style="margin-top:10px;">🔗 <?php echo esc_html__('Conectar y mapear', 'xabia-intelligence'); ?></button>

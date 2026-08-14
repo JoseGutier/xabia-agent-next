@@ -5,7 +5,7 @@ Tags: chatbot, ai, gemini, virtual assistant, rag, wordpress
 Requires at least: 6.0
 Tested up to: 6.9
 Requires PHP: 7.4
-Stable tag: 1.0.208
+Stable tag: 1.0.210
 License: GPLv2 or later
 License URI: http://www.gnu.org/licenses/gpl-2.0.html
 
@@ -25,6 +25,12 @@ Documentación: https://xabia.ai/documentacion/
 4. Cree un agente, sincronice datos y publique con shortcode o modo nativo.
 
 == Changelog ==
+
+= 1.0.210 =
+* Admin MEC remoto: placeholders y textos de ayuda genéricos (sin referencias a sitios concretos).
+
+= 1.0.209 =
+* MEC remoto / RAG: con búsqueda vectorial desactivada y Xabia Cloud activo, el chat vuelve a consultar el catálogo local sincronizado.
 
 = 1.0.208 =
 * Actualizaciones: corrige que WordPress no mostraba el aviso si aún no existía el transient nativo update_plugins.

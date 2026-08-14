@@ -1828,10 +1828,16 @@ if (!class_exists('Xabia_API')) {
                         self::$last_rag_debug['keyword_boost_status'] = 'cancelled_no_needles';
                     }
                 } else {
-                    if (!self::is_hub_rag_enabled_for_project($project_id)) {
-                        $context = self::safe_local_knowledge_search($project_id, $search_term, $ente_scope, $strict_ente, $rag_fetch_limit);
-                        $had_knowledge_rows = strlen(trim($context)) >= 10;
-                    }
+                    // Sin vectores: el catálogo vive en knowledge_vectors local (p. ej. MEC remoto tras «Sincronizar»).
+                    // No bloquear LIKE local aunque el Hub RAG esté activo — si no, cloud + vector off = cero contexto.
+                    $context = self::local_knowledge_rescue_like_search(
+                        $project_id,
+                        $search_term,
+                        $ente_scope,
+                        $strict_ente,
+                        $rag_fetch_limit
+                    );
+                    $had_knowledge_rows = strlen(trim($context)) >= 10;
                 }
 
                 if ($use_vector && !$strict_ente && !self::should_skip_local_lexical_rag($project_id, (string) $context, $chunk_count)

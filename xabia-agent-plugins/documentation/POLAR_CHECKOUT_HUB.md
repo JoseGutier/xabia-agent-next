@@ -172,10 +172,10 @@ Opcional: ampliar el help a «…plugin Xabia Core o addon (MEC, Woo, Avirato)»
 Abre (o comprueba) el enlace con URL prefilled:
 
 ```
-https://buy.polar.sh/polar_cl_wEzwnqMvZIrPelny1I5HNIsdcVjGs1UO12Roj3zzxIm?domain=test.ondareabizkaia.eus
+https://buy.polar.sh/polar_cl_…?domain=midominio.com
 ```
 
-Debe aparecer el campo **domain** con `test.ondareabizkaia.eus` (sin `https://`).
+Debe aparecer el campo **domain** con el host del sitio WordPress (sin `https://` ni `www.`).
 
 Desde WordPress (**Xabia Agent → Addons → MEC → Contratar suscripción**), Core **1.0.205+** añade automáticamente `client_url` y `license_key` al enlace Polar del sitio actual.
 

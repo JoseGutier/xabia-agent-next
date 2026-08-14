@@ -177,7 +177,7 @@ Xabia MEC sigue el mismo patrón que Xabia Woo: el agente puede usar **Addon nat
 Use este modo cuando:
 
 - El sitio donde vive el chat tiene **Xabia Agent Core** y **Xabia MEC** activos.
-- Los eventos reales están en una base de datos WordPress remota, por ejemplo `bilbaobizkaiapride.com`.
+- Los eventos reales están en una base de datos WordPress remota, por ejemplo `https://tu-sitio-con-eventos.com`.
 - Quiere conservar las reglas semánticas del addon MEC (fechas, lugares, categorías, disponibilidad cualitativa), pero leer los datos por SQL remoto.
 
 Pasos:
