@@ -129,6 +129,14 @@ class Xabia_MEC_Public_Link {
         $is_remote = self::is_remote_catalog($cfg);
         $post_type = function_exists('get_post_type') ? (string) get_post_type($post_id) : '';
 
+        // Mismo WordPress: permalink nativo (WPML incluye /eu/, etc.) aunque el proyecto marque catálogo remoto por SQL.
+        if ($post_id > 0 && $post_type === 'mec-events' && function_exists('get_permalink')) {
+            $permalink = get_permalink($post_id);
+            if (is_string($permalink) && $permalink !== '' && !self::link_needs_fix($permalink)) {
+                return self::apply_reservation_url_filter($permalink, $post_id);
+            }
+        }
+
         if (!$is_remote) {
             if ($post_type === 'product' || ($post_type !== '' && $post_type !== 'mec-events')) {
                 if (function_exists('get_permalink')) {

@@ -5,7 +5,7 @@ Tags: chatbot, ai, gemini, virtual assistant, rag, wordpress
 Requires at least: 6.0
 Tested up to: 6.9
 Requires PHP: 7.4
-Stable tag: 1.0.210
+Stable tag: 1.0.211
 License: GPLv2 or later
 License URI: http://www.gnu.org/licenses/gpl-2.0.html
 
@@ -25,6 +25,10 @@ Documentación: https://xabia.ai/documentacion/
 4. Cree un agente, sincronice datos y publique con shortcode o modo nativo.
 
 == Changelog ==
+
+= 1.0.211 =
+* MEC: enlaces usan permalink nativo (WPML /eu/…) cuando el evento existe en el mismo WordPress.
+* Admin MEC: URL base + slug explican prefijo de idioma (p. ej. base /eu + slug ekintzak).
 
 = 1.0.210 =
 * Admin MEC remoto: placeholders y textos de ayuda genéricos (sin referencias a sitios concretos).
