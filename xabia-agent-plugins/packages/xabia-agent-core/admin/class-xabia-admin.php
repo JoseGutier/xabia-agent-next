@@ -3754,7 +3754,7 @@ class Xabia_Admin {
                                     <label for="project_language"><strong><?php echo esc_html__('Idioma del catálogo', 'xabia-intelligence'); ?></strong></label><br>
                                     <input type="text" name="project_language" id="project_language" value="<?php echo esc_attr($project_language_val); ?>" maxlength="5" placeholder="es" class="small-text" style="width:72px;" autocomplete="off">
                                 </p>
-                                <p class="description"><?php echo esc_html__('Código ISO de 2 letras (p. ej. es, eu, fr) — columna language_code de WPML. Aplica a cualquier fuente (SQL, CSV, addon, multi) al sincronizar el conocimiento. Por defecto: es.', 'xabia-intelligence'); ?></p>
+                                <p class="description"><?php echo esc_html__('Código ISO de 2 letras (p. ej. es, eu, fr) — columna language_code de WPML/Polylang. Aplica a cualquier fuente al sincronizar. En sitios multilingües, si falta traducción en este idioma se indexa la versión publicada en cualquier otro idioma. Por defecto: es.', 'xabia-intelligence'); ?></p>
                                 <hr>
 
                                 <?php if ($is_xabia_cloud_ui) : ?>

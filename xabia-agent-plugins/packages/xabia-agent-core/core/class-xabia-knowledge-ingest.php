@@ -412,8 +412,8 @@ class Xabia_Knowledge_Ingest {
         }
         $projects = function_exists('get_option') ? get_option('xabia_projects_config', []) : [];
         $config = is_array($projects[$project_id] ?? null) ? $projects[$project_id] : [];
-        $lang_scope = apply_filters('xabia_knowledge_lang_scope', 'primary', $project_id, $config);
-        if ($lang_scope === 'all') {
+        $lang_scope = Xabia_Knowledge_Language_Driver::lang_scope($project_id, $config);
+        if ($lang_scope === Xabia_Knowledge_Language_Driver::SCOPE_ALL) {
             return $rows;
         }
 
@@ -429,7 +429,9 @@ class Xabia_Knowledge_Ingest {
                 $rows,
                 $project_id,
                 $config,
-                $driver_type
+                $driver_type,
+                $db,
+                $table_prefix
             );
         }
 
@@ -453,8 +455,11 @@ class Xabia_Knowledge_Ingest {
     public static function should_skip_translated_row(array $row, string $project_id): bool {
         $projects = function_exists('get_option') ? get_option('xabia_projects_config', []) : [];
         $config = is_array($projects[$project_id] ?? null) ? $projects[$project_id] : [];
-        $lang_scope = apply_filters('xabia_knowledge_lang_scope', 'primary', $project_id, $config);
-        if ($lang_scope === 'all') {
+        $lang_scope = Xabia_Knowledge_Language_Driver::lang_scope($project_id, $config);
+        if ($lang_scope === Xabia_Knowledge_Language_Driver::SCOPE_ALL) {
+            return (bool) apply_filters('xabia_knowledge_sync_skip_row', false, $row, $project_id);
+        }
+        if ($lang_scope === Xabia_Knowledge_Language_Driver::SCOPE_PRIMARY_FALLBACK) {
             return (bool) apply_filters('xabia_knowledge_sync_skip_row', false, $row, $project_id);
         }
         if (!self::uses_chat_site_language_filters($config) || !self::is_multilingual_site()) {

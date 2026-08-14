@@ -1290,6 +1290,29 @@ if (!class_exists('Xabia_API')) {
         }
 
         /**
+         * Término ampliado para embedding / vectorial (acrónimos y variantes morfológicas; sin APIs externas).
+         */
+        private static function rag_retrieval_search_term(string $search_term, string $user_msg_clean): string {
+            $base = trim($search_term !== '' ? $search_term : $user_msg_clean);
+            if ($base === '') {
+                return '';
+            }
+            if (!class_exists('Xabia_Rag_Language_Bridge', false)) {
+                return self::sanitize_rag_search_term($base);
+            }
+            $source = trim($user_msg_clean !== '' ? $user_msg_clean : $base);
+            $variants = Xabia_Rag_Language_Bridge::retrieval_term_variants($source);
+            $parts = [$base];
+            foreach ($variants as $variant) {
+                $parts[] = $variant;
+            }
+            $parts = array_values(array_unique(array_filter(array_map('trim', $parts))));
+            $combined = trim(implode(' ', $parts));
+
+            return self::sanitize_rag_search_term($combined !== '' ? $combined : $base);
+        }
+
+        /**
          * En modo Hub cloud no ejecutar refuerzos LIKE en WordPress: el Hub ya hace léxico + vectorial.
          */
         private static function should_skip_local_lexical_rag(string $project_id, string $context, int $chunk_count): bool {
@@ -1672,11 +1695,13 @@ if (!class_exists('Xabia_API')) {
             if ($rag_lexical_query !== '') {
                 $hub_rag_opts['lexical_query_text'] = $rag_lexical_query;
             }
+            $retrieval_search_term = self::rag_retrieval_search_term($search_term, $user_msg_clean);
 
             self::$last_rag_debug = [
                 'chunk_count'          => 0,
                 'keyword_boost_status' => 'not_evaluated',
                 'search_term'          => $search_term,
+                'retrieval_term'       => $retrieval_search_term,
                 'keyword_needles'      => $rag_keyword_needles,
                 'needles_csv'          => implode(',', $rag_keyword_needles),
                 'lexical_query'        => $rag_lexical_query,
@@ -1692,7 +1717,7 @@ if (!class_exists('Xabia_API')) {
             $rag_vector_chunk_count = null;
             if (class_exists('Xabia_Brain')) {
                 if ($use_vector && !$strict_ente) {
-                    $query_vector = self::get_query_embedding($search_term, $config, $project_id);
+                    $query_vector = self::get_query_embedding($retrieval_search_term, $config, $project_id);
                     self::digixop_absorb_query_embedding_usage($project_id, $config);
                     if (class_exists('Xabia_Digixop_Client') && Xabia_Digixop_Client::was_insufficient_balance()) {
                         wp_send_json_error([
@@ -1701,7 +1726,7 @@ if (!class_exists('Xabia_API')) {
                         ]);
                         return;
                     }
-                    $out = Xabia_Brain::search_knowledge_vector($project_id, $search_term, $ente_scope, false, $rag_fetch_limit, $similarity_threshold, $query_vector, $hub_rag_opts);
+                    $out = Xabia_Brain::search_knowledge_vector($project_id, $retrieval_search_term, $ente_scope, false, $rag_fetch_limit, $similarity_threshold, $query_vector, $hub_rag_opts);
                     if (!empty($out['_hub_meta']) && is_array($out['_hub_meta']) && empty($out['_hub_meta']['ok'])) {
                         self::log_hub_rag_transport_failure(
                             $project_id,
@@ -4539,7 +4564,8 @@ if (!class_exists('Xabia_API')) {
          * @return list<string>
          */
         public static function extract_rag_keyword_needles(string $text): array {
-            $text = mb_strtolower(trim(wp_strip_all_tags((string) $text)), 'UTF-8');
+            $raw_text = trim(wp_strip_all_tags((string) $text));
+            $text = mb_strtolower($raw_text, 'UTF-8');
             if ($text === '') {
                 return [];
             }
@@ -4553,23 +4579,30 @@ if (!class_exists('Xabia_API')) {
                 }
             }
 
-            if (!preg_match_all('/\p{L}[\p{L}\p{M}\'-]{2,}/u', $text, $matches)) {
-                return [];
+            $needles = [];
+            if ($raw_text !== '' && preg_match_all('/\b[\p{Lu}]{2,12}\b/u', $raw_text, $acro_matches)) {
+                foreach ($acro_matches[0] as $acro) {
+                    $needles[] = mb_strtolower((string) $acro, 'UTF-8');
+                }
             }
 
-            $needles = [];
-            foreach ($matches[0] as $raw) {
-                $word = trim((string) $raw, "'-");
-                if ($word === '' || mb_strlen($word, 'UTF-8') < 4) {
-                    continue;
+            if (preg_match_all('/\p{L}[\p{L}\p{M}\'-]{2,}/u', $text, $matches)) {
+                foreach ($matches[0] as $raw) {
+                    $word = trim((string) $raw, "'-");
+                    if ($word === '' || mb_strlen($word, 'UTF-8') < 4) {
+                        continue;
+                    }
+                    if (isset($stop_map[$word])) {
+                        continue;
+                    }
+                    $needles[] = $word;
                 }
-                if (isset($stop_map[$word])) {
-                    continue;
-                }
-                $needles[] = $word;
             }
 
             $needles = array_values(array_unique($needles));
+            if (class_exists('Xabia_Rag_Language_Bridge', false)) {
+                $needles = Xabia_Rag_Language_Bridge::expand_keyword_needles($needles, $raw_text);
+            }
 
             return apply_filters('xabia_rag_keyword_needles', $needles, $text);
         }
@@ -5324,6 +5357,10 @@ if (!class_exists('Xabia_API')) {
                 }
                 $any_signal_in_query = true;
                 if (mb_strpos($c, $tl) === false) {
+                    if (class_exists('Xabia_Rag_Language_Bridge', false)
+                        && Xabia_Rag_Language_Bridge::context_contains_term_variant($tl, (string) $context)) {
+                        continue;
+                    }
                     $any_signal_missing_in_context = true;
                 }
             }

@@ -150,8 +150,11 @@ class Xabia_Catalog_List {
         $lang_join = '';
         if (class_exists('Xabia_Knowledge_Ingest', false)
             && Xabia_Knowledge_Ingest::is_multilingual_site()) {
-            $lang_scope = apply_filters('xabia_knowledge_lang_scope', 'primary', $project_id, $config);
-            if ($lang_scope !== 'all') {
+            $lang_scope = class_exists('Xabia_Knowledge_Language_Driver', false)
+                ? Xabia_Knowledge_Language_Driver::lang_scope($project_id, $config)
+                : 'primary';
+            if ($lang_scope !== Xabia_Knowledge_Language_Driver::SCOPE_ALL
+                && $lang_scope !== Xabia_Knowledge_Language_Driver::SCOPE_PRIMARY_FALLBACK) {
                 $primary = esc_sql(Xabia_Knowledge_Ingest::primary_language_code());
                 if ($primary !== '') {
                     $wpml = class_exists('Xabia_Knowledge_Ingest', false)

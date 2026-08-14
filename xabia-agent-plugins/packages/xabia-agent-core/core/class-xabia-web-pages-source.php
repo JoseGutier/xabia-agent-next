@@ -99,13 +99,7 @@ class Xabia_Web_Pages_Source {
 
         $rows = [];
         foreach ($page_ids as $requested_id) {
-            $post_id = $requested_id;
-            if ($primary_lang !== '' && has_filter('wpml_object_id')) {
-                $translated = apply_filters('wpml_object_id', $requested_id, get_post_type($requested_id) ?: 'page', true, $primary_lang);
-                if (is_numeric($translated) && (int) $translated > 0) {
-                    $post_id = (int) $translated;
-                }
-            }
+            $post_id = self::resolve_page_id_for_catalog($requested_id, $primary_lang);
 
             $post = get_post($post_id);
             if (!($post instanceof WP_Post) || $post->post_status !== 'publish') {
@@ -279,5 +273,51 @@ class Xabia_Web_Pages_Source {
             <input type="text" name="<?php echo esc_attr($text_field); ?>" class="widefat" placeholder="123, 456" value="">
         </fieldset>
         <?php
+    }
+
+    /**
+     * Idioma del catálogo si existe; si no hay traducción publicada, cualquier versión publicada (agnóstico).
+     */
+    private static function resolve_page_id_for_catalog(int $requested_id, string $primary_lang): int {
+        if ($requested_id < 1) {
+            return 0;
+        }
+        $post_type = get_post_type($requested_id) ?: 'page';
+        $candidates = [$requested_id];
+
+        if ($primary_lang !== '') {
+            $translated = (int) apply_filters(
+                'xabia_resolve_catalog_post_id',
+                0,
+                $requested_id,
+                $primary_lang,
+                $post_type
+            );
+            if ($translated > 0) {
+                $candidates[] = $translated;
+            }
+            if (has_filter('wpml_object_id')) {
+                $wpml_id = apply_filters('wpml_object_id', $requested_id, $post_type, true, $primary_lang);
+                if (is_numeric($wpml_id) && (int) $wpml_id > 0) {
+                    $candidates[] = (int) $wpml_id;
+                }
+            }
+            if (function_exists('pll_get_post')) {
+                $pll_id = pll_get_post($requested_id, $primary_lang);
+                if (is_numeric($pll_id) && (int) $pll_id > 0) {
+                    $candidates[] = (int) $pll_id;
+                }
+            }
+        }
+
+        $candidates = array_values(array_unique(array_filter(array_map('absint', $candidates))));
+        foreach ($candidates as $candidate_id) {
+            $post = get_post($candidate_id);
+            if ($post instanceof WP_Post && $post->post_status === 'publish') {
+                return $candidate_id;
+            }
+        }
+
+        return $requested_id;
     }
 }

@@ -13,8 +13,34 @@ class Xabia_Knowledge_Language_Driver {
     public const TYPE_POLYLANG = 'polylang';
     public const TYPE_NONE = 'none';
 
+    public const SCOPE_PRIMARY = 'primary';
+    public const SCOPE_PRIMARY_FALLBACK = 'primary_fallback';
+    public const SCOPE_ALL = 'all';
+
     /** @var array<string, true> claves canónicas / slug vistas en el sync actual */
     private static $sync_seen_keys = [];
+
+    /**
+     * Alcance de idioma en sync: primary | primary_fallback (default multilingüe) | all.
+     *
+     * @param array<string, mixed> $config
+     */
+    public static function lang_scope(string $project_id, array $config): string {
+        $default = self::SCOPE_PRIMARY;
+        if (class_exists('Xabia_Knowledge_Ingest', false) && Xabia_Knowledge_Ingest::is_multilingual_site()) {
+            $default = self::SCOPE_PRIMARY_FALLBACK;
+        }
+        $scope = apply_filters('xabia_knowledge_lang_scope', $default, $project_id, $config);
+        if (!is_string($scope)) {
+            return $default;
+        }
+        $scope = strtolower(trim($scope));
+        if (!in_array($scope, [self::SCOPE_PRIMARY, self::SCOPE_PRIMARY_FALLBACK, self::SCOPE_ALL], true)) {
+            return $default;
+        }
+
+        return $scope;
+    }
 
     public static function begin_sync_pass(): void {
         self::$sync_seen_keys = [];
@@ -71,8 +97,8 @@ class Xabia_Knowledge_Language_Driver {
         if ($sql === '' || stripos($sql, 'xabia_lang_filter_applied') !== false) {
             return $sql;
         }
-        $lang_scope = apply_filters('xabia_knowledge_lang_scope', 'primary', $project_id, $config);
-        if ($lang_scope === 'all') {
+        $lang_scope = self::lang_scope($project_id, $config);
+        if ($lang_scope === self::SCOPE_ALL || $lang_scope === self::SCOPE_PRIMARY_FALLBACK) {
             return (string) apply_filters('xabia_knowledge_primary_language_sql', $sql, $project_id, $config, $table_prefix);
         }
         if (!preg_match('/\bFROM\s+[`\']?[\w]*posts[`\']?\s+(?:AS\s+)?p\b/i', $sql)) {
@@ -145,14 +171,41 @@ class Xabia_Knowledge_Language_Driver {
      * @param array<string, mixed>       $config
      * @return list<array<string, mixed>>
      */
-    public static function prepare_fetched_rows(array $rows, string $project_id, array $config, string $driver_type): array {
+    public static function prepare_fetched_rows(
+        array $rows,
+        string $project_id,
+        array $config,
+        string $driver_type,
+        $db = null,
+        string $table_prefix = ''
+    ): array {
         if ($rows === []) {
             return $rows;
         }
 
-        $lang_scope = apply_filters('xabia_knowledge_lang_scope', 'primary', $project_id, $config);
-        if ($lang_scope === 'all') {
+        $lang_scope = self::lang_scope($project_id, $config);
+        if ($lang_scope === self::SCOPE_ALL) {
             return $rows;
+        }
+
+        global $wpdb;
+        if ($db === null || !is_object($db)) {
+            $db = $wpdb;
+        }
+        $prefix = $table_prefix !== ''
+            ? preg_replace('/[^a-zA-Z0-9_]/', '', $table_prefix)
+            : (is_object($db) && isset($db->prefix) ? (string) $db->prefix : 'wp_');
+        if ($prefix === '') {
+            $prefix = 'wp_';
+        }
+
+        if ($lang_scope === self::SCOPE_PRIMARY_FALLBACK) {
+            $rows = self::enrich_rows_translation_meta($rows, $driver_type, $prefix, $db);
+            $primary = class_exists('Xabia_Knowledge_Ingest', false)
+                ? Xabia_Knowledge_Ingest::project_language_code($config)
+                : 'es';
+
+            return self::collapse_to_primary_or_fallback($rows, $primary);
         }
 
         if (class_exists('Xabia_Knowledge_Ingest', false)) {
@@ -337,5 +390,230 @@ class Xabia_Knowledge_Language_Driver {
 
     private static function local_polylang_active(): bool {
         return function_exists('pll_default_language') || function_exists('pll_get_post_language');
+    }
+
+    /**
+     * Enriquece filas con language_code y xabia_translation_group (batch, agnóstico WPML/Polylang).
+     *
+     * @param list<array<string, mixed>> $rows
+     * @return list<array<string, mixed>>
+     */
+    public static function enrich_rows_translation_meta(array $rows, string $driver_type, string $prefix, $db): array {
+        $ids = [];
+        foreach ($rows as $idx => $row) {
+            if (!is_array($row)) {
+                continue;
+            }
+            $id = self::row_numeric_id($row);
+            if ($id > 0 && $id < PHP_INT_MAX) {
+                $ids[$id] = $idx;
+            }
+        }
+        if ($ids === [] || !is_object($db) || !method_exists($db, 'get_results')) {
+            return $rows;
+        }
+
+        $meta = self::fetch_translation_meta_batch(array_keys($ids), $driver_type, $prefix, $db);
+        foreach ($ids as $id => $idx) {
+            if (!isset($meta[$id]) || !is_array($meta[$id])) {
+                continue;
+            }
+            if (!empty($meta[$id]['lang'])) {
+                $rows[$idx]['language_code'] = (string) $meta[$id]['lang'];
+            }
+            if (!empty($meta[$id]['group'])) {
+                $rows[$idx]['xabia_translation_group'] = (string) $meta[$id]['group'];
+            }
+        }
+
+        return $rows;
+    }
+
+    /**
+     * Una fila por grupo de traducción: idioma del catálogo si existe; si no, cualquier publicada (menor ID).
+     *
+     * @param list<array<string, mixed>> $rows
+     * @return list<array<string, mixed>>
+     */
+    public static function collapse_to_primary_or_fallback(array $rows, string $primary): array {
+        if ($rows === []) {
+            return $rows;
+        }
+        $primary = substr(sanitize_key(strtolower(trim($primary))), 0, 10);
+
+        /** @var array<string, array{primary: ?array, fallback: ?array, fallback_id: int}> $groups */
+        $groups = [];
+        foreach ($rows as $row) {
+            if (!is_array($row) || $row === []) {
+                continue;
+            }
+            $group_key = self::row_translation_group_key($row);
+            $lang = self::row_lang_code($row);
+            $id = self::row_numeric_id($row);
+
+            if (!isset($groups[$group_key])) {
+                $groups[$group_key] = [
+                    'primary'     => null,
+                    'fallback'    => null,
+                    'fallback_id' => PHP_INT_MAX,
+                ];
+            }
+
+            if ($primary !== '' && $lang !== '' && strcasecmp($lang, $primary) === 0) {
+                $cur = $groups[$group_key]['primary'];
+                if ($cur === null || $id < self::row_numeric_id($cur)) {
+                    $groups[$group_key]['primary'] = $row;
+                }
+                continue;
+            }
+
+            if ($id < $groups[$group_key]['fallback_id']) {
+                $groups[$group_key]['fallback'] = $row;
+                $groups[$group_key]['fallback_id'] = $id;
+            }
+        }
+
+        $out = [];
+        foreach ($groups as $group) {
+            $picked = $group['primary'] ?? $group['fallback'];
+            if (is_array($picked) && $picked !== []) {
+                $out[] = $picked;
+            }
+        }
+
+        usort($out, static function (array $a, array $b): int {
+            return self::row_numeric_id($a) <=> self::row_numeric_id($b);
+        });
+
+        return $out;
+    }
+
+    /**
+     * @param list<int> $post_ids
+     * @return array<int, array{lang: string, group: string}>
+     */
+    private static function fetch_translation_meta_batch(array $post_ids, string $driver_type, string $prefix, $db): array {
+        $post_ids = array_values(array_unique(array_filter(array_map('intval', $post_ids), static function (int $id): bool {
+            return $id > 0;
+        })));
+        if ($post_ids === []) {
+            return [];
+        }
+
+        $out = [];
+        $id_list = implode(',', $post_ids);
+
+        if ($driver_type === self::TYPE_WPML && class_exists('Xabia_Knowledge_Ingest', false)) {
+            $icl = Xabia_Knowledge_Ingest::resolve_wpml_translations_table($prefix, $db, true);
+            if ($icl !== '') {
+                $sql = "SELECT element_id, language_code, trid FROM `{$icl}`"
+                    . " WHERE element_id IN ({$id_list}) AND element_type LIKE 'post_%'";
+                $results = $db->get_results($sql, ARRAY_A);
+                if (is_array($results)) {
+                    foreach ($results as $r) {
+                        if (!is_array($r)) {
+                            continue;
+                        }
+                        $eid = (int) ($r['element_id'] ?? 0);
+                        if ($eid < 1) {
+                            continue;
+                        }
+                        $out[$eid] = [
+                            'lang'  => substr(sanitize_key((string) ($r['language_code'] ?? '')), 0, 10),
+                            'group' => 'wpml:' . (string) ((int) ($r['trid'] ?? 0)),
+                        ];
+                    }
+                }
+            }
+
+            return $out;
+        }
+
+        if ($driver_type === self::TYPE_POLYLANG) {
+            $tr = $prefix . 'term_relationships';
+            $tt = $prefix . 'term_taxonomy';
+            $terms = $prefix . 'terms';
+
+            $lang_sql = "SELECT tr.object_id AS element_id, t.slug AS language_code"
+                . " FROM `{$tr}` tr"
+                . " INNER JOIN `{$tt}` tt ON tt.term_taxonomy_id = tr.term_taxonomy_id AND tt.taxonomy = 'language'"
+                . " INNER JOIN `{$terms}` t ON t.term_id = tt.term_id"
+                . " WHERE tr.object_id IN ({$id_list})";
+            $lang_rows = $db->get_results($lang_sql, ARRAY_A);
+            if (is_array($lang_rows)) {
+                foreach ($lang_rows as $r) {
+                    if (!is_array($r)) {
+                        continue;
+                    }
+                    $eid = (int) ($r['element_id'] ?? 0);
+                    if ($eid < 1) {
+                        continue;
+                    }
+                    if (!isset($out[$eid])) {
+                        $out[$eid] = ['lang' => '', 'group' => ''];
+                    }
+                    $out[$eid]['lang'] = substr(sanitize_key((string) ($r['language_code'] ?? '')), 0, 10);
+                }
+            }
+
+            $group_sql = "SELECT tr.object_id AS element_id, tt.term_taxonomy_id AS pll_group"
+                . " FROM `{$tr}` tr"
+                . " INNER JOIN `{$tt}` tt ON tt.term_taxonomy_id = tr.term_taxonomy_id AND tt.taxonomy = 'post_translations'"
+                . " WHERE tr.object_id IN ({$id_list})";
+            $group_rows = $db->get_results($group_sql, ARRAY_A);
+            if (is_array($group_rows)) {
+                foreach ($group_rows as $r) {
+                    if (!is_array($r)) {
+                        continue;
+                    }
+                    $eid = (int) ($r['element_id'] ?? 0);
+                    if ($eid < 1) {
+                        continue;
+                    }
+                    if (!isset($out[$eid])) {
+                        $out[$eid] = ['lang' => '', 'group' => ''];
+                    }
+                    $out[$eid]['group'] = 'pll:' . (string) ((int) ($r['pll_group'] ?? 0));
+                }
+            }
+
+            return $out;
+        }
+
+        return $out;
+    }
+
+    /**
+     * @param array<string, mixed> $row
+     */
+    public static function row_translation_group_key(array $row): string {
+        $group = trim((string) ($row['xabia_translation_group'] ?? ''));
+        if ($group !== '') {
+            return 'g:' . sanitize_key($group);
+        }
+        $slug = self::row_slug_key($row);
+        if ($slug !== '') {
+            return 's:' . $slug;
+        }
+        $id = self::row_numeric_id($row);
+
+        return $id < PHP_INT_MAX ? 'i:' . $id : 'i:0';
+    }
+
+    /**
+     * @param array<string, mixed> $row
+     */
+    private static function row_lang_code(array $row): string {
+        foreach (['language_code', 'wpml_language', 'lang', 'pll_lang', 'language', 'idioma'] as $col) {
+            if (!isset($row[$col])) {
+                continue;
+            }
+            $code = substr(sanitize_key((string) $row[$col]), 0, 10);
+            if ($code !== '') {
+                return $code;
+            }
+        }
+
+        return '';
     }
 }

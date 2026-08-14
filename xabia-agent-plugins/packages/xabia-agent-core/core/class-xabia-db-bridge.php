@@ -259,13 +259,21 @@ class Xabia_DB_Bridge {
         $count = 0;
         if (class_exists('Xabia_Knowledge_Language_Driver', false)) {
             Xabia_Knowledge_Language_Driver::begin_sync_pass();
+        }
+        if (class_exists('Xabia_Knowledge_Ingest', false)) {
             $is_remote = class_exists('Xabia_Knowledge_Sync', false)
                 && Xabia_Knowledge_Sync::is_remote_config($config);
-            $prefix = (string) (($config['sql_config']['prefix'] ?? '') ?: 'wp_');
-            $driver = Xabia_Knowledge_Language_Driver::detect($prefix, null, $is_remote);
-            if ($driver === Xabia_Knowledge_Language_Driver::TYPE_NONE) {
-                $rows = Xabia_Knowledge_Language_Driver::dedupe_by_slug_keep_first_id($rows);
-            }
+            $prefix = (string) (($config['sql_config']['prefix'] ?? '') ?: ($wpdb->prefix ?? 'wp_'));
+            $driver = class_exists('Xabia_Knowledge_Language_Driver', false)
+                ? Xabia_Knowledge_Language_Driver::detect($prefix, $wpdb, $is_remote)
+                : '';
+            $rows = Xabia_Knowledge_Ingest::filter_primary_language_rows(
+                $rows,
+                (string) $project_id,
+                $driver,
+                $wpdb,
+                $prefix
+            );
         }
         if (class_exists('Xabia_Knowledge_Relations', false)) {
             $sql_cfg = is_array($config['sql_config'] ?? null) ? $config['sql_config'] : [];
