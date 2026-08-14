@@ -62,55 +62,37 @@ final class Xabia_Updater {
             self::hub_updates_url()
         );
 
-        $response = wp_remote_get($url, [
-            'timeout'     => 15,
-            'redirection' => 3,
-            'headers'     => [
-                'Accept' => 'application/json',
-            ],
-        ]);
-
-        if (is_wp_error($response)) {
-            $payload = [
-                'ok'         => false,
-                'error'      => $response->get_error_message(),
-                'error_kind' => 'network',
-                'http_code'  => 0,
-                'checked'    => time(),
-            ];
-            set_transient(self::TRANSIENT_KEY, $payload, MINUTE_IN_SECONDS * 15);
-
-            return $payload;
+        $json = self::request_hub_updates_json($url);
+        $fallback_slug = 'xabia-agent-core';
+        if (
+            $json !== null
+            && isset($json['error']['type'])
+            && (string) $json['error']['type'] === 'not_found'
+            && self::plugin_slug() !== $fallback_slug
+        ) {
+            $json = null;
+        }
+        if ($json === null && self::plugin_slug() !== $fallback_slug) {
+            $fallback_url = add_query_arg(
+                [
+                    'plugin' => $fallback_slug,
+                    'installed' => defined('XABIA_VERSION') ? (string) XABIA_VERSION : '',
+                ],
+                self::hub_updates_url()
+            );
+            $json = self::request_hub_updates_json($fallback_url);
         }
 
-        $code = (int) wp_remote_retrieve_response_code($response);
-        $body = (string) wp_remote_retrieve_body($response);
-        if ($code < 200 || $code >= 300 || $body === '') {
-            $error_kind = 'http_error';
-            if ($code === 404) {
-                $error_kind = 'updates_not_published';
-            } elseif ($code === 503) {
-                $error_kind = 'hub_misconfigured';
+        if ($json === null) {
+            $cached = get_transient(self::TRANSIENT_KEY);
+            if (is_array($cached)) {
+                return $cached;
             }
             $payload = [
                 'ok'         => false,
-                'error'      => 'HTTP ' . $code,
-                'error_kind' => $error_kind,
-                'http_code'  => $code,
-                'checked'    => time(),
-            ];
-            set_transient(self::TRANSIENT_KEY, $payload, MINUTE_IN_SECONDS * 15);
-
-            return $payload;
-        }
-
-        $json = json_decode($body, true);
-        if (!is_array($json)) {
-            $payload = [
-                'ok'         => false,
-                'error'      => 'invalid_json',
-                'error_kind' => 'invalid_response',
-                'http_code'  => $code,
+                'error'      => 'hub_unreachable',
+                'error_kind' => 'network',
+                'http_code'  => 0,
                 'checked'    => time(),
             ];
             set_transient(self::TRANSIENT_KEY, $payload, MINUTE_IN_SECONDS * 15);
@@ -131,7 +113,7 @@ final class Xabia_Updater {
                 'ok'         => false,
                 'error'      => $msg,
                 'error_kind' => $error_kind,
-                'http_code'  => $code,
+                'http_code'  => 0,
                 'checked'    => time(),
             ];
             set_transient(self::TRANSIENT_KEY, $payload, MINUTE_IN_SECONDS * 15);
@@ -146,7 +128,7 @@ final class Xabia_Updater {
                 'ok'         => false,
                 'error'      => 'incomplete_payload',
                 'error_kind' => 'hub_misconfigured',
-                'http_code'  => $code,
+                'http_code'  => 0,
                 'checked'    => time(),
             ];
             set_transient(self::TRANSIENT_KEY, $payload, MINUTE_IN_SECONDS * 15);
@@ -266,6 +248,46 @@ final class Xabia_Updater {
         ];
     }
 
+    /**
+     * @return array<string, mixed>|null Decoded JSON on success; null if request/parse failed.
+     */
+    private static function request_hub_updates_json(string $url): ?array {
+        $response = wp_remote_get($url, [
+            'timeout'     => 15,
+            'redirection' => 3,
+            'headers'     => [
+                'Accept' => 'application/json',
+            ],
+        ]);
+
+        if (is_wp_error($response)) {
+            return null;
+        }
+
+        $code = (int) wp_remote_retrieve_response_code($response);
+        $body = (string) wp_remote_retrieve_body($response);
+        if ($code < 200 || $code >= 300 || $body === '') {
+            return null;
+        }
+
+        $json = json_decode($body, true);
+        if (!is_array($json)) {
+            return null;
+        }
+
+        if (isset($json['error']) && is_array($json['error'])) {
+            return $json;
+        }
+
+        $remote_version = self::sanitize_version((string) ($json['version'] ?? ''));
+        $package = self::sanitize_https_url((string) ($json['package'] ?? ($json['download_url'] ?? '')));
+        if ($remote_version === '' || $package === '') {
+            return null;
+        }
+
+        return $json;
+    }
+
     private static function plugin_details_links_html(): string {
         return '<p><a href="https://xabia.ai" target="_blank" rel="noopener noreferrer">xabia.ai</a> · '
             . '<a href="https://digixop.com" target="_blank" rel="noopener noreferrer">digixop.com</a></p>';
@@ -318,8 +340,9 @@ final class Xabia_Updater {
         }
         $status = self::get_ui_status($force);
         $plugins_url = admin_url('plugins.php');
+        $check_page = Xabia_Features::is_pro() ? 'xabia-settings' : 'xabia-lite';
         $check_url = wp_nonce_url(
-            add_query_arg('xabia_check_updates', '1', admin_url('admin.php?page=xabia-settings')),
+            add_query_arg('xabia_check_updates', '1', admin_url('admin.php?page=' . $check_page)),
             'xabia_check_updates'
         );
         ?>

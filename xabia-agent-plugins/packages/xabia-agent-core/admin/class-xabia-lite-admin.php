@@ -376,6 +376,9 @@ final class Xabia_Lite_Admin {
         $can_unlock_pro = Xabia_Mode::can_unlock_pro_from_lite_ui();
         ?>
         <div class="wrap xabia-page-lite">
+            <?php if (class_exists('Xabia_Updater', false)) : ?>
+                <?php Xabia_Updater::render_version_panel(); ?>
+            <?php endif; ?>
             <header class="xabia-lite-hero">
                 <div class="xabia-lite-hero__brand">
                     <div class="xabia-lite-hero__mark" aria-hidden="true">
