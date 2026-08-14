@@ -333,7 +333,10 @@ final class Xabia_Addon_Updater {
      */
     public static function inject_updates($transient) {
         if (!is_object($transient)) {
-            return $transient;
+            $transient = new stdClass();
+        }
+        if (!isset($transient->response) || !is_array($transient->response)) {
+            $transient->response = [];
         }
 
         foreach (self::catalog_entries(true) as $def) {

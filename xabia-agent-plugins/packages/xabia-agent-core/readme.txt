@@ -5,7 +5,7 @@ Tags: chatbot, ai, gemini, virtual assistant, rag, wordpress
 Requires at least: 6.0
 Tested up to: 6.9
 Requires PHP: 7.4
-Stable tag: 1.0.207
+Stable tag: 1.0.208
 License: GPLv2 or later
 License URI: http://www.gnu.org/licenses/gpl-2.0.html
 
@@ -25,6 +25,10 @@ Documentación: https://xabia.ai/documentacion/
 4. Cree un agente, sincronice datos y publique con shortcode o modo nativo.
 
 == Changelog ==
+
+= 1.0.208 =
+* Actualizaciones: corrige que WordPress no mostraba el aviso si aún no existía el transient nativo update_plugins.
+* Actualizaciones: revalidación del Hub cada 5 min cuando la versión cacheada coincide con la instalada.
 
 = 1.0.207 =
 * Actualizaciones: el comprobador funciona también en modo LITE (sin licencia PRO activa).

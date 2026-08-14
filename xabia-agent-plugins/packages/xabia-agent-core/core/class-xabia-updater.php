@@ -14,13 +14,57 @@ final class Xabia_Updater {
     private const TRANSIENT_TTL = 43200; // 12 horas
 
     /** Si la caché decía «al día», reconsultar el Hub tras este intervalo (nueva versión publicada). */
-    private const STALE_REVALIDATE_SECONDS = 900; // 15 min
+    private const STALE_REVALIDATE_SECONDS = 300; // 5 min
 
     public static function init(): void {
         add_filter('site_transient_update_plugins', 'xabia_check_forced_update');
         add_filter('pre_set_site_transient_update_plugins', 'xabia_check_forced_update');
         add_filter('plugins_api', [self::class, 'filter_plugins_api'], 10, 3);
         add_action('upgrader_process_complete', [self::class, 'clear_cache_after_upgrade'], 10, 2);
+        add_action('load-plugins.php', [self::class, 'ensure_wp_plugins_transient'], 5);
+        add_action('load-toplevel_page_xabia-settings', [self::class, 'ensure_wp_plugins_transient'], 5);
+        add_action('load-toplevel_page_xabia-lite', [self::class, 'ensure_wp_plugins_transient'], 5);
+    }
+
+    /**
+     * WordPress devuelve false en update_plugins hasta el primer chequeo (wp-cron o manual).
+     * Sin objeto, el filtro no inyectaba la actualización de Xabia aunque el Hub tuviera versión nueva.
+     */
+    public static function ensure_wp_plugins_transient(): void {
+        if (!current_user_can('update_plugins')) {
+            return;
+        }
+        $status = self::get_ui_status();
+        if (empty($status['update_available'])) {
+            return;
+        }
+        $transient = get_site_transient('update_plugins');
+        $plugin_file = self::plugin_file();
+        if (is_object($transient) && isset($transient->response[$plugin_file])) {
+            return;
+        }
+        delete_site_transient('update_plugins');
+        if (function_exists('wp_update_plugins')) {
+            wp_update_plugins();
+        }
+    }
+
+    /**
+     * @param mixed $transient
+     * @return object
+     */
+    public static function normalize_plugins_update_transient($transient): object {
+        if (!is_object($transient)) {
+            $transient = new stdClass();
+        }
+        if (!isset($transient->response) || !is_array($transient->response)) {
+            $transient->response = [];
+        }
+        if (!isset($transient->no_update) || !is_array($transient->no_update)) {
+            $transient->no_update = [];
+        }
+
+        return $transient;
     }
 
     public static function plugin_file(): string {
@@ -161,9 +205,7 @@ final class Xabia_Updater {
      * @return mixed
      */
     public static function inject_update_transient($transient) {
-        if (!is_object($transient)) {
-            return $transient;
-        }
+        $transient = self::normalize_plugins_update_transient($transient);
 
         $remote = self::fetch_remote_metadata();
         if (!is_array($remote) || empty($remote['ok'])) {
