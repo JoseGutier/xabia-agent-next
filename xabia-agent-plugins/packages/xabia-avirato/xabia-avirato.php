@@ -3,7 +3,7 @@
  * Plugin Name: Xabia Avirato
  * Plugin URI: https://xabia.ai
  * Description: Addon modular de scraping y disponibilidad Avirato para Xabia Agent Core.
- * Version: 1.0.18
+ * Version: 1.0.19
  * Author: Digixop
  * Author URI: https://digixop.com
  */
@@ -659,6 +659,12 @@ add_filter('xabia_agent_admin_tabs', static function ($tabs) {
     if (!is_array($tabs)) {
         $tabs = [];
     }
+    if (!function_exists('is_plugin_active')) {
+        require_once ABSPATH . 'wp-admin/includes/plugin.php';
+    }
+    if (!is_plugin_active('xabia-avirato/xabia-avirato.php')) {
+        return $tabs;
+    }
     $tabs[] = [
         'id'    => 'tab-avirato',
         'label' => __('Avirato', 'xabia-intelligence'),
@@ -669,6 +675,12 @@ add_filter('xabia_agent_admin_tabs', static function ($tabs) {
 
 add_action('xabia_agent_admin_extra_tabs_content', static function ($edit_id) {
     unset($edit_id);
+    if (!function_exists('is_plugin_active')) {
+        require_once ABSPATH . 'wp-admin/includes/plugin.php';
+    }
+    if (!is_plugin_active('xabia-avirato/xabia-avirato.php')) {
+        return;
+    }
     $settings = xabia_avirato_get_settings();
     ?>
     <div id="tab-avirato" class="xabia-tab-content">

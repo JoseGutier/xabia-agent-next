@@ -506,6 +506,39 @@ class Xabia_Admin {
         $wpdb->delete($table, ['project_id' => $project_id], ['%s']);
     }
     /**
+     * Quita pestañas de addons (MEC, Avirato, Woo…) si el plugin no está instalado/activo.
+     *
+     * @param array<int, mixed> $tabs
+     * @return array<int, array<string, mixed>>
+     */
+    private static function filter_agent_admin_tabs_by_plugins(array $tabs): array
+    {
+        if (!function_exists('is_plugin_active')) {
+            require_once ABSPATH . 'wp-admin/includes/plugin.php';
+        }
+        $requires = [
+            'tab-mec'     => 'xabia-mec/xabia-mec.php',
+            'tab-avirato' => 'xabia-avirato/xabia-avirato.php',
+            'tab-woo'     => 'xabia-woo/xabia-woo.php',
+        ];
+        $requires = (array) apply_filters('xabia_agent_admin_tab_plugin_map', $requires);
+        $out = [];
+        foreach ($tabs as $tab) {
+            if (!is_array($tab) || empty($tab['id'])) {
+                continue;
+            }
+            $id = sanitize_key((string) $tab['id']);
+            $plugin = isset($requires[$id]) ? (string) $requires[$id] : '';
+            if ($plugin !== '' && !is_plugin_active($plugin)) {
+                continue;
+            }
+            $out[] = $tab;
+        }
+
+        return $out;
+    }
+
+    /**
      * @return array<int, array<string, string>>
      */
     private static function get_master_addons_catalog(): array
@@ -3715,6 +3748,7 @@ class Xabia_Admin {
                             if (!is_array($tabs) || $tabs === []) {
                                 $tabs = $default_tabs;
                             }
+                            $tabs = self::filter_agent_admin_tabs_by_plugins($tabs);
                             ?>
                             <div class="xabia-tab-nav" role="tablist">
                                 <?php foreach (array_values($tabs) as $ti => $tab) : ?>

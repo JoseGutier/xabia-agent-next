@@ -269,10 +269,16 @@ class Xabia_DB {
             rag_hit tinyint(1) NOT NULL DEFAULT 0,
             feedback varchar(8) NOT NULL DEFAULT '',
             tokens_used int(11) NOT NULL DEFAULT 0,
+            lang varchar(16) NOT NULL DEFAULT '',
+            visitor_key varchar(64) NOT NULL DEFAULT '',
+            outcome varchar(32) NOT NULL DEFAULT '',
+            query_excerpt varchar(500) NOT NULL DEFAULT '',
             created_at datetime DEFAULT CURRENT_TIMESTAMP,
             PRIMARY KEY (id),
             KEY project_time (project_id, created_at),
-            KEY project_source (project_id, source)
+            KEY project_source (project_id, source),
+            KEY project_outcome (project_id, outcome),
+            KEY project_lang (project_id, lang)
         ) $charset;";
 
         require_once ABSPATH . 'wp-admin/includes/upgrade.php';
@@ -286,6 +292,59 @@ class Xabia_DB {
         dbDelta($sql_response_cache);
         dbDelta($sql_analytics);
         self::ensure_knowledge_vector_optimizer_columns();
+        self::ensure_analytics_events_columns();
+    }
+
+    /**
+     * Columnas de analítica ampliada (idioma, visitante, outcome, extracto).
+     */
+    public static function ensure_analytics_events_columns(): void {
+        global $wpdb;
+        $table = self::table('analytics_events');
+        if ($wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $table)) !== $table) {
+            return;
+        }
+        // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+        $cols_raw = $wpdb->get_results("SHOW COLUMNS FROM `{$table}`", ARRAY_A);
+        $cols = [];
+        if (is_array($cols_raw)) {
+            foreach ($cols_raw as $row) {
+                if (!empty($row['Field'])) {
+                    $cols[(string) $row['Field']] = true;
+                }
+            }
+        }
+        $alters = [
+            'lang'          => "ADD COLUMN lang varchar(16) NOT NULL DEFAULT '' AFTER tokens_used",
+            'visitor_key'   => "ADD COLUMN visitor_key varchar(64) NOT NULL DEFAULT '' AFTER lang",
+            'outcome'       => "ADD COLUMN outcome varchar(32) NOT NULL DEFAULT '' AFTER visitor_key",
+            'query_excerpt' => "ADD COLUMN query_excerpt varchar(500) NOT NULL DEFAULT '' AFTER outcome",
+        ];
+        foreach ($alters as $col => $ddl) {
+            if (isset($cols[$col])) {
+                continue;
+            }
+            // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
+            $wpdb->query("ALTER TABLE `{$table}` {$ddl}");
+        }
+        // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+        $indexes = $wpdb->get_results("SHOW INDEX FROM `{$table}`", ARRAY_A);
+        $index_names = [];
+        if (is_array($indexes)) {
+            foreach ($indexes as $idx) {
+                if (!empty($idx['Key_name'])) {
+                    $index_names[(string) $idx['Key_name']] = true;
+                }
+            }
+        }
+        if (!isset($index_names['project_outcome'])) {
+            // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
+            $wpdb->query("ALTER TABLE `{$table}` ADD KEY project_outcome (project_id, outcome)");
+        }
+        if (!isset($index_names['project_lang'])) {
+            // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
+            $wpdb->query("ALTER TABLE `{$table}` ADD KEY project_lang (project_id, lang)");
+        }
     }
 
     /**

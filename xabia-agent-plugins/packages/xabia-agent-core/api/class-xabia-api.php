@@ -2229,21 +2229,34 @@ if (!class_exists('Xabia_API')) {
                     $tokens_used = (int) (self::$last_generation_metrics['prompt_tokens'] ?? 0)
                         + (int) (self::$last_generation_metrics['completion_tokens'] ?? 0);
                 }
+                $visitor_key = Xabia_Analytics::visitor_key_for_request($project_id);
+                $analytics_lang = is_string($user_lang) && $user_lang !== '' ? $user_lang : $lang_code;
                 if ($is_new_conversation) {
                     Xabia_Analytics::record_chat_event($project_id, [
-                        'event_type' => 'conversation_start',
-                        'source'     => $ch['source'],
-                        'qr_id'      => $ch['qr_id'],
-                        'tokens_used'=> 0,
+                        'event_type'  => 'conversation_start',
+                        'source'      => $ch['source'],
+                        'qr_id'       => $ch['qr_id'],
+                        'tokens_used' => 0,
+                        'lang'        => $analytics_lang,
+                        'visitor_key' => $visitor_key,
                     ]);
                 }
+                $outcome = Xabia_Analytics::classify_outcome(
+                    is_string($response) ? $response : '',
+                    !empty($had_knowledge_rows),
+                    is_string($context) ? $context : ''
+                );
                 Xabia_Analytics::record_chat_event($project_id, [
-                    'event_type' => 'message',
-                    'source'     => $ch['source'],
-                    'qr_id'      => $ch['qr_id'],
-                    'rag_source' => Xabia_Analytics::infer_rag_source($config),
-                    'rag_hit'    => $had_knowledge_rows,
-                    'tokens_used'=> $tokens_used,
+                    'event_type'    => 'message',
+                    'source'        => $ch['source'],
+                    'qr_id'         => $ch['qr_id'],
+                    'rag_source'    => Xabia_Analytics::infer_rag_source($config),
+                    'rag_hit'       => $had_knowledge_rows,
+                    'tokens_used'   => $tokens_used,
+                    'lang'          => $analytics_lang,
+                    'visitor_key'   => $visitor_key,
+                    'outcome'       => $outcome,
+                    'user_question' => $user_msg,
                 ]);
             }
             if (!$skip_response_cache && $cache_hash !== '' && class_exists('Xabia_Router') && in_array($route, ['ROUTE_KNOWLEDGE', 'ROUTE_GENERAL'], true)
