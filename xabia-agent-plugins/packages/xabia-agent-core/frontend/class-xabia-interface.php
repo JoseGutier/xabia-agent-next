@@ -635,6 +635,7 @@ class Xabia_Interface {
      *   [xabia_launcher id="conoce-xabia" size="lg"]
      *   [xabia_avatar id="conoce-xabia" size="42%"]
      *   [xabia_launcher id="conoce-xabia" size="280" size_mobile="120" size_tablet="180"]
+     *   [xabia_launcher id="conoce-xabia" align="center"]  (center|left|right; por defecto center)
      *
      * size / size_mobile / size_tablet / size_desktop:
      *   sm|md|lg|xl  ·  N%  ·  N (px)
@@ -645,6 +646,7 @@ class Xabia_Interface {
         $atts = shortcode_atts([
             'id'           => 'default',
             'class'        => '',
+            'align'        => 'center',
             'size'         => 'md',
             'size_mobile'  => '',
             'size_tablet'  => '',
@@ -667,6 +669,10 @@ class Xabia_Interface {
         self::register_launcher_project($project_id);
 
         $extra_class = sanitize_html_class((string) $atts['class']);
+        $align = sanitize_key((string) $atts['align']);
+        if (!in_array($align, ['left', 'center', 'right'], true)) {
+            $align = 'center';
+        }
         $desktop_raw = trim((string) ($atts['size_desktop'] !== '' ? $atts['size_desktop'] : ($atts['desktop'] !== '' ? $atts['desktop'] : $atts['size'])));
         $tablet_raw  = trim((string) ($atts['size_tablet'] !== '' ? $atts['size_tablet'] : $atts['tablet']));
         $mobile_raw  = trim((string) ($atts['size_mobile'] !== '' ? $atts['size_mobile'] : $atts['mobile']));
@@ -676,6 +682,7 @@ class Xabia_Interface {
         $mobile  = $mobile_raw !== '' ? self::parse_launcher_size_token($mobile_raw, '') : null;
 
         ob_start();
+        echo '<div class="xabia-launcher-host xabia-launcher-host--' . esc_attr($align) . '">';
         self::render_trigger_markup($project_id, [
             'placement'   => 'inline',
             'extra_class' => $extra_class,
@@ -693,6 +700,7 @@ class Xabia_Interface {
             'size_tablet_preset' => '',
             'size_mobile_preset' => '',
         ]);
+        echo '</div>';
         return (string) ob_get_clean();
     }
 

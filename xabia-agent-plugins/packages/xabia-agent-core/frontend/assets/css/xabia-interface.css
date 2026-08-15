@@ -89,6 +89,38 @@ body.xabia-open .xabia-chatbox.xabia-panel-shell.is-active {
     padding: 0;
 }
 
+/* Host del shortcode [xabia_launcher]: centra el avatar en el contenedor (p. ej. Elementor). */
+.xabia-launcher-host {
+    display: flex;
+    width: 100%;
+    max-width: 100%;
+    box-sizing: border-box;
+    justify-content: center;
+    align-items: center;
+}
+.xabia-launcher-host--left {
+    justify-content: flex-start;
+}
+.xabia-launcher-host--center {
+    justify-content: center;
+}
+.xabia-launcher-host--right {
+    justify-content: flex-end;
+}
+/* Elementor: el widget Shortcode suele encogerse al contenido; forzar ancho completo para centrar. */
+.elementor-widget-shortcode:has(.xabia-launcher-host),
+.elementor-widget:has(.xabia-launcher-host),
+.elementor-element:has(> .elementor-widget-container .xabia-launcher-host) {
+    width: 100% !important;
+    max-width: 100% !important;
+    align-self: stretch;
+}
+.elementor-widget-shortcode:has(.xabia-launcher-host) .elementor-widget-container,
+.elementor-widget:has(.xabia-launcher-host) .elementor-widget-container {
+    width: 100%;
+    max-width: 100%;
+}
+
 /* Botón avatar incrustado vía [xabia_launcher] / [xabia_avatar] */
 .xabia-sticky-footer-box.xabia-trigger--inline {
     --xabia-trigger-preset-sm: clamp(64px, 18vw, 96px);
@@ -105,7 +137,7 @@ body.xabia-open .xabia-chatbox.xabia-panel-shell.is-active {
     bottom: auto !important;
     top: auto !important;
     z-index: 2;
-    display: inline-flex !important;
+    display: flex !important;
     align-items: center !important;
     justify-content: center !important;
     width: calc(var(--xabia-trigger-size) + 8px) !important;
@@ -117,6 +149,7 @@ body.xabia-open .xabia-chatbox.xabia-panel-shell.is-active {
     transform: none !important;
     opacity: 1 !important;
     overflow: visible !important;
+    flex: 0 0 auto;
 }
 .xabia-sticky-footer-box.xabia-trigger--inline .xabia-interface-trigger {
     position: relative !important;
