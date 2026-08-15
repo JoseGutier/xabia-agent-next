@@ -1,13 +1,13 @@
 # Manual de usuario — Xabia Agent Core
 
-> **Versión del producto:** Xabia Agent Core **v1.0.216** (agosto 2026)  
+> **Versión del producto:** Xabia Agent Core **v1.0.217** (agosto 2026)  
 > **Índice de manuales:** [https://xabia.ai/docs/](https://xabia.ai/docs/)  
 > **PDF en línea:** [https://xabia.ai/docs/manual-usuario-xabia-core.pdf](https://xabia.ai/docs/manual-usuario-xabia-core.pdf)  
 > **HTML en línea:** [https://xabia.ai/docs/manual-usuario-xabia-core.html](https://xabia.ai/docs/manual-usuario-xabia-core.html)
 
 ## Guía rápida de instalación
 
-1. Descargue el ZIP de **Xabia Agent Core** (`xabia-agent-core-1.0.216.zip` o paquete retail equivalente).
+1. Descargue el ZIP de **Xabia Agent Core** (`xabia-agent-core-1.0.217.zip` o paquete retail equivalente).
 2. En WordPress, vaya a **Plugins → Añadir nuevo → Subir plugin**, seleccione el ZIP y pulse **Instalar ahora → Activar**.
 3. Abra **Xabia Agent** y configure **Conexión a la IA**: pegue la licencia `XABIA--…`, elija **Xabia Cloud** (recomendado) o **Infraestructura propia**, y guarde.
 4. Cree un agente desde **Nuevo agente**, escriba nombre, saludo e instrucciones básicas.

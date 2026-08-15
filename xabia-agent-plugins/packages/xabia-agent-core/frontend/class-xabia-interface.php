@@ -473,7 +473,7 @@ class Xabia_Interface {
 
         return [
             self::OPT_TRIGGER_TYPE              => $trigger_type,
-            self::OPT_CUSTOM_TRIGGER            => esc_url_raw((string) ($raw[self::OPT_CUSTOM_TRIGGER] ?? '')),
+            self::OPT_CUSTOM_TRIGGER            => self::sanitize_custom_trigger_url((string) ($raw[self::OPT_CUSTOM_TRIGGER] ?? '')),
             self::OPT_AVATAR_COLORS             => [
                 'bg'     => self::sanitize_color($colors['bg'] ?? $defaults[self::OPT_AVATAR_COLORS]['bg']),
                 'shadow' => self::sanitize_color($colors['shadow'] ?? $defaults[self::OPT_AVATAR_COLORS]['shadow']),
@@ -833,6 +833,25 @@ class Xabia_Interface {
     }
 
     /**
+     * URL de imagen de avatar (PNG/GIF/JPG/WebP u otra URL de medios WP).
+     */
+    public static function sanitize_custom_trigger_url(string $raw): string {
+        $url = esc_url_raw(trim($raw));
+        if ($url === '') {
+            return '';
+        }
+        $path = (string) (wp_parse_url($url, PHP_URL_PATH) ?? '');
+        if ($path !== '' && !preg_match('/\.(png|jpe?g|gif|webp|svg)(\?.*)?$/i', $path)) {
+            // Permitir URLs de medios WP sin extensión clara en el path (cdn / resized).
+            if (!preg_match('#/wp-content/uploads/#i', $url) && !preg_match('#^https?://#i', $url)) {
+                return '';
+            }
+        }
+
+        return $url;
+    }
+
+    /**
      * @param array<string, mixed> $post
      * @return array<string, mixed>
      */
@@ -866,7 +885,7 @@ class Xabia_Interface {
 
         return [
             self::OPT_TRIGGER_TYPE              => $trigger_type,
-            self::OPT_CUSTOM_TRIGGER            => esc_url_raw(trim((string) ($post['xabia_custom_trigger_url'] ?? ''))),
+            self::OPT_CUSTOM_TRIGGER            => self::sanitize_custom_trigger_url((string) ($post['xabia_custom_trigger_url'] ?? '')),
             self::OPT_AVATAR_COLORS             => [
                 'bg'     => self::sanitize_color((string) ($post['xabia_avatar_color_bg'] ?? '')),
                 'shadow' => self::sanitize_color((string) ($post['xabia_avatar_color_shadow'] ?? '')),
@@ -1221,8 +1240,8 @@ class Xabia_Interface {
         }
         ?>
         <hr>
-        <h4 style="margin:15px 0 8px;"><?php echo esc_html__('Interfaz del chat (avatar y panel)', 'xabia-intelligence'); ?></h4>
-        <p class="description"><?php echo esc_html__('Tres formas de mostrar el agente: (1) avatar flotante nativo en el sitio, (2) chat embebido con [xabia_agent], (3) botón avatar incrustable con [xabia_launcher] / [xabia_avatar].', 'xabia-intelligence'); ?></p>
+        <h4 style="margin:15px 0 8px;"><?php echo esc_html__('Avatar (disparador y panel)', 'xabia-intelligence'); ?></h4>
+        <p class="description"><?php echo esc_html__('Afecta al avatar flotante, a [xabia_launcher] / [xabia_avatar] y al avatar grande del chat. Puedes usar el avatar cinético con colores propios o una imagen PNG/GIF subida.', 'xabia-intelligence'); ?></p>
 
         <p style="margin:12px 0 6px;">
             <label>
@@ -1231,23 +1250,52 @@ class Xabia_Interface {
             </label>
         </p>
         <p class="description" style="margin-top:0;">
-            <?php echo esc_html__('Si está activo, al abrir el chat se muestra el avatar grande que articula la boca al hablar. Si se desactiva, solo aparece el panel de chat (el botón flotante sigue disponible).', 'xabia-intelligence'); ?>
+            <?php echo esc_html__('Si está activo, al abrir el chat se muestra el avatar grande (cinético o tu imagen). Si se desactiva, solo aparece el panel de chat.', 'xabia-intelligence'); ?>
         </p>
 
-        <p style="margin:10px 0;">
+        <label class="xabia-label" for="xabia_trigger_type" style="display:block;margin-top:14px;"><strong><?php echo esc_html__('Tipo de avatar', 'xabia-intelligence'); ?></strong></label>
+        <select name="xabia_trigger_type" id="xabia_trigger_type" class="widefat" style="max-width:400px;">
+            <option value="native_avatar" <?php selected($trigger_type, 'native_avatar'); ?>><?php echo esc_html__('Avatar cinético (nativo)', 'xabia-intelligence'); ?></option>
+            <option value="custom_image" <?php selected($trigger_type, 'custom_image'); ?>><?php echo esc_html__('Imagen personalizada (PNG / GIF / JPG / WebP)', 'xabia-intelligence'); ?></option>
+        </select>
+
+        <div class="xabia-interface-avatar-colors" style="margin-top:14px;<?php echo $trigger_type === 'native_avatar' ? '' : 'display:none;'; ?>">
+            <p class="description" style="margin:0 0 10px;"><?php echo esc_html__('Colores del avatar cinético (cada agente puede tener los suyos).', 'xabia-intelligence'); ?></p>
+            <p style="margin:8px 0 4px;"><strong><?php echo esc_html__('Fondo (círculo grande)', 'xabia-intelligence'); ?></strong></p>
+            <input type="text" name="xabia_avatar_color_bg" value="<?php echo esc_attr($colors['bg']); ?>" class="xabia-color-field">
+            <p style="margin:8px 0 4px;"><strong><?php echo esc_html__('Órbitas / sombra (círculos claros)', 'xabia-intelligence'); ?></strong></p>
+            <input type="text" name="xabia_avatar_color_shadow" value="<?php echo esc_attr($colors['shadow']); ?>" class="xabia-color-field">
+            <p style="margin:8px 0 4px;"><strong><?php echo esc_html__('Ojos', 'xabia-intelligence'); ?></strong></p>
+            <input type="text" name="xabia_avatar_color_dots" value="<?php echo esc_attr($colors['dots']); ?>" class="xabia-color-field">
+        </div>
+
+        <div class="xabia-interface-custom-url-wrap" style="margin-top:14px;<?php echo $trigger_type === 'custom_image' ? '' : 'display:none;'; ?>">
+            <label for="xabia_custom_trigger_url"><strong><?php echo esc_html__('Imagen del avatar', 'xabia-intelligence'); ?></strong></label>
+            <p class="description" style="margin:4px 0 8px;"><?php echo esc_html__('Sube un PNG (con transparencia), GIF animado, JPG o WebP. Se usa en el botón, en [xabia_launcher] y en el avatar del chat.', 'xabia-intelligence'); ?></p>
+            <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:6px;">
+                <input type="url" name="xabia_custom_trigger_url" id="xabia_custom_trigger_url" class="regular-text" value="<?php echo esc_attr($custom_url); ?>" placeholder="https://…/avatar.png">
+                <button type="button" class="button" id="xabia_custom_trigger_upload"><?php echo esc_html__('Subir / biblioteca', 'xabia-intelligence'); ?></button>
+                <button type="button" class="button" id="xabia_custom_trigger_clear" style="<?php echo $custom_url !== '' ? '' : 'display:none;'; ?>"><?php echo esc_html__('Quitar', 'xabia-intelligence'); ?></button>
+            </div>
+            <div id="xabia_custom_trigger_preview" style="margin-top:12px;<?php echo $custom_url !== '' ? '' : 'display:none;'; ?>">
+                <img src="<?php echo esc_url($custom_url); ?>" alt="" style="max-width:120px;max-height:120px;width:auto;height:auto;border-radius:50%;background:#f0f0f1;border:1px solid #c3c4c7;object-fit:contain;">
+            </div>
+        </div>
+
+        <p style="margin:18px 0 6px;">
             <label>
                 <input type="checkbox" name="xabia_autoload_without_shortcode" value="1" <?php checked(!empty($s[self::OPT_AUTOLOAD_WITHOUT_SHORTCODE])); ?>>
-                <?php echo esc_html__('Mostrar en el sitio sin shortcode en la página (recomendado)', 'xabia-intelligence'); ?>
+                <?php echo esc_html__('Mostrar avatar flotante en el sitio sin shortcode (recomendado)', 'xabia-intelligence'); ?>
             </label>
         </p>
         <p class="description" style="margin-top:0;">
-            <?php echo esc_html__('Si está activo, el avatar flotante y el chat se cargan solos (con las reglas de páginas de abajo). El shortcode [xabia_agent] embebe el chat completo; [xabia_launcher id="…"] / [xabia_avatar id="…"] solo pone el botón avatar donde lo insertes (abre el mismo panel).', 'xabia-intelligence'); ?>
+            <?php echo esc_html__('Si está activo, el avatar flotante y el chat se cargan solos (con las reglas de páginas de abajo). [xabia_agent] embebe el chat; [xabia_launcher] / [xabia_avatar] solo pone el botón donde lo insertes.', 'xabia-intelligence'); ?>
         </p>
 
         <div class="xabia-native-interface-options" style="<?php echo !empty($s[self::OPT_AUTOLOAD_WITHOUT_SHORTCODE]) ? '' : 'display:none;'; ?>">
             <hr style="margin:16px 0;">
-            <h4 style="margin:0 0 8px;"><?php echo esc_html__('Visibilidad nativa del avatar', 'xabia-intelligence'); ?></h4>
-            <p class="description"><?php echo esc_html__('Estas reglas solo afectan al avatar y a la carga nativa. No afectan al shortcode.', 'xabia-intelligence'); ?></p>
+            <h4 style="margin:0 0 8px;"><?php echo esc_html__('Visibilidad del avatar flotante', 'xabia-intelligence'); ?></h4>
+            <p class="description"><?php echo esc_html__('Estas reglas solo afectan al avatar flotante nativo. No afectan a [xabia_launcher].', 'xabia-intelligence'); ?></p>
 
             <?php
             self::render_page_id_checklist(
@@ -1287,32 +1335,8 @@ class Xabia_Interface {
             </div>
             <p class="description xabia-interface-exclusions-muted" style="display:none;"><?php echo esc_html__('Las exclusiones se ocultan porque ya se ha elegido una lista cerrada en «Mostrar solo en estas páginas».', 'xabia-intelligence'); ?></p>
 
-        <label class="xabia-label" for="xabia_trigger_type"><?php echo esc_html__('Tipo de disparador', 'xabia-intelligence'); ?></label>
-        <select name="xabia_trigger_type" id="xabia_trigger_type" class="widefat" style="max-width:400px;">
-            <option value="native_avatar" <?php selected($trigger_type, 'native_avatar'); ?>><?php echo esc_html__('Avatar cinético (nativo)', 'xabia-intelligence'); ?></option>
-            <option value="custom_image" <?php selected($trigger_type, 'custom_image'); ?>><?php echo esc_html__('Imagen personalizada', 'xabia-intelligence'); ?></option>
-        </select>
-
-        <div class="xabia-interface-custom-url-wrap" style="margin-top:12px;<?php echo $trigger_type === 'custom_image' ? '' : 'display:none;'; ?>">
-            <label for="xabia_custom_trigger_url"><?php echo esc_html__('Imagen del disparador', 'xabia-intelligence'); ?></label>
-            <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:6px;">
-                <input type="url" name="xabia_custom_trigger_url" id="xabia_custom_trigger_url" class="regular-text" value="<?php echo esc_attr($custom_url); ?>">
-                <button type="button" class="button" id="xabia_custom_trigger_upload"><?php echo esc_html__('Biblioteca de medios', 'xabia-intelligence'); ?></button>
-            </div>
-        </div>
-
-        <div class="xabia-interface-avatar-colors" style="margin-top:12px;<?php echo $trigger_type === 'native_avatar' ? '' : 'display:none;'; ?>">
-            <p class="description" style="margin:0 0 10px;"><?php echo esc_html__('Colores del avatar cinético (cada agente puede tener los suyos). El chat usa «Color identidad» en esta pestaña.', 'xabia-intelligence'); ?></p>
-            <p style="margin:8px 0 4px;"><?php echo esc_html__('Fondo (círculo grande)', 'xabia-intelligence'); ?></p>
-            <input type="text" name="xabia_avatar_color_bg" value="<?php echo esc_attr($colors['bg']); ?>" class="xabia-color-field">
-            <p style="margin:8px 0 4px;"><?php echo esc_html__('Círculos secundarios / sombra', 'xabia-intelligence'); ?></p>
-            <input type="text" name="xabia_avatar_color_shadow" value="<?php echo esc_attr($colors['shadow']); ?>" class="xabia-color-field">
-            <p style="margin:8px 0 4px;"><?php echo esc_html__('Ojos (SVG multicolor; este campo se reserva)', 'xabia-intelligence'); ?></p>
-            <input type="text" name="xabia_avatar_color_dots" value="<?php echo esc_attr($colors['dots']); ?>" class="xabia-color-field">
-        </div>
-
         <hr style="margin:16px 0;">
-        <label for="xabia_trigger_position"><?php echo esc_html__('Posición del disparador', 'xabia-intelligence'); ?></label>
+        <label for="xabia_trigger_position"><?php echo esc_html__('Posición del disparador flotante', 'xabia-intelligence'); ?></label>
         <select name="xabia_trigger_position" id="xabia_trigger_position" class="widefat" style="max-width:400px;">
             <option value="bottom_right" <?php selected($position, 'bottom_right'); ?>><?php echo esc_html__('Abajo — derecha', 'xabia-intelligence'); ?></option>
             <option value="bottom_left" <?php selected($position, 'bottom_left'); ?>><?php echo esc_html__('Abajo — izquierda', 'xabia-intelligence'); ?></option>
@@ -1327,7 +1351,7 @@ class Xabia_Interface {
         </div>
 
         <hr style="margin:16px 0;">
-        <label for="xabia_mobile_preset"><?php echo esc_html__('Tamaño en móvil', 'xabia-intelligence'); ?></label>
+        <label for="xabia_mobile_preset"><?php echo esc_html__('Tamaño en móvil (flotante)', 'xabia-intelligence'); ?></label>
         <select name="xabia_mobile_preset" id="xabia_mobile_preset" class="widefat" style="max-width:400px;">
             <option value="compact" <?php selected($mobile_preset, 'compact'); ?>><?php echo esc_html__('Compacto (recomendado)', 'xabia-intelligence'); ?></option>
             <option value="ultra_compact" <?php selected($mobile_preset, 'ultra_compact'); ?>><?php echo esc_html__('Ultra compacto', 'xabia-intelligence'); ?></option>
@@ -1346,6 +1370,20 @@ class Xabia_Interface {
 
         <script>
         jQuery(function($) {
+            function xabiaSyncCustomPreview(url) {
+                url = $.trim(url || '');
+                var $prev = $('#xabia_custom_trigger_preview');
+                var $img = $prev.find('img');
+                if (url) {
+                    $img.attr('src', url);
+                    $prev.show();
+                    $('#xabia_custom_trigger_clear').show();
+                } else {
+                    $img.attr('src', '');
+                    $prev.hide();
+                    $('#xabia_custom_trigger_clear').hide();
+                }
+            }
             function xabiaSyncAgentInterfaceUi() {
                 var t = $('#xabia_trigger_type').val();
                 var nativeEnabled = $('input[name="xabia_autoload_without_shortcode"]').is(':checked');
@@ -1356,18 +1394,39 @@ class Xabia_Interface {
                 $('.xabia-interface-custom-url-wrap').toggle(t === 'custom_image');
                 $('.xabia-interface-avatar-colors').toggle(t === 'native_avatar');
                 $('.xabia-interface-margins-wrap').toggle($('#xabia_trigger_position').val() === 'custom');
+                if (t === 'custom_image') {
+                    xabiaSyncCustomPreview($('#xabia_custom_trigger_url').val());
+                }
             }
             $('#xabia_trigger_type, #xabia_trigger_position, input[name="xabia_autoload_without_shortcode"], input[name="xabia_include_page_ids[]"], input[name="xabia_include_page_ids_manual"]').on('change input', xabiaSyncAgentInterfaceUi);
+            $('#xabia_custom_trigger_url').on('change input', function(){ xabiaSyncCustomPreview($(this).val()); });
             xabiaSyncAgentInterfaceUi();
             var frame;
             $('#xabia_custom_trigger_upload').on('click', function(e) {
                 e.preventDefault();
+                if (typeof wp === 'undefined' || !wp.media) {
+                    window.alert(<?php echo wp_json_encode(__('La biblioteca de medios no está disponible en esta pantalla.', 'xabia-intelligence')); ?>);
+                    return;
+                }
                 if (frame) { frame.open(); return; }
-                frame = wp.media({ title: <?php echo wp_json_encode(__('Imagen del disparador', 'xabia-intelligence')); ?>, button: { text: <?php echo wp_json_encode(__('Usar', 'xabia-intelligence')); ?> }, library: { type: 'image' }, multiple: false });
+                frame = wp.media({
+                    title: <?php echo wp_json_encode(__('Imagen del avatar (PNG, GIF, JPG, WebP)', 'xabia-intelligence')); ?>,
+                    button: { text: <?php echo wp_json_encode(__('Usar como avatar', 'xabia-intelligence')); ?> },
+                    library: { type: 'image' },
+                    multiple: false
+                });
                 frame.on('select', function() {
-                    $('#xabia_custom_trigger_url').val(frame.state().get('selection').first().toJSON().url || '');
+                    var att = frame.state().get('selection').first().toJSON();
+                    var url = (att && att.url) ? att.url : '';
+                    $('#xabia_custom_trigger_url').val(url);
+                    xabiaSyncCustomPreview(url);
                 });
                 frame.open();
+            });
+            $('#xabia_custom_trigger_clear').on('click', function(e) {
+                e.preventDefault();
+                $('#xabia_custom_trigger_url').val('');
+                xabiaSyncCustomPreview('');
             });
         });
         </script>

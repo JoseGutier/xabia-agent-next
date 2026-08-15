@@ -304,6 +304,7 @@ function shortcode_xabia_agent_renderer($atts) {
         'mouth'  => '#FFFFFF',
     ];
     $speaking_avatar = 1;
+    $custom_avatar_url = '';
     if (class_exists('Xabia_Interface', false)) {
         $iface = Xabia_Interface::get_project_settings($project_id);
         if (!empty($iface[Xabia_Interface::OPT_AVATAR_COLORS]) && is_array($iface[Xabia_Interface::OPT_AVATAR_COLORS])) {
@@ -311,6 +312,9 @@ function shortcode_xabia_agent_renderer($atts) {
             $avatar_colors['mouth'] = '#FFFFFF';
         }
         $speaking_avatar = !empty($iface[Xabia_Interface::OPT_SPEAKING_AVATAR]) ? 1 : 0;
+        if (($iface[Xabia_Interface::OPT_TRIGGER_TYPE] ?? '') === 'custom_image') {
+            $custom_avatar_url = esc_url((string) ($iface[Xabia_Interface::OPT_CUSTOM_TRIGGER] ?? ''));
+        }
     }
     if (!function_exists('xabia_render_kinetic_avatar_svg')) {
         require_once dirname(__FILE__) . '/avatar-svg.php';
@@ -398,9 +402,13 @@ function shortcode_xabia_agent_renderer($atts) {
 
         <?php if ($speaking_avatar) : ?>
         <div class="xabia-immersive-avatar-stage" aria-hidden="true">
-            <?php
-            echo xabia_render_kinetic_avatar_svg($avatar_colors, ['class' => 'xabia-kinetic-wrapper--immersive']);
-            ?>
+            <?php if ($custom_avatar_url !== '') : ?>
+                <div class="xabia-kinetic-wrapper xabia-kinetic-wrapper--immersive xabia-kinetic-wrapper--custom" aria-hidden="true">
+                    <img src="<?php echo esc_url($custom_avatar_url); ?>" alt="" class="xabia-trigger-custom-img xabia-trigger-custom-img--immersive" width="280" height="280" loading="lazy" decoding="async" />
+                </div>
+            <?php else : ?>
+                <?php echo xabia_render_kinetic_avatar_svg($avatar_colors, ['class' => 'xabia-kinetic-wrapper--immersive']); ?>
+            <?php endif; ?>
         </div>
         <?php endif; ?>
 

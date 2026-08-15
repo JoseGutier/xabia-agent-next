@@ -1548,6 +1548,23 @@ body.xabia-keyboard-open.xabia-mobile-chat-stack .xabia-chatbox.xabia-panel-shel
         max-width: 100% !important;
     }
 
+    .xabia-chatbox.xabia-panel-shell.xabia-immersive-mode.is-active .xabia-kinetic-wrapper--custom {
+        display: flex !important;
+        align-items: center;
+        justify-content: center;
+        height: auto !important;
+        min-height: min(37vw, 356px);
+    }
+
+    .xabia-chatbox.xabia-panel-shell.xabia-immersive-mode.is-active .xabia-trigger-custom-img--immersive {
+        width: min(42vw, 360px) !important;
+        height: min(42vw, 360px) !important;
+        max-width: 100% !important;
+        object-fit: contain;
+        border-radius: 50%;
+        background: transparent;
+    }
+
     .xabia-chatbox.xabia-panel-shell.xabia-immersive-mode.is-active > .xabia-immersive-panel,
     .xabia-chatbox.xabia-ui-modern.xabia-panel-shell.xabia-immersive-mode.is-active .xabia-immersive-panel {
         flex: 0 0 34% !important;
