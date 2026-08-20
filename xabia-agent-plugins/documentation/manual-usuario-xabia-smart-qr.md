@@ -269,7 +269,7 @@ En el navegador del tótem, abra esa URL en **modo kiosko** (pantalla completa d
 
 1. CSV de productos con columna SKU como **ENTE**.
 2. QR apunta a `?ente_id=sku-12345`.
-3. Instrucciones en **Personalidad**: «Si el visitante llega por QR de producto, prioriza ficha, stock y precio de ese SKU en el contexto».
+3. Instrucciones en **Comportamiento IA**: «Si el visitante llega por QR de producto, prioriza ficha, stock y precio de ese SKU en el contexto».
 
 ### 7.4 Recepción municipal (tótem)
 
@@ -310,7 +310,7 @@ Sirve para medir cuánto uso generan los carteles físicos frente al widget web.
 | El QR abre la web pero sin contexto de ente | Compruebe que la URL lleva `?ente_id=` correcto; pruebe el enlace copiado del panel |
 | `/xabia-box/` da 404 | **Ajustes → Enlaces permanentes → Guardar**; Core ≥ 1.0.59 |
 | Sigue viendo aviso del plugin «Xabia Smart QR» | Desactive y elimine el plugin legacy `xabia-smart-qr` |
-| Respuestas genéricas pese al QR | Baje **índice de confianza** en Personalidad; compruebe que el ente tiene texto en RAG |
+| Respuestas genéricas pese al QR | Baje **índice de confianza** en Comportamiento IA; compruebe que el ente tiene texto en RAG |
 | Modal QR no carga | Recargue el editor del agente; compruebe que no hay bloqueo de scripts en admin |
 
 ---

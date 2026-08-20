@@ -1425,7 +1425,10 @@ if (!class_exists('Xabia_API')) {
             $project_id = sanitize_text_field($_POST['project_id'] ?? 'default');
             $scope      = sanitize_text_field($_POST['x_scope'] ?? 'global');
             $ente_id_param_raw = sanitize_text_field(wp_unslash($_POST['ente_id'] ?? ''));
-            $user_msg   = sanitize_text_field(wp_unslash($_POST['message'] ?? ''));
+            $user_msg_raw = wp_unslash($_POST['message'] ?? '');
+            $user_msg = class_exists('Xabia_Chat_Input', false)
+                ? Xabia_Chat_Input::clamp((string) $user_msg_raw)
+                : sanitize_textarea_field((string) $user_msg_raw);
             $is_continue_request = !empty($_POST['x_continue']);
             $lang_raw   = isset($_POST['lang']) ? sanitize_text_field(wp_unslash($_POST['lang'])) : '';
             if (class_exists('Xabia_I18n_Bridge', false)) {

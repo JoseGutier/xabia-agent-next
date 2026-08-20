@@ -16,6 +16,20 @@ if ($box_project === '') {
     $box_project = 'default';
 }
 
+$box_body_class = 'xabia-box-page';
+$box_bg_css = 'linear-gradient(165deg, #f3f4f8 0%, #e8eaef 42%, #f6f5f9 100%)';
+if (class_exists('Xabia_Interface', false)) {
+    $iface = Xabia_Interface::get_project_settings($box_project);
+    $pres = (string) ($iface[Xabia_Interface::OPT_PRESENTATION_MODE] ?? 'web_adaptive');
+    if (Xabia_Interface::is_transparent_presentation_mode($pres)) {
+        $box_body_class .= ' xabia-box-transparent';
+        $box_bg_css = 'transparent';
+    } elseif (Xabia_Interface::is_kiosk_presentation_mode($pres)) {
+        $box_body_class .= ' xabia-box-kiosk';
+        $box_bg_css = '#ffffff';
+    }
+}
+
 $shortcode = sprintf('[xabia_agent id="%s"]', $box_project);
 ?><!DOCTYPE html>
 <html <?php language_attributes(); ?>>
@@ -33,7 +47,7 @@ $shortcode = sprintf('[xabia_agent id="%s"]', $box_project);
             -webkit-text-size-adjust: 100%;
         }
         body.xabia-box-page {
-            background: linear-gradient(165deg, #f3f4f8 0%, #e8eaef 42%, #f6f5f9 100%);
+            background: <?php echo esc_html($box_bg_css); ?>;
             color: #1d1d1f;
         }
         #xabia-full-canvas {
@@ -45,6 +59,7 @@ $shortcode = sprintf('[xabia_agent id="%s"]', $box_project);
             margin: 0;
             display: flex;
             flex-direction: column;
+            background: inherit;
         }
         #xabia-full-canvas > .xabia-chatbox {
             flex: 1;
@@ -55,7 +70,7 @@ $shortcode = sprintf('[xabia_agent id="%s"]', $box_project);
     </style>
     <?php wp_head(); ?>
 </head>
-<body <?php body_class('xabia-box-page'); ?>>
+<body <?php body_class($box_body_class); ?>>
 <div id="xabia-full-canvas">
     <?php echo do_shortcode($shortcode); ?>
 </div>

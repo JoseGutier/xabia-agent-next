@@ -85,7 +85,15 @@ final class Xabia_I18n {
             // — Chatbox PHP (plantilla)
             'Minimizar chat'                  => ['eu' => 'Txata minimizatu', 'en' => 'Minimize chat'],
             'Hablar'                          => ['eu' => 'Hitz egin', 'en' => 'Speak'],
-            'Pulsar para hablar'              => ['eu' => 'Sakatu hitz egiteko', 'en' => 'Tap to speak'],
+            'Mantén pulsado para hablar'      => ['eu' => 'Eutsi sakatuta hitz egiteko', 'en' => 'Hold to speak'],
+            'Toca para hablar o mantén pulsado' => [
+                'eu' => 'Sakatu hitz egiteko edo eutsi sakatuta',
+                'en' => 'Tap to speak or hold down',
+            ],
+            'Escribe aquí o pulsa el micro para hablar...' => [
+                'eu' => 'Idatzi hemen edo sakatu mikrofonoa hitz egiteko...',
+                'en' => 'Type here or press the mic to speak...',
+            ],
             'Escribe aquí...'                 => ['eu' => 'Idatzi hemen...', 'en' => 'Write here...'],
             'Activar voz (lectura en alto)'   => ['eu' => 'Ahotsa aktibatu (olo bizi)', 'en' => 'Enable voice (read aloud)'],
             'Activar voz'                     => ['eu' => 'Ahotsa aktibatu', 'en' => 'Enable voice'],
@@ -145,6 +153,10 @@ final class Xabia_I18n {
                 'eu' => 'Saioa laster itxiko da inaktibitateagatik.',
                 'en' => 'The session will close soon due to inactivity.',
             ],
+            'Máximo 8 líneas por mensaje.' => [
+                'eu' => 'Gehienez 8 lerro mezu bakoitzeko.',
+                'en' => 'Maximum 8 lines per message.',
+            ],
         ];
     }
 
@@ -181,6 +193,7 @@ final class Xabia_I18n {
             'userYou'              => 'Tú',
             'sessionCartClicks'    => 'Clics de compra en esta sesión:',
             'poweredBy'            => 'Powered by Xabia AI',
+            'inputTooLong'         => 'Máximo 8 líneas por mensaje.',
         ];
     }
 

@@ -192,7 +192,7 @@
         var $btn = $('<button type="button" class="xabia-msg-speak"></button>')
             .attr('title', xabiaI18n('voiceListen', 'Escuchar'))
             .attr('aria-label', xabiaI18n('voiceListen', 'Escuchar'))
-            .html('<span aria-hidden="true">▶</span>');
+            .html('<span class="xabia-msg-speak__icon" aria-hidden="true"></span>');
         $btn.on('click', function(e) {
             e.preventDefault();
             e.stopPropagation();
@@ -532,14 +532,110 @@
         return $('<button type="button" class="xabia-continue button button-small"></button>').text(xabiaI18n('continue', 'Continuar'));
     }
 
+    function userInputMaxLines() {
+        var n = parseInt(xabiaChatSettings().inputMaxLines, 10);
+        return (n > 0 && n <= 20) ? n : 8;
+    }
+
+    function userInputMaxChars() {
+        var n = parseInt(xabiaChatSettings().inputMaxChars, 10);
+        return (n >= 80 && n <= 4000) ? n : 800;
+    }
+
+    function countInputLines(text) {
+        var val = String(text || '');
+        if (val === '') {
+            return 1;
+        }
+        return val.split(/\r\n|\r|\n/).length;
+    }
+
+    function clampUserInputText(text) {
+        text = String(text || '');
+        var maxChars = userInputMaxChars();
+        var maxLines = userInputMaxLines();
+        if (text.length > maxChars) {
+            text = text.substring(0, maxChars);
+        }
+        var lines = text.split(/\r\n|\r|\n/);
+        if (lines.length > maxLines) {
+            text = lines.slice(0, maxLines).join('\n');
+        }
+        return text;
+    }
+
+    function getInputLineMetrics(el) {
+        var cs = window.getComputedStyle(el);
+        var lineHeight = parseFloat(cs.lineHeight);
+        if (!lineHeight || isNaN(lineHeight)) {
+            lineHeight = (parseFloat(cs.fontSize) || 16) * 1.45;
+        }
+        var padTop = parseFloat(cs.paddingTop) || 0;
+        var padBottom = parseFloat(cs.paddingBottom) || 0;
+        var borderTop = parseFloat(cs.borderTopWidth) || 0;
+        var borderBottom = parseFloat(cs.borderBottomWidth) || 0;
+        return {
+            lineHeight: lineHeight,
+            verticalPad: padTop + padBottom + borderTop + borderBottom
+        };
+    }
+
+    function getInputMaxHeightPx($input) {
+        var el = $input[0];
+        var metrics = getInputLineMetrics(el);
+        return Math.ceil(metrics.lineHeight * userInputMaxLines() + metrics.verticalPad);
+    }
+
+    function syncInputLimitState($input) {
+        var $box = $input.closest('.xabia-chatbox');
+        var val = String($input.val() || '');
+        var atLimit = countInputLines(val) >= userInputMaxLines() || val.length >= userInputMaxChars();
+        $input.toggleClass('xabia-input-at-limit', atLimit);
+        if ($box.length) {
+            $box.toggleClass('xabia-input-at-limit', atLimit);
+        }
+        if (atLimit) {
+            $input.attr('title', xabiaI18n('inputTooLong', 'Máximo 8 líneas por mensaje.'));
+        } else {
+            $input.removeAttr('title');
+        }
+    }
+
+    function enforceInputLimits($input) {
+        if (!$input || !$input.length) {
+            return '';
+        }
+        var raw = String($input.val() || '');
+        var clamped = clampUserInputText(raw);
+        if (clamped !== raw) {
+            $input.val(clamped);
+        }
+        syncInputLimitState($input);
+        return clamped;
+    }
+
     function autoSizeInput($input) {
         if (!$input || !$input.length) return;
         var el = $input[0];
-        var maxPx = 140;
-        el.style.height = 'auto';
-        var next = Math.min(el.scrollHeight, maxPx);
-        el.style.height = next + 'px';
-        el.style.overflowY = el.scrollHeight > maxPx ? 'auto' : 'hidden';
+        var $box = $input.closest('.xabia-chatbox');
+        var metrics = getInputLineMetrics(el);
+        var minPx = Math.ceil(metrics.lineHeight + metrics.verticalPad);
+        var lineCap = getInputMaxHeightPx($input);
+
+        el.style.maxHeight = lineCap + 'px';
+        el.style.height = '0px';
+        el.style.overflowY = 'hidden';
+        var scrollHeight = el.scrollHeight;
+        el.style.height = Math.max(minPx, Math.min(scrollHeight, lineCap)) + 'px';
+        el.style.overflowY = 'hidden';
+
+        if ($box.length) {
+            if (document.activeElement === el || $box.find('.xabia-mic-listening').length) {
+                scrollMessages($box);
+            } else {
+                scrollMessages($box, { onlyIfNearBottom: true });
+            }
+        }
     }
 
     function messagesStream($box) {
@@ -547,11 +643,55 @@
         return $stream.length ? $stream : $box.find('.xabia-chat-history');
     }
 
-    function scrollMessages($box) {
-        var $pane = $box.find('.xabia-chat-messages, .xabia-chat-history').first();
+    function textScrollPane($box) {
+        var $pane = $box.find('.xabia-text-scroll').first();
         if ($pane.length) {
-            $pane.scrollTop(1e9);
+            return $pane;
         }
+        return $box.find('.xabia-chat-messages, .xabia-chat-history').first();
+    }
+
+    function isTextScrollNearBottom($pane, threshold) {
+        threshold = typeof threshold === 'number' ? threshold : 56;
+        var el = $pane && $pane[0];
+        if (!el) {
+            return true;
+        }
+        return (el.scrollHeight - el.scrollTop - el.clientHeight) <= threshold;
+    }
+
+    function scrollMessages($box, opts) {
+        opts = opts || {};
+        var $pane = textScrollPane($box);
+        if (!$pane.length) {
+            return;
+        }
+        if (opts.onlyIfNearBottom && !isTextScrollNearBottom($pane)) {
+            return;
+        }
+        var el = $pane[0];
+        el.scrollTop = el.scrollHeight;
+    }
+
+    function chatIsOpenForGreeting($box) {
+        return $box.hasClass('is-active')
+            || $box.hasClass('xabia-chatbox--fullscreen')
+            || $box.hasClass('xabia-chatbox-shortcode-focus');
+    }
+
+    function maybeSpeakGreetingOnOpen($box) {
+        return;
+    }
+
+    function appendPendingVoiceMessage($box, transcript) {
+        var text = $.trim(String(transcript || ''));
+        if (!text) return;
+        var $history = messagesStream($box);
+        var $msg = $('<div class="xabia-msg user xabia-msg-pending-voice" data-xabia-pending="1"></div>');
+        $msg.append($('<span class="xabia-msg-content"></span>').text(text));
+        $history.append($msg);
+        scrollMessages($box);
+        syncChatUiState($box);
     }
 
     function countUserMessages($box) {
@@ -1002,6 +1142,13 @@
         xabiaLipSync.data = null;
     }
 
+    function syncMuteSpeakingUi($box, on) {
+        if (!$box || !$box.length) {
+            return;
+        }
+        $box.find('.xabia-mute.is-voice-on').toggleClass('xabia-mute-speaking', !!on);
+    }
+
     function stopAvatarLipSync($box) {
         xabiaLipSync.active = false;
         clearKeepAlive();
@@ -1022,6 +1169,8 @@
         xabiaLipSync.speakText = '';
         xabiaLipSync.utterance = null;
         if ($box && $box.length) $box.removeClass('xabia-is-speaking');
+        syncMuteSpeakingUi($box, false);
+        try { if ($box && $box.length) $box.trigger('xabia:bot-speaking-stop'); } catch (eSpeakStop) {}
         try { document.body.classList.remove('xabia-avatar-speaking'); } catch (eBody) {}
     }
 
@@ -1064,6 +1213,8 @@
         xabiaLipSync.lastVisemeAt = 0;
         xabiaLipSync.lastVisemeKey = '';
         if ($box && $box.length) $box.addClass('xabia-is-speaking');
+        syncMuteSpeakingUi($box, true);
+        try { if ($box && $box.length) $box.trigger('xabia:bot-speaking-start'); } catch (eSpeakStart) {}
         try { document.body.classList.add('xabia-avatar-speaking'); } catch (eBody2) {}
 
         if (audioEl && typeof window.AudioContext !== 'undefined') {
@@ -1311,7 +1462,7 @@
     function setMicListeningUi($box, listening) {
         var on = !!listening;
         var labelOn = xabiaI18n('micListening', 'Escuchando… Habla ahora');
-        var labelOff = xabiaI18n('speak', 'Hablar');
+        var labelOff = xabiaI18n('Toca para hablar o mantén pulsado', 'Toca para hablar o mantén pulsado');
         if ($box && $box.length) {
             $box.toggleClass('xabia-mic-is-listening', on);
             $box.find('.xabia-mic').toggleClass('xabia-mic-listening', on)
@@ -1700,11 +1851,178 @@
             }
         });
 
-        $(document).on('click', '.xabia-mic', function(e) {
-            e.preventDefault();
-            var $box = $(this).closest('.xabia-chatbox');
+        var micSessions = new WeakMap();
+        var MIC_SILENCE_MS = 2600;
+        var MIC_START_GRACE_MS = 4800;
+        var MIC_MAX_RESTARTS = 8;
+
+        function clearMicTimers(session) {
+            if (!session) return;
+            if (session.holdTimer) {
+                window.clearTimeout(session.holdTimer);
+                session.holdTimer = 0;
+            }
+            if (session.silenceTimer) {
+                window.clearTimeout(session.silenceTimer);
+                session.silenceTimer = 0;
+            }
+        }
+
+        function mergeSpeechFinals(finals) {
+            if (!finals || !finals.length) {
+                return '';
+            }
+            var merged = $.trim(String(finals[0] || ''));
+            for (var i = 1; i < finals.length; i++) {
+                var cur = $.trim(String(finals[i] || ''));
+                if (!cur) {
+                    continue;
+                }
+                if (!merged) {
+                    merged = cur;
+                    continue;
+                }
+                var mergedLow = merged.toLowerCase();
+                var curLow = cur.toLowerCase();
+                if (curLow.indexOf(mergedLow) === 0) {
+                    merged = cur;
+                    continue;
+                }
+                if (mergedLow.indexOf(curLow) === 0) {
+                    continue;
+                }
+                merged = $.trim((merged + ' ' + cur).replace(/\s+/g, ' '));
+            }
+            return merged;
+        }
+
+        function syncMicResults(session, results) {
+            var finals = [];
+            var interim = '';
+            if (!results || !results.length) {
+                session.transcript = $.trim(String(session.committedTranscript || ''));
+                return '';
+            }
+            for (var i = 0; i < results.length; i++) {
+                var piece = results[i][0] ? String(results[i][0].transcript || '') : '';
+                piece = $.trim(piece);
+                if (!piece) {
+                    continue;
+                }
+                if (results[i].isFinal) {
+                    finals.push(piece);
+                } else {
+                    interim = piece;
+                }
+            }
+            var runText = mergeSpeechFinals(finals);
+            var committed = $.trim(String(session.committedTranscript || ''));
+            session.transcript = $.trim((committed + (committed && runText ? ' ' : '') + runText).replace(/\s+/g, ' '));
+            if (interim) {
+                var previewLow = interim.toLowerCase();
+                var transcriptLow = session.transcript.toLowerCase();
+                if (transcriptLow && previewLow.indexOf(transcriptLow) === 0) {
+                    return interim;
+                }
+            }
+            return interim;
+        }
+
+        function micDisplayText(session, interim) {
+            var text = $.trim(String(session.transcript || ''));
+            interim = $.trim(String(interim || ''));
+            if (interim) {
+                var textLow = text.toLowerCase();
+                var interimLow = interim.toLowerCase();
+                if (!text || interimLow.indexOf(textLow) === 0) {
+                    text = interim;
+                } else if (textLow.indexOf(interimLow) !== 0) {
+                    text = $.trim((text + ' ' + interim).replace(/\s+/g, ' '));
+                }
+            }
+            return $.trim(((session.baseInput || '') + (text ? ' ' + text : '')).replace(/\s+/g, ' '));
+        }
+
+        function micInputPreview($box, session, interim) {
             var $input = $box.find('.xabia-input-field');
-            var $mic = $(this);
+            $input.val(clampUserInputText(micDisplayText(session, interim)));
+            autoSizeInput($input);
+            syncInputLimitState($input);
+            syncChatUiState($box);
+        }
+
+        function scheduleMicSilenceStop($box, session, opts) {
+            opts = opts || {};
+            if (!session || session.released) {
+                return;
+            }
+            if (session.silenceTimer) {
+                window.clearTimeout(session.silenceTimer);
+            }
+            var delay = session.hasHeardSpeech ? MIC_SILENCE_MS : MIC_START_GRACE_MS;
+            if (opts.forceGrace) {
+                delay = MIC_START_GRACE_MS;
+            }
+            session.silenceTimer = window.setTimeout(function() {
+                if (micSessions.get($box[0]) !== session || session.released) {
+                    return;
+                }
+                stopMicSession($box);
+            }, delay);
+        }
+
+        function finalizeMicSession($box, session) {
+            clearMicTimers(session);
+            setMicListeningUi($box, false);
+            micSessions.delete($box[0]);
+            if (!session.released) {
+                return;
+            }
+            var $input = $box.find('.xabia-input-field');
+            var newPart = $.trim(String(session.transcript || ''));
+            if (!newPart) {
+                $input.val(session.baseInput || '');
+                autoSizeInput($input);
+                syncChatUiState($box);
+                return;
+            }
+            var merged = $.trim(((session.baseInput || '') + ' ' + newPart).replace(/\s+/g, ' '));
+            $input.val(clampUserInputText(merged));
+            autoSizeInput($input);
+            syncInputLimitState($input);
+            syncChatUiState($box);
+        }
+
+        function stopMicSession($box) {
+            var session = micSessions.get($box[0]);
+            if (!session) {
+                return;
+            }
+            session.holding = false;
+            session.released = true;
+            clearMicTimers(session);
+            try {
+                session.rec.stop();
+            } catch (eStop) {
+                finalizeMicSession($box, session);
+            }
+        }
+
+        function startMicSession($mic) {
+            var $box = $mic.closest('.xabia-chatbox');
+            var $input = $box.find('.xabia-input-field');
+            if (!$box.length) {
+                return;
+            }
+            if ($box.hasClass('xabia-is-speaking') || document.body.classList.contains('xabia-avatar-speaking')) {
+                messagesStream($box).append(
+                    $('<div class="xabia-msg bot" style="color:#b91c1c"></div>').text(
+                        xabiaI18n('micBlockedWhileBotSpeaks', 'Espera a que termine de hablar y vuelve a pulsar el micrófono.')
+                    )
+                );
+                scrollMessages($box);
+                return;
+            }
             if (!secure) {
                 messagesStream($box).append($('<div class="xabia-msg bot" style="color:orange"></div>').text(micInsecureHelpMessage()));
                 scrollMessages($box);
@@ -1715,30 +2033,108 @@
                 scrollMessages($box);
                 return;
             }
-            if ($mic.hasClass('xabia-mic-listening')) return;
+            if (micSessions.get($box[0])) {
+                stopMicSession($box);
+                return;
+            }
+
             var rec = new SpeechRecognition();
-            rec.continuous = false;
-            rec.interimResults = false;
+            var session = {
+                rec: rec,
+                transcript: '',
+                committedTranscript: '',
+                baseInput: $.trim(String($input.val() || '')),
+                holding: true,
+                released: false,
+                restarting: false,
+                restarts: 0,
+                silenceTimer: 0,
+                hasHeardSpeech: false,
+                startedAt: Date.now(),
+            };
+            micSessions.set($box[0], session);
+
+            rec.continuous = true;
+            rec.interimResults = true;
             rec.lang = xabiaBcp47FromLang($box.data('lang')) || lang;
+            stopAllSpeech($box);
+
             rec.onstart = function() {
                 setMicListeningUi($box, true);
             };
-            rec.onend = function() {
-                setMicListeningUi($box, false);
-            };
             rec.onresult = function(ev) {
-                var t = (ev.results[0] && ev.results[0][0]) ? ev.results[0][0].transcript : '';
-                if (t) {
-                    $input.val(($.trim($input.val()) + ' ' + t).trim());
-                    autoSizeInput($input);
-                    syncChatUiState($box);
+                var interim = syncMicResults(session, ev.results);
+                if (interim || $.trim(String(session.transcript || ''))) {
+                    session.hasHeardSpeech = true;
                 }
+                micInputPreview($box, session, interim);
+                scheduleMicSilenceStop($box, session);
             };
             rec.onerror = function() {
-                setMicListeningUi($box, false);
+                if (!session.released) {
+                    finalizeMicSession($box, session);
+                }
             };
+            rec.onend = function() {
+                session.restarting = false;
+                if (!session.released && session.holding) {
+                    var elapsed = Date.now() - (session.startedAt || Date.now());
+                    var inGrace = !session.hasHeardSpeech && elapsed < MIC_START_GRACE_MS;
+                    var canRestart = session.restarts < MIC_MAX_RESTARTS
+                        && (session.hasHeardSpeech || inGrace);
+                    if (canRestart) {
+                        session.committedTranscript = $.trim(String(session.transcript || session.committedTranscript || ''));
+                        session.restarts += 1;
+                        session.restarting = true;
+                        window.setTimeout(function() {
+                            if (session.released || !session.holding || micSessions.get($box[0]) !== session) {
+                                return;
+                            }
+                            try {
+                                rec.start();
+                            } catch (eRestart) {
+                                session.restarting = false;
+                                finalizeMicSession($box, session);
+                            }
+                        }, 120);
+                        return;
+                    }
+                }
+                finalizeMicSession($box, session);
+            };
+
             setMicListeningUi($box, true);
-            rec.start();
+            try {
+                rec.start();
+                scheduleMicSilenceStop($box, session, { forceGrace: true });
+            } catch (eStart) {
+                finalizeMicSession($box, session);
+            }
+        }
+
+        $(document).on('click', '.xabia-mic', function(e) {
+            e.preventDefault();
+            e.stopPropagation();
+            var $mic = $(this);
+            var $box = $mic.closest('.xabia-chatbox');
+            if (!$box.length) {
+                return;
+            }
+            var now = Date.now();
+            var lastToggle = parseInt($box.data('xabiaMicToggleAt') || '0', 10) || 0;
+            if (now - lastToggle < 250) {
+                return;
+            }
+            $box.data('xabiaMicToggleAt', now);
+            if (micSessions.get($box[0])) {
+                stopMicSession($box);
+                return;
+            }
+            startMicSession($mic);
+        });
+
+        $(document).on('xabia:bot-speaking-start', '.xabia-chatbox', function() {
+            stopMicSession($(this));
         });
 
         function submitChatMessage($box, options) {
@@ -1747,8 +2143,12 @@
             var $history = messagesStream($box);
             var continuePrompt = options.forceContinue ? xabiaI18n('continuePrompt', 'Continúa exactamente desde donde lo dejaste, sin repetir lo anterior.') : ($box.data('continuePrompt') || '');
             var isContinue = !!continuePrompt;
-            var val = $.trim(isContinue ? continuePrompt : $input.val());
+            var val = $.trim(isContinue ? continuePrompt : enforceInputLimits($input));
             if (!val) return;
+            if (!isContinue && (countInputLines(val) > userInputMaxLines() || val.length > userInputMaxChars())) {
+                syncInputLimitState($input);
+                return;
+            }
             /* Gesto de usuario: desbloquear TTS para cuando llegue la respuesta AJAX (Safari). */
             if (isVoiceOn($box)) {
                 unlockSpeechSynthesis();
@@ -1809,9 +2209,20 @@
             if (historyArr.length) payload.history = JSON.stringify(historyArr.slice(-6));
             if (!isContinue) {
                 hideStarterSuggestions($box);
-                var $userMsg = $('<div class="xabia-msg user"></div>');
-                $userMsg.append($('<span class="xabia-msg-content"></span>').text(val));
-                $history.append($userMsg);
+                var usedPending = false;
+                var $pending = $history.find('.xabia-msg.user[data-xabia-pending="1"]').last();
+                if ($pending.length) {
+                    var pendingText = $.trim($pending.find('.xabia-msg-content').text());
+                    if (pendingText === val) {
+                        $pending.removeAttr('data-xabia-pending').removeClass('xabia-msg-pending-voice');
+                        usedPending = true;
+                    }
+                }
+                if (!usedPending) {
+                    var $userMsg = $('<div class="xabia-msg user"></div>');
+                    $userMsg.append($('<span class="xabia-msg-content"></span>').text(val));
+                    $history.append($userMsg);
+                }
                 $input.val('');
                 autoSizeInput($input);
                 syncChatUiState($box);
@@ -1921,15 +2332,35 @@
             }
         });
 
-        $(document).on('focus input keyup', '.xabia-ui-modern .xabia-input-field', function() {
+        $(document).on('focus input keyup paste', '.xabia-ui-modern .xabia-input-field', function() {
             var $input = $(this);
+            enforceInputLimits($input);
             autoSizeInput($input);
             syncChatUiState($input.closest('.xabia-chatbox'));
         });
 
-        $(document).on('input', '.xabia-input-field', function() {
-            autoSizeInput($(this));
+        $(document).on('input paste', '.xabia-input-field', function() {
+            var $input = $(this);
+            enforceInputLimits($input);
+            autoSizeInput($input);
         });
+
+        function refreshOpenInputHeights() {
+            $('.xabia-chatbox .xabia-input-field').each(function() {
+                var $input = $(this);
+                enforceInputLimits($input);
+                autoSizeInput($input);
+            });
+        }
+
+        $(window).on('resize orientationchange', function() {
+            window.setTimeout(refreshOpenInputHeights, 80);
+        });
+        if (window.visualViewport) {
+            window.visualViewport.addEventListener('resize', function() {
+                window.setTimeout(refreshOpenInputHeights, 80);
+            });
+        }
 
         $(document).on('click', 'a.xabia-btn-cart-remote', function() {
             var href = String($(this).attr('href') || '');
@@ -2167,6 +2598,18 @@
             }
         }
 
+        function initKioskPresentation($box) {
+            var mode = String($box.attr('data-presentation-mode') || 'web_adaptive');
+            if (!mode || mode === 'web_adaptive') {
+                return;
+            }
+            $('html').addClass('xabia-kiosk-page');
+            $('body').addClass('xabia-kiosk-open xabia-immersive-open');
+            $box.addClass('xabia-kiosk-embed xabia-immersive-mode xabia-chatbox--fullscreen xabia-panel-shell is-active');
+            $box.find('.xabia-immersive-avatar-stage').attr('aria-hidden', 'false');
+            ensureImmersiveKinetic($box);
+        }
+
         function initXabiaChatboxes() {
             var isBoxPage = document.body && document.body.classList.contains('xabia-box-page');
             $('.xabia-chatbox').each(function() {
@@ -2176,6 +2619,7 @@
                 }
                 $b.data('xabiaInited', 1);
                 xabiaApplyQueryTunnelToBoxOuter($b);
+                initKioskPresentation($b);
                 if (isBoxPage) {
                     $('html').addClass('xabia-box-page');
                     $b.addClass('xabia-chatbox--fullscreen');
@@ -2186,6 +2630,7 @@
                         ensureImmersiveKinetic($b);
                     }
                 }
+                setVoiceOn($b, isVoiceOn($b));
                 autoSizeInput($b.find('.xabia-input-field'));
                 syncChatUiState($b);
                 initXabiaTotem($b);
@@ -2205,6 +2650,9 @@
                         }
                     }, 120);
                 }
+                if (chatIsOpenForGreeting($b)) {
+                    window.setTimeout(function() { maybeSpeakGreetingOnOpen($b); }, 180);
+                }
             });
         }
 
@@ -2219,6 +2667,14 @@
         });
         document.addEventListener('xabia:chatbox:mounted', function() {
             initXabiaChatboxes();
+        });
+        $(document).on('click', '.xabia-interface-trigger, .xabia-chatbox .xabia-input-field, .xabia-chatbox .xabia-send, .xabia-chatbox .xabia-mute', function() {
+            unlockSpeechSynthesis({ beep: false });
+            window.setTimeout(function() {
+                $('.xabia-chatbox').each(function() {
+                    maybeSpeakGreetingOnOpen($(this));
+                });
+            }, 180);
         });
     }
 

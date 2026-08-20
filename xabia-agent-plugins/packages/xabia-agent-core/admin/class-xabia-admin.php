@@ -3741,7 +3741,8 @@ class Xabia_Admin {
                             $default_tabs = [
                                 ['id' => 'tab-data', 'label' => __('General', 'xabia-intelligence')],
                                 ['id' => 'tab-analytics', 'label' => __('Analítica', 'xabia-intelligence')],
-                                ['id' => 'tab-design', 'label' => __('Ajustes / Apariencia', 'xabia-intelligence')],
+                                ['id' => 'tab-design', 'label' => __('Apariencia', 'xabia-intelligence')],
+                                ['id' => 'tab-ai', 'label' => __('Comportamiento IA', 'xabia-intelligence')],
                                 ['id' => 'tab-history', 'label' => __('Registro de conversaciones', 'xabia-intelligence')],
                             ];
                             $tabs = apply_filters('xabia_agent_admin_tabs', $default_tabs, $edit_id, $data ?? []);
@@ -4209,25 +4210,48 @@ class Xabia_Admin {
                             </div>
 
                             <div id="tab-design" class="xabia-tab-content">
-                                <label>Nombre del asistente (avatar)</label>
-                                <input type="text" name="avatar_name" value="<?php echo esc_attr($avatar_name); ?>" placeholder="Xabia" class="regular-text" maxlength="80">
-                                <p class="description">Nombre que aparece en el chat junto a cada mensaje del bot (ej. Xabia, Nora, Bot tienda). En modo tótem puedes usar un nombre distinto por pantalla con el shortcode: <code>avatar_name="Totem 1"</code>.</p>
-                                <hr>
-                                <label>Color Identidad (Botones/Asistente)</label><input type="text" name="primary_color" value="<?php echo esc_attr($primary); ?>" class="xabia-color-field">
-                                <hr>
-                                <label>Color Fondo Chat</label><input type="text" name="bg_color" value="<?php echo esc_attr($bg); ?>" class="xabia-color-field">
-                                <hr>
-                                <label>Tamaño fuente (em)</label>
-                                <input type="number" name="font_size" value="<?php echo esc_attr($font_size); ?>" class="small-text" min="0.625" max="2.5" step="0.05">
-                                <p class="description">1 = tamaño base del tema WordPress. Ej.: 0.875 más pequeño, 1.125 más grande. Se aplica al texto del usuario y del bot.</p>
+                                <?php
+                                if (class_exists('Xabia_Interface', false) && $edit_id !== '' && $edit_id !== 'new') {
+                                    Xabia_Interface::render_presentation_mode_picker($edit_id);
+                                }
+                                ?>
+                                <div class="xabia-admin-section xabia-design-identity">
+                                    <div class="xabia-admin-section__head">
+                                        <h3 class="xabia-admin-section__title"><?php echo esc_html__('Identidad visual', 'xabia-intelligence'); ?></h3>
+                                        <p class="description"><?php echo esc_html__('Nombre, colores y tamaño del texto del chat.', 'xabia-intelligence'); ?></p>
+                                    </div>
+                                    <label><strong><?php echo esc_html__('Nombre del asistente', 'xabia-intelligence'); ?></strong></label>
+                                    <input type="text" name="avatar_name" value="<?php echo esc_attr($avatar_name); ?>" placeholder="Xabia" class="regular-text" maxlength="80">
+                                    <p class="description"><?php echo esc_html__('Aparece junto a los mensajes del bot. En tótem puedes cambiarlo por pantalla con avatar_name="…" en el shortcode.', 'xabia-intelligence'); ?></p>
+                                    <div style="display:flex;flex-wrap:wrap;gap:20px 28px;margin-top:14px;">
+                                        <p style="margin:0;">
+                                            <label><strong><?php echo esc_html__('Color de acento', 'xabia-intelligence'); ?></strong></label><br>
+                                            <input type="text" name="primary_color" value="<?php echo esc_attr($primary); ?>" class="xabia-color-field">
+                                            <span class="description"><?php echo esc_html__('Botones y detalles', 'xabia-intelligence'); ?></span>
+                                        </p>
+                                        <p style="margin:0;" class="xabia-design-bg-wrap">
+                                            <label><strong><?php echo esc_html__('Fondo del chat', 'xabia-intelligence'); ?></strong></label><br>
+                                            <input type="text" name="bg_color" value="<?php echo esc_attr($bg); ?>" class="xabia-color-field">
+                                            <span class="description xabia-design-bg-note-transparent" style="display:none;"><?php echo esc_html__('Ignorado en tótem transparente.', 'xabia-intelligence'); ?></span>
+                                            <span class="description xabia-design-bg-note-kiosk" style="display:none;"><?php echo esc_html__('En pantalla dedicada se usa blanco.', 'xabia-intelligence'); ?></span>
+                                        </p>
+                                        <p style="margin:0;">
+                                            <label><strong><?php echo esc_html__('Tamaño de texto', 'xabia-intelligence'); ?></strong></label><br>
+                                            <input type="number" name="font_size" value="<?php echo esc_attr($font_size); ?>" class="small-text" min="0.625" max="2.5" step="0.05">
+                                            <span class="description"><?php echo esc_html__('1 = normal del tema', 'xabia-intelligence'); ?></span>
+                                        </p>
+                                    </div>
+                                </div>
                                 <?php
                                 if (class_exists('Xabia_Interface', false) && $edit_id !== '' && $edit_id !== 'new') {
                                     Xabia_Interface::render_admin_fields($edit_id, is_array($data) ? $data : []);
                                 }
                                 ?>
-                                <hr>
-                                <h4 style="margin:15px 0 8px;">🔊 Voz (lectura en alto)</h4>
-                                <p class="description">Opciones para la síntesis de voz cuando el usuario activa el botón de audio en el chat. Compatible con la API estándar del navegador (Web Speech API).</p>
+                                <div class="xabia-admin-section">
+                                <div class="xabia-admin-section__head">
+                                    <h3 class="xabia-admin-section__title"><?php echo esc_html__('Voz (lectura en alto)', 'xabia-intelligence'); ?></h3>
+                                    <p class="description"><?php echo esc_html__('Cuando el usuario pulsa el altavoz en el chat.', 'xabia-intelligence'); ?></p>
+                                </div>
                                 <label>Preferencia de voz</label>
                                 <select name="tts_voice" class="widefat" style="max-width:280px;">
                                     <option value="default" <?php selected($tts_voice, 'default'); ?>>Por defecto (idioma del navegador)</option>
@@ -4248,54 +4272,39 @@ class Xabia_Admin {
                                 <label style="display:block; margin-top:10px;">Patrones adicionales (uno por línea, texto literal a eliminar):</label>
                                 <textarea name="tts_clean_patterns" class="widefat" rows="3" placeholder="ej: [ACTION:CALL:...&#10;http://"><?php echo esc_textarea($tts_clean_patterns_str); ?></textarea>
                                 <p class="description">Cada línea se elimina del texto antes de leer. Útil para URLs, códigos o etiquetas concretas.</p>
-                                <?php do_action('xabia_agent_admin_personality_bottom', $edit_id, $data ?? []); ?>
-                                <hr>
-                                <label><strong>Índice de Confianza (Umbral de búsqueda)</strong></label><br>
-                                <input type="number" step="0.05" min="0.0" max="1.0" name="min_score" value="<?php echo esc_attr($min_score); ?>" class="small-text">
-                                <p class="description">Controla la precisión de la IA. Recomendado: 0.20.</p>
-                                <hr>
-                                <label><strong>Límite de tokens de respuesta</strong></label><br>
-                                <input type="number" min="1200" max="3000" name="max_output_tokens" value="<?php echo esc_attr($data['rules']['max_output_tokens'] ?? '1200'); ?>" class="small-text" style="width:90px;">
-                                <p class="description">Controla la longitud máxima de cada respuesta de la IA para este agente (1200–3000). Por defecto 1200; valores bajos cortan frases a mitad.</p>
-                                <hr>
-                                <label><strong>Límite diario de tokens (Hard Limit)</strong></label><br>
-                                <input type="number" min="0" step="100" name="daily_token_limit" value="<?php echo esc_attr($data['rules']['daily_token_limit'] ?? '20000'); ?>" class="small-text" style="width:120px;">
-                                <p class="description">Si se supera, el agente entra en modo mantenimiento hasta el siguiente día UTC.</p>
-                                <hr>
-                                <?php
-                                $__mx = isset($data['rules']['max_chunks_context']) ? (int) $data['rules']['max_chunks_context'] : 0;
-                                if ($__mx < 1) {
-                                    $__leg = isset($data['rules']['context_chunk_limit']) ? (int) $data['rules']['context_chunk_limit'] : 0;
-                                    $__mx = $__leg > 0 ? max(1, min(15, $__leg)) : 4;
-                                } else {
-                                    $__mx = max(1, min(15, $__mx));
-                                }
-                                ?>
-                                <label for="max_chunks_context"><strong><?php echo esc_html__('Resultados máximos de contexto', 'xabia-intelligence'); ?></strong></label>
-                                <input id="max_chunks_context" type="number" name="max_chunks_context" min="1" max="15" value="<?php echo esc_attr((string) $__mx); ?>" class="small-text" style="width:80px;">
-                                <p class="description"><?php echo esc_html__('Número máximo de fragmentos de conocimiento que se envían al modelo por consulta (1–15). Por defecto 4.', 'xabia-intelligence'); ?></p>
-                                <hr>
-                                <label><input type="checkbox" name="use_vector_search" value="1" <?php checked(!empty($data['rules']['use_vector_search'])); ?>> Usar búsqueda vectorial (embeddings)</label>
-                                <p class="description">Si está activo y el proyecto tiene vectores entrenados, la recuperación se hace por similitud semántica (no por palabras clave). Requiere haber pulsado «Entrenar» antes.</p>
-                                <label style="display:block; margin-top:10px;">Umbral de similitud (0–1)</label>
-                                <input type="number" step="0.05" min="0" max="1" name="similarity_threshold" value="<?php echo esc_attr($data['rules']['similarity_threshold'] ?? '0.2'); ?>" class="small-text" style="width:80px;">
-                                <p class="description">Chunks por debajo de este valor se descartan. Muy estricto (ej. 0,5) puede dejar fuera resultados válidos; 0,2–0,3 suele ir bien.</p>
-                                <hr>
-                                <label>Saludo Inicial</label><textarea name="greeting" class="widefat" rows="3"><?php echo esc_textarea($greet); ?></textarea>
-                                <hr>
-                                <label>
-                                    <input type="checkbox" name="starter_questions_enabled" value="1" <?php checked($starter_questions_enabled); ?>>
-                                    <?php echo esc_html__('Mostrar preguntas sugeridas iniciales', 'xabia-intelligence'); ?>
-                                </label>
-                                <p class="description"><?php echo esc_html__('Muestra chips clicables bajo el saludo para animar la primera interacción.', 'xabia-intelligence'); ?></p>
-                                <label style="display:block;margin-top:10px;"><?php echo esc_html__('Preguntas manuales (una por línea)', 'xabia-intelligence'); ?></label>
-                                <textarea name="starter_questions" class="widefat" rows="4" placeholder="<?php echo esc_attr__('Opcional. Una pregunta por línea.', 'xabia-intelligence'); ?>"><?php echo esc_textarea($starter_questions_raw); ?></textarea>
-                                <p class="description"><?php echo esc_html__('Si se deja en blanco, Xabia las generará automáticamente según el contenido del proyecto. Si escribes preguntas aquí, se mostrarán estas con prioridad.', 'xabia-intelligence'); ?></p>
-                                <hr>
-                                <label>📜 Prompt Maestro (Instrucciones)</label>
-                                <p class="description">Define el tono, el rol y las instrucciones generales del agente (cómo debe presentarse, estilo de respuesta, límites). El anclaje a los datos indexados lo gestionan las reglas RAG del sistema.</p>
-                                <textarea name="instructions" class="widefat" rows="12"><?php echo esc_textarea($data['rules']['instructions']??''); ?></textarea>
-                                <hr>
+                                </div>
+                            </div>
+
+                            <div id="tab-ai" class="xabia-tab-content">
+                                <div class="xabia-admin-section">
+                                    <div class="xabia-admin-section__head">
+                                        <h3 class="xabia-admin-section__title"><?php echo esc_html__('Primera impresión', 'xabia-intelligence'); ?></h3>
+                                        <p class="description"><?php echo esc_html__('Lo que ve el usuario al abrir el chat.', 'xabia-intelligence'); ?></p>
+                                    </div>
+                                    <label><strong><?php echo esc_html__('Saludo inicial', 'xabia-intelligence'); ?></strong></label>
+                                    <textarea name="greeting" class="widefat" rows="3"><?php echo esc_textarea($greet); ?></textarea>
+                                    <p style="margin:14px 0 6px;">
+                                        <label>
+                                            <input type="checkbox" name="starter_questions_enabled" value="1" <?php checked($starter_questions_enabled); ?>>
+                                            <?php echo esc_html__('Mostrar preguntas sugeridas', 'xabia-intelligence'); ?>
+                                        </label>
+                                    </p>
+                                    <p class="description"><?php echo esc_html__('Chips clicables bajo el saludo para animar la primera interacción.', 'xabia-intelligence'); ?></p>
+                                    <label style="display:block;margin-top:10px;"><strong><?php echo esc_html__('Preguntas manuales (una por línea)', 'xabia-intelligence'); ?></strong></label>
+                                    <textarea name="starter_questions" class="widefat" rows="4" placeholder="<?php echo esc_attr__('Opcional. Una pregunta por línea.', 'xabia-intelligence'); ?>"><?php echo esc_textarea($starter_questions_raw); ?></textarea>
+                                    <p class="description"><?php echo esc_html__('Si lo dejas vacío, Xabia generará preguntas según el contenido del agente.', 'xabia-intelligence'); ?></p>
+                                </div>
+
+                                <div class="xabia-admin-section">
+                                    <div class="xabia-admin-section__head">
+                                        <h3 class="xabia-admin-section__title"><?php echo esc_html__('Personalidad e instrucciones', 'xabia-intelligence'); ?></h3>
+                                        <p class="description"><?php echo esc_html__('Tono, rol y reglas de comportamiento del asistente.', 'xabia-intelligence'); ?></p>
+                                    </div>
+                                    <label><strong><?php echo esc_html__('Prompt maestro', 'xabia-intelligence'); ?></strong></label>
+                                    <p class="description"><?php echo esc_html__('Cómo debe presentarse, responder y qué límites debe respetar. Los datos del catálogo los aporta la memoria entrenada.', 'xabia-intelligence'); ?></p>
+                                    <textarea name="instructions" class="widefat" rows="12"><?php echo esc_textarea($data['rules']['instructions'] ?? ''); ?></textarea>
+                                </div>
+
                                 <?php
                                 $rag_preset = sanitize_key((string) ($data['rules']['rag_behavior_preset'] ?? 'neutral'));
                                 if (!in_array($rag_preset, ['neutral', 'compact', 'custom'], true)) {
@@ -4326,75 +4335,132 @@ class Xabia_Admin {
                                 );
                                 $rel_source_label = (string) ($rel_discovery['source'] ?? '');
                                 $rel_entity_kinds = is_array($rel_discovery['kinds'] ?? null) ? $rel_discovery['kinds'] : [];
+                                $__mx = isset($data['rules']['max_chunks_context']) ? (int) $data['rules']['max_chunks_context'] : 0;
+                                if ($__mx < 1) {
+                                    $__leg = isset($data['rules']['context_chunk_limit']) ? (int) $data['rules']['context_chunk_limit'] : 0;
+                                    $__mx = $__leg > 0 ? max(1, min(15, $__leg)) : 4;
+                                } else {
+                                    $__mx = max(1, min(15, $__mx));
+                                }
                                 ?>
-                                <label><strong><?php echo esc_html__('Comportamiento RAG', 'xabia-intelligence'); ?></strong></label>
-                                <p class="description"><?php echo esc_html__('Reglas que el sistema añade al prompt para ceñirse al contexto recuperado. Neutral es el valor por defecto (marca blanca).', 'xabia-intelligence'); ?></p>
-                                <select name="rag_behavior_preset" id="xabia-rag-behavior-preset" class="widefat" style="max-width:320px;">
-                                    <option value="neutral" <?php selected($rag_preset, 'neutral'); ?>><?php echo esc_html__('Neutral — riguroso (recomendado)', 'xabia-intelligence'); ?></option>
-                                    <option value="compact" <?php selected($rag_preset, 'compact'); ?>><?php echo esc_html__('Compact — mínimo de tokens', 'xabia-intelligence'); ?></option>
-                                    <option value="custom" <?php selected($rag_preset, 'custom'); ?>><?php echo esc_html__('Personalizado — texto propio', 'xabia-intelligence'); ?></option>
-                                </select>
-                                <label for="xabia-rag-custom-behavior" class="xabia-rag-custom-label" style="display:block;margin-top:12px;"><?php echo esc_html__('Texto personalizado (solo si eligió Personalizado)', 'xabia-intelligence'); ?></label>
-                                <textarea name="rag_custom_behavior" id="xabia-rag-custom-behavior" class="widefat xabia-rag-custom-field" rows="6"><?php echo esc_textarea($rag_custom); ?></textarea>
-                                <label for="xabia-context-source-description" style="display:block;margin-top:16px;"><strong><?php echo esc_html__('Descripción semántica de la fuente de datos', 'xabia-intelligence'); ?></strong></label>
-                                <p class="description"><?php echo esc_html__('Explica brevemente al modelo qué tipo de información contiene tu catálogo (ej: «Directorio de turismo náutico y aventura» o «Tienda de ropa de deporte»). Esto ayuda a la IA a relacionar conceptos sin necesidad de reglas rígidas de código.', 'xabia-intelligence'); ?></p>
-                                <textarea name="context_source_description" id="xabia-context-source-description" class="widefat" rows="4" placeholder="<?php echo esc_attr__('Directorio de empresas de turismo activo, aventura y deportes náuticos…', 'xabia-intelligence'); ?>"><?php echo esc_textarea($context_source_description); ?></textarea>
 
-                                <hr style="margin:20px 0;">
-                                <div class="xabia-visual-block" id="xabia-keyword-expansions-block">
-                                    <label><strong><?php echo esc_html__('Expansiones léxicas y sinónimos', 'xabia-intelligence'); ?></strong></label>
-                                    <p class="description"><?php echo esc_html__('Añade palabras clave de búsqueda y sus sinónimos (separados por comas). El sistema las usa al recuperar memoria del catálogo.', 'xabia-intelligence'); ?></p>
-                                    <div class="xabia-visual-rows" data-xabia-kw-list>
-                                        <?php
-                                        $kw_i = 0;
-                                        if ($kw_expansions === []) {
-                                            self::render_keyword_expansion_row('', '', 0);
-                                            $kw_i = 1;
-                                        } else {
-                                            foreach ($kw_expansions as $kw_key => $kw_pattern) {
-                                                $kw_key = (string) $kw_key;
-                                                $syn = self::keyword_pattern_to_synonyms_display($kw_key, (string) $kw_pattern);
-                                                self::render_keyword_expansion_row($kw_key, $syn, $kw_i);
-                                                ++$kw_i;
-                                            }
-                                        }
-                                        ?>
+                                <div class="xabia-admin-section">
+                                    <div class="xabia-admin-section__head">
+                                        <h3 class="xabia-admin-section__title"><?php echo esc_html__('Cómo busca respuestas', 'xabia-intelligence'); ?></h3>
+                                        <p class="description"><?php echo esc_html__('Recuperación de información del catálogo y precisión de las respuestas.', 'xabia-intelligence'); ?></p>
                                     </div>
-                                    <p><button type="button" class="button" data-xabia-add-kw><?php echo esc_html__('Añadir palabra clave', 'xabia-intelligence'); ?></button></p>
-                                    <template id="xabia-kw-row-tpl">
-                                        <?php self::render_keyword_expansion_row('', '', 9999); ?>
-                                    </template>
-                                </div>
-
-                                <hr style="margin:20px 0;">
-                                <div class="xabia-visual-block" id="xabia-knowledge-relations-block" data-xabia-rel-source="<?php echo esc_attr($rel_source_label); ?>">
-                                    <label><strong><?php echo esc_html__('Relaciones de catálogo', 'xabia-intelligence'); ?></strong></label>
-                                    <p class="description"><?php echo esc_html__('Empareja origen y destino usando los tipos reales de la fuente de datos del agente. Al sincronizar, cada ficha incluirá los títulos relacionados.', 'xabia-intelligence'); ?></p>
-                                    <?php if ($post_type_choices === []) : ?>
-                                        <p class="description" style="color:#b45309;"><?php echo esc_html__('No se detectaron tipos en la fuente configurada. Guarda la conexión SQL/addon o usa «Actualizar tipos» tras configurar la fuente.', 'xabia-intelligence'); ?></p>
-                                    <?php endif; ?>
-                                    <div class="xabia-visual-rows" data-xabia-rel-list>
-                                        <?php
-                                        $rel_i = 0;
-                                        if ($kr_rows === []) {
-                                            self::render_knowledge_relation_row($post_type_choices, null, 0, $rel_entity_kinds);
-                                            $rel_i = 1;
-                                        } else {
-                                            foreach ($kr_rows as $kr_row) {
-                                                self::render_knowledge_relation_row($post_type_choices, is_array($kr_row) ? $kr_row : [], $rel_i, $rel_entity_kinds);
-                                                ++$rel_i;
-                                            }
-                                        }
-                                        ?>
-                                    </div>
-                                    <p class="xabia-rel-actions">
-                                        <button type="button" class="button" data-xabia-add-rel><?php echo esc_html__('Añadir relación', 'xabia-intelligence'); ?></button>
-                                        <button type="button" class="button" id="xabia-rel-refresh-types" data-xabia-refresh-rel-types><?php echo esc_html__('Actualizar tipos desde la fuente', 'xabia-intelligence'); ?></button>
+                                    <p style="margin:0 0 10px;">
+                                        <label>
+                                            <input type="checkbox" name="use_vector_search" value="1" <?php checked(!empty($data['rules']['use_vector_search'])); ?>>
+                                            <?php echo esc_html__('Búsqueda semántica (embeddings)', 'xabia-intelligence'); ?>
+                                        </label>
                                     </p>
-                                    <template id="xabia-rel-row-tpl">
-                                        <?php self::render_knowledge_relation_row($post_type_choices, null, 9999, $rel_entity_kinds); ?>
-                                    </template>
+                                    <p class="description"><?php echo esc_html__('Recomendado si has entrenado el agente. Busca por significado, no solo por palabras exactas.', 'xabia-intelligence'); ?></p>
+                                    <div style="display:flex;flex-wrap:wrap;gap:18px 28px;margin-top:14px;">
+                                        <p style="margin:0;">
+                                            <label for="max_chunks_context"><strong><?php echo esc_html__('Fragmentos por consulta', 'xabia-intelligence'); ?></strong></label><br>
+                                            <input id="max_chunks_context" type="number" name="max_chunks_context" min="1" max="15" value="<?php echo esc_attr((string) $__mx); ?>" class="small-text" style="width:80px;">
+                                            <span class="description"><?php echo esc_html__('1–15 · por defecto 4', 'xabia-intelligence'); ?></span>
+                                        </p>
+                                        <p style="margin:0;">
+                                            <label><strong><?php echo esc_html__('Umbral de similitud', 'xabia-intelligence'); ?></strong></label><br>
+                                            <input type="number" step="0.05" min="0" max="1" name="similarity_threshold" value="<?php echo esc_attr($data['rules']['similarity_threshold'] ?? '0.2'); ?>" class="small-text" style="width:80px;">
+                                            <span class="description"><?php echo esc_html__('0,2–0,3 suele ir bien', 'xabia-intelligence'); ?></span>
+                                        </p>
+                                        <p style="margin:0;">
+                                            <label><strong><?php echo esc_html__('Índice de confianza', 'xabia-intelligence'); ?></strong></label><br>
+                                            <input type="number" step="0.05" min="0.0" max="1.0" name="min_score" value="<?php echo esc_attr($min_score); ?>" class="small-text" style="width:80px;">
+                                            <span class="description"><?php echo esc_html__('Recomendado: 0,20', 'xabia-intelligence'); ?></span>
+                                        </p>
+                                    </div>
+                                    <hr style="margin:16px 0;">
+                                    <label for="xabia-rag-behavior-preset"><strong><?php echo esc_html__('Estilo de respuesta con datos', 'xabia-intelligence'); ?></strong></label>
+                                    <select name="rag_behavior_preset" id="xabia-rag-behavior-preset" class="widefat" style="max-width:320px;">
+                                        <option value="neutral" <?php selected($rag_preset, 'neutral'); ?>><?php echo esc_html__('Riguroso (recomendado)', 'xabia-intelligence'); ?></option>
+                                        <option value="compact" <?php selected($rag_preset, 'compact'); ?>><?php echo esc_html__('Compacto (menos tokens)', 'xabia-intelligence'); ?></option>
+                                        <option value="custom" <?php selected($rag_preset, 'custom'); ?>><?php echo esc_html__('Personalizado', 'xabia-intelligence'); ?></option>
+                                    </select>
+                                    <label for="xabia-rag-custom-behavior" class="xabia-rag-custom-label" style="display:block;margin-top:12px;"><?php echo esc_html__('Texto personalizado (solo modo personalizado)', 'xabia-intelligence'); ?></label>
+                                    <textarea name="rag_custom_behavior" id="xabia-rag-custom-behavior" class="widefat xabia-rag-custom-field" rows="6"><?php echo esc_textarea($rag_custom); ?></textarea>
+                                    <label for="xabia-context-source-description" style="display:block;margin-top:16px;"><strong><?php echo esc_html__('Qué contiene tu catálogo', 'xabia-intelligence'); ?></strong></label>
+                                    <p class="description"><?php echo esc_html__('Una frase que ayude a la IA a entender el tipo de datos (ej.: «Directorio de turismo náutico»).', 'xabia-intelligence'); ?></p>
+                                    <textarea name="context_source_description" id="xabia-context-source-description" class="widefat" rows="3" placeholder="<?php echo esc_attr__('Directorio de empresas de turismo activo…', 'xabia-intelligence'); ?>"><?php echo esc_textarea($context_source_description); ?></textarea>
+
+                                    <div class="xabia-visual-block" id="xabia-keyword-expansions-block" style="margin-top:18px;">
+                                        <label><strong><?php echo esc_html__('Sinónimos y palabras clave', 'xabia-intelligence'); ?></strong></label>
+                                        <p class="description"><?php echo esc_html__('Mejora la búsqueda cuando los usuarios usan términos distintos a los del catálogo.', 'xabia-intelligence'); ?></p>
+                                        <div class="xabia-visual-rows" data-xabia-kw-list>
+                                            <?php
+                                            $kw_i = 0;
+                                            if ($kw_expansions === []) {
+                                                self::render_keyword_expansion_row('', '', 0);
+                                                $kw_i = 1;
+                                            } else {
+                                                foreach ($kw_expansions as $kw_key => $kw_pattern) {
+                                                    $kw_key = (string) $kw_key;
+                                                    $syn = self::keyword_pattern_to_synonyms_display($kw_key, (string) $kw_pattern);
+                                                    self::render_keyword_expansion_row($kw_key, $syn, $kw_i);
+                                                    ++$kw_i;
+                                                }
+                                            }
+                                            ?>
+                                        </div>
+                                        <p><button type="button" class="button" data-xabia-add-kw><?php echo esc_html__('Añadir palabra clave', 'xabia-intelligence'); ?></button></p>
+                                        <template id="xabia-kw-row-tpl">
+                                            <?php self::render_keyword_expansion_row('', '', 9999); ?>
+                                        </template>
+                                    </div>
+
+                                    <div class="xabia-visual-block" id="xabia-knowledge-relations-block" data-xabia-rel-source="<?php echo esc_attr($rel_source_label); ?>" style="margin-top:18px;">
+                                        <label><strong><?php echo esc_html__('Relaciones entre fichas', 'xabia-intelligence'); ?></strong></label>
+                                        <p class="description"><?php echo esc_html__('Conecta tipos de contenido para que cada ficha incluya elementos relacionados al sincronizar.', 'xabia-intelligence'); ?></p>
+                                        <?php if ($post_type_choices === []) : ?>
+                                            <p class="description" style="color:#b45309;"><?php echo esc_html__('Configura primero la fuente de datos en General.', 'xabia-intelligence'); ?></p>
+                                        <?php endif; ?>
+                                        <div class="xabia-visual-rows" data-xabia-rel-list>
+                                            <?php
+                                            $rel_i = 0;
+                                            if ($kr_rows === []) {
+                                                self::render_knowledge_relation_row($post_type_choices, null, 0, $rel_entity_kinds);
+                                                $rel_i = 1;
+                                            } else {
+                                                foreach ($kr_rows as $kr_row) {
+                                                    self::render_knowledge_relation_row($post_type_choices, is_array($kr_row) ? $kr_row : [], $rel_i, $rel_entity_kinds);
+                                                    ++$rel_i;
+                                                }
+                                            }
+                                            ?>
+                                        </div>
+                                        <p class="xabia-rel-actions">
+                                            <button type="button" class="button" data-xabia-add-rel><?php echo esc_html__('Añadir relación', 'xabia-intelligence'); ?></button>
+                                            <button type="button" class="button" id="xabia-rel-refresh-types" data-xabia-refresh-rel-types><?php echo esc_html__('Actualizar tipos desde la fuente', 'xabia-intelligence'); ?></button>
+                                        </p>
+                                        <template id="xabia-rel-row-tpl">
+                                            <?php self::render_knowledge_relation_row($post_type_choices, null, 9999, $rel_entity_kinds); ?>
+                                        </template>
+                                    </div>
                                 </div>
+
+                                <div class="xabia-admin-section">
+                                    <div class="xabia-admin-section__head">
+                                        <h3 class="xabia-admin-section__title"><?php echo esc_html__('Límites de uso', 'xabia-intelligence'); ?></h3>
+                                        <p class="description"><?php echo esc_html__('Control de longitud de respuestas y consumo diario.', 'xabia-intelligence'); ?></p>
+                                    </div>
+                                    <div style="display:flex;flex-wrap:wrap;gap:18px 28px;">
+                                        <p style="margin:0;">
+                                            <label><strong><?php echo esc_html__('Tokens por respuesta', 'xabia-intelligence'); ?></strong></label><br>
+                                            <input type="number" min="1200" max="3000" name="max_output_tokens" value="<?php echo esc_attr($data['rules']['max_output_tokens'] ?? '1200'); ?>" class="small-text" style="width:90px;">
+                                            <span class="description"><?php echo esc_html__('1200–3000', 'xabia-intelligence'); ?></span>
+                                        </p>
+                                        <p style="margin:0;">
+                                            <label><strong><?php echo esc_html__('Límite diario', 'xabia-intelligence'); ?></strong></label><br>
+                                            <input type="number" min="0" step="100" name="daily_token_limit" value="<?php echo esc_attr($data['rules']['daily_token_limit'] ?? '20000'); ?>" class="small-text" style="width:120px;">
+                                            <span class="description"><?php echo esc_html__('0 = sin límite', 'xabia-intelligence'); ?></span>
+                                        </p>
+                                    </div>
+                                    <p class="description" style="margin-top:10px;"><?php echo esc_html__('Al superar el límite diario, el agente entra en mantenimiento hasta el día siguiente (UTC).', 'xabia-intelligence'); ?></p>
+                                </div>
+                                <?php do_action('xabia_agent_admin_personality_bottom', $edit_id, $data ?? []); ?>
                             </div>
 
                             <div id="tab-history" class="xabia-tab-content">

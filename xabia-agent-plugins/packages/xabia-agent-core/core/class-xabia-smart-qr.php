@@ -166,6 +166,7 @@ final class Xabia_Smart_QR {
             'tab-qrs',
             'tab-analytics',
             'tab-design',
+            'tab-ai',
             'tab-history',
         ];
         $by_id = [];

@@ -50,6 +50,114 @@ class Xabia_Interface {
     public const OPT_MOBILE_PRESET              = 'mobile_preset';
     /** Avatar parlante (modo teatro / lip-sync inmersivo) junto al chat. */
     public const OPT_SPEAKING_AVATAR            = 'speaking_avatar';
+    /** web_adaptive | totem_transparent_vertical | totem_transparent_horizontal | screen_vertical | screen_horizontal */
+    public const OPT_PRESENTATION_MODE          = 'presentation_mode';
+
+    /** @return list<string> */
+    public static function presentation_mode_keys(): array {
+        return [
+            'web_adaptive',
+            'totem_transparent_vertical',
+            'totem_transparent_horizontal',
+            'screen_vertical',
+            'screen_horizontal',
+        ];
+    }
+
+    /**
+     * Metadatos de cada perfil (admin: cuadrícula visual).
+     *
+     * @return array<string, array{group: string, group_label: string, title: string, summary: string, hint: string, thumb: string}>
+     */
+    public static function presentation_mode_catalog(): array {
+        return [
+            'web_adaptive' => [
+                'group'       => 'web',
+                'group_label' => __('Sitio web', 'xabia-intelligence'),
+                'title'       => __('Web adaptable', 'xabia-intelligence'),
+                'summary'     => __('Burbuja flotante o chat embebido en una página', 'xabia-intelligence'),
+                'hint'        => __('[xabia_agent] · launcher automático', 'xabia-intelligence'),
+                'thumb'       => 'web',
+            ],
+            'totem_transparent_vertical' => [
+                'group'       => 'kiosk',
+                'group_label' => __('Pantalla dedicada (shortcode)', 'xabia-intelligence'),
+                'title'       => __('Tótem transparente · vertical', 'xabia-intelligence'),
+                'summary'     => __('Avatar arriba, chat abajo. Sin fondo opaco.', 'xabia-intelligence'),
+                'hint'        => __('/xabia-box/ o [xabia_agent]', 'xabia-intelligence'),
+                'thumb'       => 'totem-v',
+            ],
+            'totem_transparent_horizontal' => [
+                'group'       => 'kiosk',
+                'group_label' => __('Pantalla dedicada (shortcode)', 'xabia-intelligence'),
+                'title'       => __('Tótem transparente · horizontal', 'xabia-intelligence'),
+                'summary'     => __('Avatar a la izquierda, chat a la derecha. Sin fondo opaco.', 'xabia-intelligence'),
+                'hint'        => __('/xabia-box/ o [xabia_agent]', 'xabia-intelligence'),
+                'thumb'       => 'totem-h',
+            ],
+            'screen_vertical' => [
+                'group'       => 'kiosk',
+                'group_label' => __('Pantalla dedicada (shortcode)', 'xabia-intelligence'),
+                'title'       => __('Pantalla vertical', 'xabia-intelligence'),
+                'summary'     => __('Avatar arriba, chat abajo. Fondo sólido.', 'xabia-intelligence'),
+                'hint'        => __('/xabia-box/ o [xabia_agent]', 'xabia-intelligence'),
+                'thumb'       => 'screen-v',
+            ],
+            'screen_horizontal' => [
+                'group'       => 'kiosk',
+                'group_label' => __('Pantalla dedicada (shortcode)', 'xabia-intelligence'),
+                'title'       => __('Pantalla horizontal', 'xabia-intelligence'),
+                'summary'     => __('Avatar a la izquierda, chat a la derecha. Fondo sólido.', 'xabia-intelligence'),
+                'hint'        => __('/xabia-box/ o [xabia_agent]', 'xabia-intelligence'),
+                'thumb'       => 'screen-h',
+            ],
+        ];
+    }
+
+    public static function sanitize_presentation_mode(string $value): string {
+        $value = sanitize_key($value);
+        return in_array($value, self::presentation_mode_keys(), true) ? $value : 'web_adaptive';
+    }
+
+    public static function is_kiosk_presentation_mode(string $mode): bool {
+        return $mode !== 'web_adaptive';
+    }
+
+    public static function is_transparent_presentation_mode(string $mode): bool {
+        return str_starts_with($mode, 'totem_transparent_');
+    }
+
+    public static function presentation_split_axis(string $mode): string {
+        return str_ends_with($mode, '_horizontal') ? 'horizontal' : 'vertical';
+    }
+
+    /**
+     * Clases CSS del perfil de presentación (shortcode / xabia-box).
+     *
+     * @return list<string>
+     */
+    public static function presentation_mode_classes(string $mode): array {
+        $mode = self::sanitize_presentation_mode($mode);
+        if ($mode === 'web_adaptive') {
+            return [];
+        }
+        $classes = ['xabia-present-kiosk', 'xabia-present-' . self::presentation_split_axis($mode)];
+        if (self::is_transparent_presentation_mode($mode)) {
+            $classes[] = 'xabia-present-transparent';
+            $classes[] = 'xabia-present-totem';
+        } else {
+            $classes[] = 'xabia-present-screen';
+        }
+        return $classes;
+    }
+
+    public static function project_uses_web_launcher(string $project_id): bool {
+        $settings = self::get_project_settings($project_id);
+        if (self::is_kiosk_presentation_mode($settings[self::OPT_PRESENTATION_MODE])) {
+            return false;
+        }
+        return !empty($settings[self::OPT_AUTOLOAD_WITHOUT_SHORTCODE]);
+    }
 
     public static function init(): void {
         if (is_admin()) {
@@ -296,6 +404,7 @@ class Xabia_Interface {
             self::OPT_INCLUDE_PAGE_IDS           => [],
             self::OPT_MOBILE_PRESET              => 'compact',
             self::OPT_SPEAKING_AVATAR            => 1,
+            self::OPT_PRESENTATION_MODE          => 'web_adaptive',
         ];
     }
 
@@ -312,8 +421,7 @@ class Xabia_Interface {
     }
 
     public static function project_autoloads_without_shortcode(string $project_id): bool {
-        $settings = self::get_project_settings($project_id);
-        return !empty($settings[self::OPT_AUTOLOAD_WITHOUT_SHORTCODE]);
+        return self::project_uses_web_launcher($project_id);
     }
 
     /**
@@ -471,6 +579,14 @@ class Xabia_Interface {
             ? (!empty($raw[self::OPT_SPEAKING_AVATAR]) ? 1 : 0)
             : (int) $defaults[self::OPT_SPEAKING_AVATAR];
 
+        $presentation_mode = self::sanitize_presentation_mode(
+            (string) ($raw[self::OPT_PRESENTATION_MODE] ?? $defaults[self::OPT_PRESENTATION_MODE])
+        );
+        if (self::is_kiosk_presentation_mode($presentation_mode)) {
+            $speaking_avatar = 1;
+            $autoload = false;
+        }
+
         return [
             self::OPT_TRIGGER_TYPE              => $trigger_type,
             self::OPT_CUSTOM_TRIGGER            => self::sanitize_custom_trigger_url((string) ($raw[self::OPT_CUSTOM_TRIGGER] ?? '')),
@@ -496,6 +612,7 @@ class Xabia_Interface {
             self::OPT_AUTOLOAD_WITHOUT_SHORTCODE => $autoload,
             self::OPT_MOBILE_PRESET              => $mobile_preset,
             self::OPT_SPEAKING_AVATAR            => $speaking_avatar,
+            self::OPT_PRESENTATION_MODE          => $presentation_mode,
         ];
     }
 
@@ -883,6 +1000,16 @@ class Xabia_Interface {
             }
         }
 
+        $presentation_mode = self::sanitize_presentation_mode(
+            (string) ($post['xabia_presentation_mode'] ?? $defaults[self::OPT_PRESENTATION_MODE])
+        );
+        $autoload = !empty($post['xabia_autoload_without_shortcode']) ? 1 : 0;
+        $speaking_avatar = !empty($post['xabia_speaking_avatar']) ? 1 : 0;
+        if (self::is_kiosk_presentation_mode($presentation_mode)) {
+            $autoload = 0;
+            $speaking_avatar = 1;
+        }
+
         return [
             self::OPT_TRIGGER_TYPE              => $trigger_type,
             self::OPT_CUSTOM_TRIGGER            => self::sanitize_custom_trigger_url((string) ($post['xabia_custom_trigger_url'] ?? '')),
@@ -905,11 +1032,12 @@ class Xabia_Interface {
             self::OPT_EXCLUDE_IDS               => self::parse_ids_from_post($post, 'xabia_exclude_page_ids', 'xabia_exclude_ids_manual'),
             self::OPT_INCLUDE_PAGE_IDS          => self::parse_ids_from_post($post, 'xabia_include_page_ids', 'xabia_include_page_ids_manual'),
             self::OPT_EXCLUDE_WOO_CART_CHECKOUT => !empty($post['xabia_exclude_woo_cart_checkout']) ? 1 : 0,
-            self::OPT_AUTOLOAD_WITHOUT_SHORTCODE => !empty($post['xabia_autoload_without_shortcode']) ? 1 : 0,
+            self::OPT_AUTOLOAD_WITHOUT_SHORTCODE => $autoload,
             self::OPT_MOBILE_PRESET              => self::sanitize_mobile_preset(
                 (string) ($post['xabia_mobile_preset'] ?? $defaults[self::OPT_MOBILE_PRESET])
             ),
-            self::OPT_SPEAKING_AVATAR            => !empty($post['xabia_speaking_avatar']) ? 1 : 0,
+            self::OPT_SPEAKING_AVATAR            => $speaking_avatar,
+            self::OPT_PRESENTATION_MODE          => $presentation_mode,
         ];
     }
 
@@ -1022,6 +1150,10 @@ class Xabia_Interface {
 
         foreach (self::$page_projects as $project_id) {
             if (!self::should_render_for_project($project_id)) {
+                continue;
+            }
+            $settings = self::get_project_settings($project_id);
+            if (self::is_kiosk_presentation_mode($settings[self::OPT_PRESENTATION_MODE])) {
                 continue;
             }
             self::render_trigger_markup($project_id);
@@ -1215,6 +1347,80 @@ class Xabia_Interface {
     }
 
     /**
+     * Cuadrícula visual del modo de presentación (pestaña Apariencia).
+     */
+    public static function render_presentation_mode_picker(string $edit_id): void {
+        if ($edit_id === '' || $edit_id === 'new') {
+            return;
+        }
+        $s = self::get_project_settings($edit_id);
+        $presentation_mode = self::sanitize_presentation_mode((string) ($s[self::OPT_PRESENTATION_MODE] ?? 'web_adaptive'));
+        $catalog = self::presentation_mode_catalog();
+        $groups = [
+            'web'   => ['label' => __('Para tu web', 'xabia-intelligence'), 'modes' => []],
+            'kiosk' => ['label' => __('Para tótem o pantalla fija', 'xabia-intelligence'), 'modes' => []],
+        ];
+        foreach ($catalog as $mode_key => $meta) {
+            $group = $meta['group'] ?? 'web';
+            if (!isset($groups[$group])) {
+                $groups[$group] = ['label' => $meta['group_label'], 'modes' => []];
+            }
+            $groups[$group]['modes'][$mode_key] = $meta;
+        }
+        ?>
+        <div class="xabia-admin-section xabia-presentation-section">
+            <div class="xabia-admin-section__head">
+                <h3 class="xabia-admin-section__title"><?php echo esc_html__('¿Dónde se verá el agente?', 'xabia-intelligence'); ?></h3>
+                <p class="description"><?php echo esc_html__('Elige el formato según el soporte: web normal, tótem con cristal transparente o pantalla a pantalla completa. Solo cambian el fondo y la posición del avatar.', 'xabia-intelligence'); ?></p>
+            </div>
+            <input type="hidden" name="xabia_presentation_mode" id="xabia_presentation_mode" value="<?php echo esc_attr($presentation_mode); ?>">
+            <?php foreach ($groups as $group_key => $group) :
+                if ($group['modes'] === []) {
+                    continue;
+                }
+                ?>
+                <p class="xabia-presentation-group-label"><?php echo esc_html($group['label']); ?></p>
+                <div class="xabia-presentation-grid" role="radiogroup" aria-label="<?php echo esc_attr($group['label']); ?>">
+                    <?php foreach ($group['modes'] as $mode_key => $meta) :
+                        $selected = $presentation_mode === $mode_key;
+                        $thumb = (string) ($meta['thumb'] ?? 'web');
+                        ?>
+                        <button
+                            type="button"
+                            class="xabia-pres-card<?php echo $selected ? ' is-selected' : ''; ?>"
+                            data-presentation-mode="<?php echo esc_attr($mode_key); ?>"
+                            aria-pressed="<?php echo $selected ? 'true' : 'false'; ?>"
+                        >
+                            <span class="xabia-pres-thumb xabia-pres-thumb--<?php echo esc_attr($thumb); ?>" aria-hidden="true">
+                                <span class="xabia-pres-thumb__avatar"></span>
+                                <span class="xabia-pres-thumb__chat">
+                                    <span></span><span></span><span></span>
+                                </span>
+                                <?php if ($group_key === 'web') : ?>
+                                    <span class="xabia-pres-thumb__bubble"></span>
+                                <?php endif; ?>
+                            </span>
+                            <span class="xabia-pres-card__title"><?php echo esc_html($meta['title']); ?></span>
+                            <span class="xabia-pres-card__summary"><?php echo esc_html($meta['summary']); ?></span>
+                            <span class="xabia-pres-card__hint"><?php echo esc_html($meta['hint']); ?></span>
+                        </button>
+                    <?php endforeach; ?>
+                </div>
+            <?php endforeach; ?>
+            <div class="xabia-presentation-detail xabia-presentation-kiosk-note" style="<?php echo self::is_kiosk_presentation_mode($presentation_mode) ? '' : 'display:none;'; ?>">
+                <strong><?php echo esc_html__('Pantalla dedicada', 'xabia-intelligence'); ?></strong>
+                <p><?php echo esc_html__('No aparece la burbuja flotante. Usa una página con el shortcode o la URL dedicada del agente. El avatar y el chat ocupan toda la pantalla.', 'xabia-intelligence'); ?></p>
+                <p><code>[xabia_agent id="<?php echo esc_html($edit_id); ?>"]</code> · <code>/xabia-box/?x_project=<?php echo esc_html($edit_id); ?></code></p>
+            </div>
+            <div class="xabia-presentation-detail xabia-presentation-web-note" style="<?php echo $presentation_mode === 'web_adaptive' ? '' : 'display:none;'; ?>">
+                <strong><?php echo esc_html__('Sitio web', 'xabia-intelligence'); ?></strong>
+                <p><?php echo esc_html__('Puedes activar la burbuja flotante en todo el sitio o insertar el chat solo donde quieras con el shortcode.', 'xabia-intelligence'); ?></p>
+            </div>
+        </div>
+        <?php
+    }
+
+    /**
      * Campos en pestaña Apariencia del agente (dentro del formulario save_project).
      *
      * @param array<string, mixed> $data
@@ -1230,6 +1436,8 @@ class Xabia_Interface {
         $position = $s[self::OPT_TRIGGER_POSITION];
         $layout = $s[self::OPT_PANEL_LAYOUT];
         $mobile_preset = $s[self::OPT_MOBILE_PRESET];
+        $presentation_mode = self::sanitize_presentation_mode((string) ($s[self::OPT_PRESENTATION_MODE] ?? 'web_adaptive'));
+        $is_kiosk = self::is_kiosk_presentation_mode($presentation_mode);
         $excluded_types = $s[self::OPT_EXCLUDE_POST_TYPES];
         $excluded_ids = $s[self::OPT_EXCLUDE_IDS];
         $included_ids = $s[self::OPT_INCLUDE_PAGE_IDS];
@@ -1239,24 +1447,29 @@ class Xabia_Interface {
             $public_post_types = [];
         }
         ?>
-        <hr>
-        <h4 style="margin:15px 0 8px;"><?php echo esc_html__('Avatar (disparador y panel)', 'xabia-intelligence'); ?></h4>
-        <p class="description"><?php echo esc_html__('Afecta al avatar flotante, a [xabia_launcher] / [xabia_avatar] y al avatar grande del chat. Puedes usar el avatar cinético con colores propios o una imagen PNG/GIF subida.', 'xabia-intelligence'); ?></p>
+        <div class="xabia-admin-section xabia-avatar-section">
+        <div class="xabia-admin-section__head">
+            <h3 class="xabia-admin-section__title"><?php echo esc_html__('Avatar', 'xabia-intelligence'); ?></h3>
+            <p class="description"><?php echo esc_html__('Aspecto del asistente en la burbuja, en el chat y en pantalla completa.', 'xabia-intelligence'); ?></p>
+        </div>
 
-        <p style="margin:12px 0 6px;">
+        <p class="xabia-interface-kiosk-speaking-note description" style="margin:0 0 12px;<?php echo $is_kiosk ? '' : 'display:none;'; ?>">
+            <?php echo esc_html__('En pantalla dedicada el avatar grande se muestra siempre.', 'xabia-intelligence'); ?>
+        </p>
+        <p style="margin:0 0 12px;" class="xabia-interface-web-speaking">
             <label>
-                <input type="checkbox" name="xabia_speaking_avatar" value="1" <?php checked(!empty($s[self::OPT_SPEAKING_AVATAR])); ?>>
-                <?php echo esc_html__('Avatar parlante', 'xabia-intelligence'); ?>
+                <input type="checkbox" name="xabia_speaking_avatar" value="1" <?php checked(!empty($s[self::OPT_SPEAKING_AVATAR])); ?><?php echo $is_kiosk ? ' disabled="disabled"' : ''; ?>>
+                <?php echo esc_html__('Mostrar avatar grande al abrir el chat', 'xabia-intelligence'); ?>
             </label>
         </p>
-        <p class="description" style="margin-top:0;">
-            <?php echo esc_html__('Si está activo, al abrir el chat se muestra el avatar grande (cinético o tu imagen). Si se desactiva, solo aparece el panel de chat.', 'xabia-intelligence'); ?>
+        <p class="description xabia-interface-web-speaking" style="margin-top:0;<?php echo $is_kiosk ? 'display:none;' : ''; ?>">
+            <?php echo esc_html__('Desactiva si prefieres solo el panel de mensajes (sin retrato del avatar).', 'xabia-intelligence'); ?>
         </p>
 
         <label class="xabia-label" for="xabia_trigger_type" style="display:block;margin-top:14px;"><strong><?php echo esc_html__('Tipo de avatar', 'xabia-intelligence'); ?></strong></label>
         <select name="xabia_trigger_type" id="xabia_trigger_type" class="widefat" style="max-width:400px;">
-            <option value="native_avatar" <?php selected($trigger_type, 'native_avatar'); ?>><?php echo esc_html__('Avatar cinético (nativo)', 'xabia-intelligence'); ?></option>
-            <option value="custom_image" <?php selected($trigger_type, 'custom_image'); ?>><?php echo esc_html__('Imagen personalizada (PNG / GIF / JPG / WebP)', 'xabia-intelligence'); ?></option>
+            <option value="native_avatar" <?php selected($trigger_type, 'native_avatar'); ?>><?php echo esc_html__('Animado (cinético)', 'xabia-intelligence'); ?></option>
+            <option value="custom_image" <?php selected($trigger_type, 'custom_image'); ?>><?php echo esc_html__('Imagen propia (PNG, GIF…)', 'xabia-intelligence'); ?></option>
         </select>
 
         <div class="xabia-interface-avatar-colors" style="margin-top:14px;<?php echo $trigger_type === 'native_avatar' ? '' : 'display:none;'; ?>">
@@ -1282,20 +1495,27 @@ class Xabia_Interface {
             </div>
         </div>
 
-        <p style="margin:18px 0 6px;">
+        </div>
+
+        <div class="xabia-admin-section xabia-interface-web-only xabia-web-section" style="<?php echo $is_kiosk ? 'display:none;' : ''; ?>">
+        <div class="xabia-admin-section__head">
+            <h3 class="xabia-admin-section__title"><?php echo esc_html__('Burbuja flotante (solo web)', 'xabia-intelligence'); ?></h3>
+            <p class="description"><?php echo esc_html__('Controla el botón que aparece en las páginas de tu sitio. No aplica a tótem ni pantalla dedicada.', 'xabia-intelligence'); ?></p>
+        </div>
+
+        <p style="margin:0 0 6px;">
             <label>
                 <input type="checkbox" name="xabia_autoload_without_shortcode" value="1" <?php checked(!empty($s[self::OPT_AUTOLOAD_WITHOUT_SHORTCODE])); ?>>
-                <?php echo esc_html__('Mostrar avatar flotante en el sitio sin shortcode (recomendado)', 'xabia-intelligence'); ?>
+                <?php echo esc_html__('Mostrar burbuja en el sitio automáticamente', 'xabia-intelligence'); ?>
             </label>
         </p>
         <p class="description" style="margin-top:0;">
-            <?php echo esc_html__('Si está activo, el avatar flotante y el chat se cargan solos (con las reglas de páginas de abajo). [xabia_agent] embebe el chat; [xabia_launcher] / [xabia_avatar] solo pone el botón donde lo insertes.', 'xabia-intelligence'); ?>
+            <?php echo esc_html__('Recomendado. Si lo desactivas, el chat solo aparece donde insertes el shortcode.', 'xabia-intelligence'); ?>
         </p>
 
         <div class="xabia-native-interface-options" style="<?php echo !empty($s[self::OPT_AUTOLOAD_WITHOUT_SHORTCODE]) ? '' : 'display:none;'; ?>">
             <hr style="margin:16px 0;">
-            <h4 style="margin:0 0 8px;"><?php echo esc_html__('Visibilidad del avatar flotante', 'xabia-intelligence'); ?></h4>
-            <p class="description"><?php echo esc_html__('Estas reglas solo afectan al avatar flotante nativo. No afectan a [xabia_launcher].', 'xabia-intelligence'); ?></p>
+            <h4 style="margin:0 0 8px;"><?php echo esc_html__('¿En qué páginas?', 'xabia-intelligence'); ?></h4>
 
             <?php
             self::render_page_id_checklist(
@@ -1336,11 +1556,11 @@ class Xabia_Interface {
             <p class="description xabia-interface-exclusions-muted" style="display:none;"><?php echo esc_html__('Las exclusiones se ocultan porque ya se ha elegido una lista cerrada en «Mostrar solo en estas páginas».', 'xabia-intelligence'); ?></p>
 
         <hr style="margin:16px 0;">
-        <label for="xabia_trigger_position"><?php echo esc_html__('Posición del disparador flotante', 'xabia-intelligence'); ?></label>
+        <label for="xabia_trigger_position"><strong><?php echo esc_html__('Esquina de la burbuja', 'xabia-intelligence'); ?></strong></label>
         <select name="xabia_trigger_position" id="xabia_trigger_position" class="widefat" style="max-width:400px;">
-            <option value="bottom_right" <?php selected($position, 'bottom_right'); ?>><?php echo esc_html__('Abajo — derecha', 'xabia-intelligence'); ?></option>
-            <option value="bottom_left" <?php selected($position, 'bottom_left'); ?>><?php echo esc_html__('Abajo — izquierda', 'xabia-intelligence'); ?></option>
-            <option value="custom" <?php selected($position, 'custom'); ?>><?php echo esc_html__('Personalizada', 'xabia-intelligence'); ?></option>
+            <option value="bottom_right" <?php selected($position, 'bottom_right'); ?>><?php echo esc_html__('Abajo a la derecha', 'xabia-intelligence'); ?></option>
+            <option value="bottom_left" <?php selected($position, 'bottom_left'); ?>><?php echo esc_html__('Abajo a la izquierda', 'xabia-intelligence'); ?></option>
+            <option value="custom" <?php selected($position, 'custom'); ?>><?php echo esc_html__('Márgenes personalizados', 'xabia-intelligence'); ?></option>
         </select>
 
         <div class="xabia-interface-margins-wrap" style="margin-top:10px;<?php echo $position === 'custom' ? '' : 'display:none;'; ?>">
@@ -1351,21 +1571,22 @@ class Xabia_Interface {
         </div>
 
         <hr style="margin:16px 0;">
-        <label for="xabia_mobile_preset"><?php echo esc_html__('Tamaño en móvil (flotante)', 'xabia-intelligence'); ?></label>
+        <label for="xabia_mobile_preset"><strong><?php echo esc_html__('Tamaño en móvil', 'xabia-intelligence'); ?></strong></label>
         <select name="xabia_mobile_preset" id="xabia_mobile_preset" class="widefat" style="max-width:400px;">
-            <option value="compact" <?php selected($mobile_preset, 'compact'); ?>><?php echo esc_html__('Compacto (recomendado)', 'xabia-intelligence'); ?></option>
-            <option value="ultra_compact" <?php selected($mobile_preset, 'ultra_compact'); ?>><?php echo esc_html__('Ultra compacto', 'xabia-intelligence'); ?></option>
+            <option value="compact" <?php selected($mobile_preset, 'compact'); ?>><?php echo esc_html__('Normal (recomendado)', 'xabia-intelligence'); ?></option>
+            <option value="ultra_compact" <?php selected($mobile_preset, 'ultra_compact'); ?>><?php echo esc_html__('Compacto (más espacio al contenido)', 'xabia-intelligence'); ?></option>
         </select>
-        <p class="description"><?php echo esc_html__('Ajusta avatar y panel en pantallas pequeñas. Ultra compacto deja más espacio al contenido y al teclado.', 'xabia-intelligence'); ?></p>
 
         <hr style="margin:16px 0;">
-        <label for="xabia_panel_layout"><?php echo esc_html__('Comportamiento del panel', 'xabia-intelligence'); ?></label>
+        <label for="xabia_panel_layout"><strong><?php echo esc_html__('Panel al abrir el chat', 'xabia-intelligence'); ?></strong></label>
         <select name="xabia_panel_layout" id="xabia_panel_layout" class="widefat" style="max-width:400px;">
-            <option value="right_float" <?php selected($layout, 'right_float'); ?>><?php echo esc_html__('Flotante derecha', 'xabia-intelligence'); ?></option>
-            <option value="left_float" <?php selected($layout, 'left_float'); ?>><?php echo esc_html__('Flotante izquierda', 'xabia-intelligence'); ?></option>
-            <option value="centered_modal" <?php selected($layout, 'centered_modal'); ?>><?php echo esc_html__('Modal centrado', 'xabia-intelligence'); ?></option>
-            <option value="full_screen" <?php selected($layout, 'full_screen'); ?>><?php echo esc_html__('Centrado amplio (blur + caja blanca)', 'xabia-intelligence'); ?></option>
+            <option value="right_float" <?php selected($layout, 'right_float'); ?>><?php echo esc_html__('Flotante a la derecha', 'xabia-intelligence'); ?></option>
+            <option value="left_float" <?php selected($layout, 'left_float'); ?>><?php echo esc_html__('Flotante a la izquierda', 'xabia-intelligence'); ?></option>
+            <option value="centered_modal" <?php selected($layout, 'centered_modal'); ?>><?php echo esc_html__('Ventana centrada', 'xabia-intelligence'); ?></option>
+            <option value="full_screen" <?php selected($layout, 'full_screen'); ?>><?php echo esc_html__('Pantalla amplia (avatar + chat)', 'xabia-intelligence'); ?></option>
         </select>
+        <p class="description"><?php echo esc_html__('Solo afecta al chat en web. Los modos de tótem/pantalla usan su propio diseño a pantalla completa.', 'xabia-intelligence'); ?></p>
+        </div>
         </div>
 
         <script>
@@ -1386,9 +1607,24 @@ class Xabia_Interface {
             }
             function xabiaSyncAgentInterfaceUi() {
                 var t = $('#xabia_trigger_type').val();
-                var nativeEnabled = $('input[name="xabia_autoload_without_shortcode"]').is(':checked');
+                var pres = $('#xabia_presentation_mode').val() || 'web_adaptive';
+                var isKiosk = pres !== 'web_adaptive';
+                var isTransparent = pres.indexOf('totem_transparent_') === 0;
+                var nativeEnabled = $('input[name="xabia_autoload_without_shortcode"]').is(':checked') && !isKiosk;
                 var hasIncludes = $('input[name="xabia_include_page_ids[]"]:checked').length > 0 || $.trim($('input[name="xabia_include_page_ids_manual"]').val() || '') !== '';
-                $('.xabia-native-interface-options').toggle(nativeEnabled);
+                $('.xabia-native-interface-options').toggle(!isKiosk && $('input[name="xabia_autoload_without_shortcode"]').is(':checked'));
+                $('.xabia-presentation-kiosk-note').toggle(isKiosk);
+                $('.xabia-presentation-web-note').toggle(!isKiosk);
+                $('.xabia-interface-web-only').toggle(!isKiosk);
+                $('.xabia-interface-kiosk-speaking-note').toggle(isKiosk);
+                $('.xabia-interface-web-speaking').toggle(!isKiosk);
+                $('.xabia-design-bg-note-transparent').toggle(isTransparent);
+                $('.xabia-design-bg-note-kiosk').toggle(isKiosk && !isTransparent);
+                if (isKiosk) {
+                    $('input[name="xabia_speaking_avatar"]:checkbox').prop('checked', true).prop('disabled', true);
+                } else {
+                    $('input[name="xabia_speaking_avatar"]:checkbox').prop('disabled', false);
+                }
                 $('.xabia-interface-exclusions-wrap').toggle(nativeEnabled && !hasIncludes);
                 $('.xabia-interface-exclusions-muted').toggle(nativeEnabled && hasIncludes);
                 $('.xabia-interface-custom-url-wrap').toggle(t === 'custom_image');
@@ -1398,6 +1634,19 @@ class Xabia_Interface {
                     xabiaSyncCustomPreview($('#xabia_custom_trigger_url').val());
                 }
             }
+            function xabiaSelectPresentationMode(mode) {
+                mode = mode || 'web_adaptive';
+                $('#xabia_presentation_mode').val(mode);
+                $('.xabia-pres-card').each(function() {
+                    var on = $(this).data('presentation-mode') === mode;
+                    $(this).toggleClass('is-selected', on).attr('aria-pressed', on ? 'true' : 'false');
+                });
+                xabiaSyncAgentInterfaceUi();
+            }
+            $('.xabia-pres-card').on('click', function(e) {
+                e.preventDefault();
+                xabiaSelectPresentationMode($(this).data('presentation-mode'));
+            });
             $('#xabia_trigger_type, #xabia_trigger_position, input[name="xabia_autoload_without_shortcode"], input[name="xabia_include_page_ids[]"], input[name="xabia_include_page_ids_manual"]').on('change input', xabiaSyncAgentInterfaceUi);
             $('#xabia_custom_trigger_url').on('change input', function(){ xabiaSyncCustomPreview($(this).val()); });
             xabiaSyncAgentInterfaceUi();

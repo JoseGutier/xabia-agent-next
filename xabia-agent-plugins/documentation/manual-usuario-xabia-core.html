@@ -228,11 +228,11 @@ img[alt="Xabia"] {
 <body>
 <h1>Manual de usuario — Xabia Agent Core</h1>
 <blockquote>
-<p><strong>Versión del producto:</strong> Xabia Agent Core <strong>v1.0.209</strong> (agosto 2026)<br><strong>Índice de manuales:</strong> <a href="https://xabia.ai/docs/">https://xabia.ai/docs/</a><br><strong>PDF en línea:</strong> <a href="https://xabia.ai/docs/manual-usuario-xabia-core.pdf">https://xabia.ai/docs/manual-usuario-xabia-core.pdf</a><br><strong>HTML en línea:</strong> <a href="https://xabia.ai/docs/manual-usuario-xabia-core.html">https://xabia.ai/docs/manual-usuario-xabia-core.html</a></p>
+<p><strong>Versión del producto:</strong> Xabia Agent Core <strong>v1.0.242</strong> (agosto 2026)<br><strong>Índice de manuales:</strong> <a href="https://xabia.ai/docs/">https://xabia.ai/docs/</a><br><strong>PDF en línea:</strong> <a href="https://xabia.ai/docs/manual-usuario-xabia-core.pdf">https://xabia.ai/docs/manual-usuario-xabia-core.pdf</a><br><strong>HTML en línea:</strong> <a href="https://xabia.ai/docs/manual-usuario-xabia-core.html">https://xabia.ai/docs/manual-usuario-xabia-core.html</a></p>
 </blockquote>
 <h2>Guía rápida de instalación</h2>
 <ol>
-<li>Descargue el ZIP de <strong>Xabia Agent Core</strong> (<code>xabia-agent-core-1.0.209.zip</code> o paquete retail equivalente).</li>
+<li>Descargue el ZIP de <strong>Xabia Agent Core</strong> (<code>xabia-agent-core-1.0.242.zip</code> o paquete retail equivalente).</li>
 <li>En WordPress, vaya a <strong>Plugins → Añadir nuevo → Subir plugin</strong>, seleccione el ZIP y pulse <strong>Instalar ahora → Activar</strong>.</li>
 <li>Abra <strong>Xabia Agent</strong> y configure <strong>Conexión a la IA</strong>: pegue la licencia <code>XABIA--…</code>, elija <strong>Xabia Cloud</strong> (recomendado) o <strong>Infraestructura propia</strong>, y guarde.</li>
 <li>Cree un agente desde <strong>Nuevo agente</strong>, escriba nombre, saludo e instrucciones básicas.</li>
@@ -285,7 +285,7 @@ img[alt="Xabia"] {
 </tr>
 <tr>
 <td><strong>Saludo distinto por idioma (automático)</strong></td>
-<td>Personalidad + licencia Core activa</td>
+<td>Comportamiento IA + licencia Core activa</td>
 <td>Escribir saludo en idioma base → <strong>Guardar agente</strong> (Core llama al Hub si hay WPML; DTP incluido en Core)</td>
 </tr>
 <tr>
@@ -408,34 +408,49 @@ img[alt="Xabia"] {
 <li><strong>Pausar:</strong> el agente deja de mostrarse en el sitio (no aparece el shortcode ni el disparador flotante). La configuración y la memoria se conservan.</li>
 <li>Si está pausado, la tarjeta muestra la etiqueta <strong>Pausado</strong> y el botón pasa a <strong>Activar</strong>.</li>
 </ul>
-<h3>2.5 Interfaz del chat por agente (pestaña Apariencia)</h3>
-<p>Desde la <strong>v1.0.28</strong>, la interfaz se configura <strong>por agente</strong> en <strong>Editar agente → Ajustes / Apariencia</strong>, sección <strong>«Interfaz del chat (avatar y panel)»</strong> (después de colores del chat). <strong>No</strong> hace falta Elementor ni bloques HTML en la página.</p>
+<h3>2.5 Interfaz del chat por agente (pestañas Apariencia y Comportamiento IA)</h3>
+<p>Desde la <strong>v1.0.28</strong>, la interfaz se configura <strong>por agente</strong>. En las versiones actuales verá dos pestañas separadas:</p>
+<ul>
+<li><strong>Apariencia:</strong> diseño visual (modo de presentación, avatar, burbuja, voz).</li>
+<li><strong>Comportamiento IA:</strong> saludo, instrucciones, RAG, sinónimos y límites.</li>
+</ul>
+<p>En <strong>Apariencia</strong>, el bloque principal es <strong>«¿Dónde se verá el agente?»</strong>: una <strong>cuadrícula de tarjetas visuales</strong> (con mini‑esquema) para elegir el perfil de presentación sin tener que interpretar nombres técnicos.</p>
 <p>Desde la <strong>v1.0.57</strong> hay modos claramente separados; desde la <strong>v1.0.192+</strong> existe además el <strong>lanzador incrustable</strong>:</p>
 <table>
 <thead>
 <tr>
-<th>Modo</th>
+<th>Perfil en la cuadrícula</th>
 <th>Qué se muestra</th>
 <th>Cuándo usarlo</th>
 </tr>
 </thead>
 <tbody><tr>
-<td><strong>Nativo</strong> (<strong>Mostrar en el sitio sin shortcode</strong> activado)</td>
-<td>Avatar flotante + panel de chat inyectados automáticamente en la web.</td>
-<td>Cuando quiere el botón Xabia global en páginas del sitio.</td>
+<td><strong>Web adaptable</strong></td>
+<td>Burbuja flotante automática (si la activa) + chat embebido por shortcode.</td>
+<td>Sitio web normal (desktop + móvil).</td>
+</tr>
+<tr>
+<td><strong>Tótem transparente (vertical / horizontal)</strong></td>
+<td>Pantalla completa sin fondo opaco; avatar y chat en dos zonas (arriba/abajo o izquierda/derecha).</td>
+<td>Cristal, escaparate o soporte transparente.</td>
+</tr>
+<tr>
+<td><strong>Pantalla (vertical / horizontal)</strong></td>
+<td>Pantalla completa con fondo sólido; avatar y chat en dos zonas.</td>
+<td>Kiosko o pantalla dedicada no transparente.</td>
 </tr>
 <tr>
 <td><strong>Shortcode chat</strong> (<code>[xabia_agent id=&quot;…&quot;]</code>)</td>
-<td>Solo el chat embebido donde pegue el shortcode; <strong>no</strong> aparece avatar flotante.</td>
-<td>Cuando quiere el panel completo en una página o landing.</td>
+<td>Solo el chat embebido donde pegue el shortcode.</td>
+<td>Landing o página concreta sin burbuja global.</td>
 </tr>
 <tr>
 <td><strong>Lanzador</strong> (<code>[xabia_launcher id=&quot;…&quot;]</code> o <code>[xabia_avatar id=&quot;…&quot;]</code>)</td>
-<td>Solo el <strong>botón avatar</strong> incrustado en el contenido; al hacer clic abre el mismo panel que el nativo.</td>
-<td>Hero, columnas Elementor, CTAs. Tamaños: <code>sm</code> / <code>md</code> / <code>lg</code> / <code>xl</code> o píxeles (<code>size=&quot;320&quot;</code>).</td>
+<td>Solo el botón/avatar incrustado; al hacer clic abre el panel.</td>
+<td>Hero, columnas Elementor, CTAs.</td>
 </tr>
 </tbody></table>
-<p>Las reglas <strong>Mostrar solo en estas páginas</strong> y <strong>Excluir estas páginas o entradas</strong> pertenecen al modo <strong>nativo</strong>. En modo shortcode/lanzador el chat o botón aparece únicamente donde esté pegado el shortcode.</p>
+<p>Las reglas <strong>Mostrar solo en estas páginas</strong> y <strong>Excluir estas páginas o entradas</strong> pertenecen a la burbuja de <strong>Web adaptable</strong>. En modo shortcode/lanzador el chat o botón aparece únicamente donde esté pegado el shortcode.</p>
 <h4>Avatar cinético oficial (v1.0.47)</h4>
 <p>El disparador por defecto reproduce el muñeco Xabia en <strong>capas SVG inline</strong> (cabeza, cuencas blancas y ojos/satélite), escaladas a una caja de 125×125 px:</p>
 <table>
@@ -488,7 +503,7 @@ img[alt="Xabia"] {
 <td>Al abrir el chat, fondo semitransparente con blur en toda la pantalla.</td>
 </tr>
 </tbody></table>
-<h4>Opciones en el panel de Apariencia</h4>
+<h4>Opciones principales en Apariencia</h4>
 <table>
 <thead>
 <tr>
@@ -497,36 +512,32 @@ img[alt="Xabia"] {
 </tr>
 </thead>
 <tbody><tr>
-<td><strong>Tipo de disparador</strong></td>
-<td>Avatar cinético (nativo) o imagen personalizada.</td>
+<td><strong>Modo de presentación (cuadrícula)</strong></td>
+<td>Define el soporte final: web, tótem transparente o pantalla dedicada (vertical/horizontal).</td>
+</tr>
+<tr>
+<td><strong>Tipo de avatar</strong></td>
+<td>Avatar animado (cinético) o imagen personalizada.</td>
 </tr>
 <tr>
 <td><strong>Colores del avatar</strong></td>
 <td>Tinte de cabeza, cuencas y ojos del avatar nativo.</td>
 </tr>
 <tr>
-<td><strong>Posición del disparador</strong></td>
-<td>Abajo-derecha, abajo-izquierda o márgenes personalizados (px, vh, vw).</td>
+<td><strong>Burbuja flotante (solo web)</strong></td>
+<td>Activa/desactiva la burbuja automática y sus reglas de visibilidad por página.</td>
 </tr>
 <tr>
-<td><strong>Comportamiento del panel</strong></td>
-<td>Flotante derecha, flotante izquierda, modal centrado, pantalla completa.</td>
+<td><strong>Esquina de la burbuja</strong></td>
+<td>Abajo derecha/izquierda o márgenes personalizados.</td>
 </tr>
 <tr>
-<td><strong>Avatar parlante</strong></td>
-<td>Activa el <strong>modo inmersivo</strong> (avatar grande / teatro) al abrir el panel. Independiente del mute TTS: silenciar la voz no desactiva el parlante (Core ≥ 1.0.200).</td>
+<td><strong>Panel al abrir el chat</strong></td>
+<td>Flotante derecha/izquierda, ventana centrada o pantalla amplia (solo web).</td>
 </tr>
 <tr>
-<td><strong>Mostrar en el sitio sin shortcode</strong></td>
-<td>Activa el modo nativo: avatar flotante + panel automático. Si se desmarca, use <code>[xabia_agent]</code> o <code>[xabia_launcher]</code>.</td>
-</tr>
-<tr>
-<td><strong>Mostrar solo en estas páginas</strong></td>
-<td>Limita el modo nativo a páginas concretas. Tiene prioridad sobre las exclusiones generales.</td>
-</tr>
-<tr>
-<td><strong>Exclusiones</strong></td>
-<td>Oculta el modo nativo por tipo de contenido, IDs de página, y carrito/checkout WooCommerce.</td>
+<td><strong>Avatar grande al abrir</strong></td>
+<td>En web se puede activar/desactivar; en tótem/pantalla dedicada queda siempre activo.</td>
 </tr>
 </tbody></table>
 <p>Guarde con <strong>Guardar agente</strong>. En modo nativo el plugin inyecta disparador y assets en <code>wp_footer</code> automáticamente. En modo shortcode, pegue <code>[xabia_agent id=&quot;su-agente&quot;]</code> o <code>[xabia_launcher id=&quot;su-agente&quot; size=&quot;lg&quot;]</code> donde corresponda.</p>
@@ -653,7 +664,8 @@ img[alt="Xabia"] {
 <ol>
 <li><strong>General</strong> — datos básicos, motor de IA solo si usa <strong>infraestructura propia</strong>, fuentes (CSV/SQL…) y cómo etiquetar columnas para el bot.</li>
 <li><strong>Smart QR / Tótems</strong> <em>(Core)</em> — página de aterrizaje, URLs de túnel, generador de QR por ente, modo kiosko. <a href="./manual-usuario-xabia-smart-qr.md">Manual detallado Smart QR</a>.</li>
-<li><strong>Personalidad</strong> — colores, lectura por voz, cuánto contexto usar, límites de respuesta y el “guión” general del asistente.</li>
+<li><strong>Apariencia</strong> — modo de presentación (cuadrícula visual), avatar, burbuja web y voz.</li>
+<li><strong>Comportamiento IA</strong> — saludo, preguntas sugeridas, prompt maestro, RAG/sinónimos/relaciones y límites.</li>
 <li><strong>Registro de conversaciones</strong> — historial reciente guardado si lo tiene habilitado.</li>
 </ol>
 <p>Los addons pueden añadir <strong>pestañas extra</strong> dentro del mismo agente (por ejemplo <strong>Avirato</strong>).</p>
@@ -847,7 +859,7 @@ img[alt="Xabia"] {
 <ul>
 <li><strong>Registros sincronizados:</strong> líneas incorporadas tras la última <strong>Sincronizar datos</strong>.</li>
 <li><strong>Listos para búsqueda inteligente:</strong> cuántos trozos ya llevan preparada la parte “semántica” si usa esa función.</li>
-<li><strong>Tokens hoy:</strong> cuántos ha gastado ese agente hoy comparado con su <strong>tope diario</strong> (véase más abajo en Personalidad).</li>
+<li><strong>Tokens hoy:</strong> cuántos ha gastado ese agente hoy comparado con su <strong>tope diario</strong> (véase más abajo en Comportamiento IA).</li>
 </ul>
 <h3>9.2 Botón «1. Sincronizar datos»</h3>
 <p>Vuelve a leer su CSV/SQL/multi‑fuente o conector según lo que configuró en <strong>General</strong>. Hágalo después de cambiar archivos fuente o la consulta.</p>
@@ -858,8 +870,8 @@ img[alt="Xabia"] {
 <h3>9.5 Zona de pruebas («Playground»)</h3>
 <p>Un chat de laboratorio igual que usará el visitante pero sin publicar página todavía. Ideal para tunear antes de abrir al público.</p>
 <hr>
-<h2>10. Pestaña «Personalidad»</h2>
-<p>Aquí da “cara y voz” al asistente. Algunos addons pueden añadir más opciones al final de esta pantalla.</p>
+<h2>10. Pestaña «Comportamiento IA»</h2>
+<p>Aquí define el estilo de respuesta del asistente y cómo usa su base de conocimiento.<br>La parte visual (modo de presentación, avatar y burbuja) está en la pestaña <strong>Apariencia</strong>.</p>
 <h3>10.1 Nombre del asistente (en los mensajes)</h3>
 <p>El nombre corto que verá el visitante junto a cada mensaje del bot (por defecto “Xabia”). <strong>No</strong> confundir con el <strong>avatar cinético</strong> del disparador flotante (§2.5). En el shortcode puede usar <code>avatar_name=&quot;…&quot;</code> para personalizarlo.</p>
 <h3>10.2 Colores y tipografía</h3>
@@ -909,7 +921,7 @@ img[alt="Xabia"] {
 <h3>10.12 Sitio multilingüe con WPML (saludo + textos del chat)</h3>
 <p>¿Quieres que tu asistente hable <strong>euskera</strong> o <strong>inglés</strong> de forma automática? Con <strong>WPML</strong> + <strong>String Translation</strong>, <strong>Core ≥ 1.0.72</strong> y licencia <strong>Cloud</strong>, sigue esta ruta rápida de <strong>3 pasos</strong>:</p>
 <ol>
-<li>Escribe tu <strong>saludo inicial en castellano</strong> dentro de la pestaña <strong>Personalidad</strong> y <strong>guarda el agente</strong>.</li>
+<li>Escribe tu <strong>saludo inicial en castellano</strong> dentro de la pestaña <strong>Comportamiento IA</strong> y <strong>guarda el agente</strong>.</li>
 <li>Xabia detectará tus idiomas activos y se encargará (gracias a tu licencia Cloud) de <strong>traducir el saludo automáticamente</strong> por detrás.</li>
 <li>Ve a <strong>WPML → String Translation</strong> y comprueba que tus traducciones están listas en el contexto <strong>Xabia AI</strong>. ¡Así de fácil!</li>
 </ol>
@@ -1114,10 +1126,10 @@ img[alt="Xabia"] {
 <h2>16. Orden práctico para no perderse</h2>
 <ol>
 <li>Modalidad <strong>Cloud</strong> vs <strong>infra propia</strong>, licencia y saldo (pantalla principal).  </li>
-<li><strong>Crear agente</strong> — nombre identificativo y cópielo en el shortcode donde quiera chat.  </li>
+<li><strong>Crear agente</strong> — nombre identificativo y copiar shortcode.  </li>
 <li>Elegir <strong>fuente</strong> de datos — mapear con calma; pruebas en staging si existe.  </li>
-<li><strong>Sincronizar datos</strong> → mirar estadísticas lateral → si usa búsqueda inteligente, <strong>Entrenar</strong> hasta que los contadores pinten coherentes.  </li>
-<li>Afinar <strong>Personalidad</strong> → probar Playground → publicar página con shortcode → vigilar gasto en Wallet.</li>
+<li><strong>Sincronizar datos</strong> → revisar barra lateral → si usa búsqueda inteligente, <strong>Entrenar</strong>.  </li>
+<li>Ajustar <strong>Apariencia</strong> (perfil de presentación) y <strong>Comportamiento IA</strong> → probar Playground → publicar → vigilar gasto en Wallet.</li>
 </ol>
 <hr>
 <h2>17. Problemas frecuentes (qué revisar antes de escribir a soporte)</h2>
@@ -1206,7 +1218,7 @@ img[alt="Xabia"] {
 <h3>¿Si elimino la licencia se borran mis agentes?</h3>
 <p><strong>No</strong> desaparecen de la lista ni su configuración borrada automáticamente, pero el <strong>chat dejará de funcionar</strong> bien en Cloud hasta que pegue <strong>otra licencia válida</strong>.</p>
 <h3>¿Hay saldo en la cartera pero el visitante ve “modo mantenimiento”?</h3>
-<p>Mire en <strong>Personalidad</strong> el <strong>tope diario de tokens por agente</strong>. La barra lateral <strong>Tokens hoy</strong> muestra si ya alcanzó ese techo para el día técnico en curso; al día siguiente ese contador vuelve a cero para el agente, aunque su <strong>cartera global</strong> siga teniendo saldo disponible para otros agentes u otros días.</p>
+<p>Mire en <strong>Comportamiento IA</strong> el <strong>tope diario de tokens por agente</strong>. La barra lateral <strong>Tokens hoy</strong> muestra si ya alcanzó ese techo para el día técnico en curso; al día siguiente ese contador vuelve a cero para el agente, aunque su <strong>cartera global</strong> siga teniendo saldo disponible para otros agentes u otros días.</p>
 <h2>Notas de versión (Core)</h2>
 <h3>Core v1.0.208 (agosto 2026)</h3>
 <ul>

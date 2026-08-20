@@ -17,7 +17,7 @@ Xabia Agent Core es el plugin principal de Xabia AI para WordPress. Permite crea
 - Endpoint seguro de recarga mediante HMAC.
 - Firma HMAC automática contra el proxy central usando la licencia guardada.
 - Compatibilidad con addons verticales como Xabia-Avirato.
-- Interfaz nativa con avatar flotante o shortcode embebido sin avatar.
+- Interfaz nativa con perfil visual por soporte (web, tótem transparente, pantalla) y shortcode embebido.
 - Respuestas políglotas según el idioma del último mensaje del usuario.
 - Addons MEC/Woo con conexión SQL remota cuando los datos viven en otro WordPress.
 
@@ -53,7 +53,7 @@ Para un agente concreto:
 [xabia_agent id="mi-agente"]
 ```
 
-Si **Mostrar en el sitio sin shortcode** está activado en Apariencia, el Core muestra avatar flotante + panel automáticamente. Si está desactivado, el shortcode muestra solo el chat embebido en la página, con halo visual y overlay de foco.
+Si en **Apariencia** eliges **Web adaptable** y activas «Mostrar burbuja en el sitio automáticamente», el Core muestra avatar flotante + panel. Si desactivas esa opción, el shortcode muestra solo el chat embebido en la página, con halo visual y overlay de foco.
 
 ## Wallet y recargas
 
@@ -78,7 +78,7 @@ El servidor central busca la licencia en `xabia_licenses` y usa esa misma clave 
 ## Documentación
 
 - Manual de usuario (embebido legacy): `docs/manual-usuario.md` — preferir el modular.
-- Manual Core modular (**v1.0.168**): [manual-usuario-xabia-core.md](../../documentation/manual-usuario-xabia-core.md)
+- Manual Core modular (**v1.0.242**): [manual-usuario-xabia-core.md](../../documentation/manual-usuario-xabia-core.md)
 - Guía de desarrollo: [DESARROLLO.md](../../documentation/DESARROLLO.md)
 - Despliegue producción: [DESPLIEGUE_PRODUCCION_CORE.md](../../documentation/DESPLIEGUE_PRODUCCION_CORE.md)
 

@@ -32,9 +32,10 @@ final class Xabia_Lite_API_Handler {
             ]);
         }
 
-        $message = isset($_POST['message'])
-            ? sanitize_textarea_field(wp_unslash((string) $_POST['message']))
-            : '';
+        $message_raw = isset($_POST['message']) ? wp_unslash((string) $_POST['message']) : '';
+        $message = class_exists('Xabia_Chat_Input', false)
+            ? Xabia_Chat_Input::clamp((string) $message_raw)
+            : sanitize_textarea_field((string) $message_raw);
         if ($message === '') {
             wp_send_json_success(['response' => '']);
         }

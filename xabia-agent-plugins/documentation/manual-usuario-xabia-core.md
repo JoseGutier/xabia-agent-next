@@ -1,13 +1,13 @@
 # Manual de usuario — Xabia Agent Core
 
-> **Versión del producto:** Xabia Agent Core **v1.0.217** (agosto 2026)  
+> **Versión del producto:** Xabia Agent Core **v1.0.247** (agosto 2026)  
 > **Índice de manuales:** [https://xabia.ai/docs/](https://xabia.ai/docs/)  
 > **PDF en línea:** [https://xabia.ai/docs/manual-usuario-xabia-core.pdf](https://xabia.ai/docs/manual-usuario-xabia-core.pdf)  
 > **HTML en línea:** [https://xabia.ai/docs/manual-usuario-xabia-core.html](https://xabia.ai/docs/manual-usuario-xabia-core.html)
 
 ## Guía rápida de instalación
 
-1. Descargue el ZIP de **Xabia Agent Core** (`xabia-agent-core-1.0.217.zip` o paquete retail equivalente).
+1. Descargue el ZIP de **Xabia Agent Core** (`xabia-agent-core-1.0.247.zip` o paquete retail equivalente).
 2. En WordPress, vaya a **Plugins → Añadir nuevo → Subir plugin**, seleccione el ZIP y pulse **Instalar ahora → Activar**.
 3. Abra **Xabia Agent** y configure **Conexión a la IA**: pegue la licencia `XABIA--…`, elija **Xabia Cloud** (recomendado) o **Infraestructura propia**, y guarde.
 4. Cree un agente desde **Nuevo agente**, escriba nombre, saludo e instrucciones básicas.
@@ -32,7 +32,7 @@ Use esta tabla como **hoja de ruta**. Cada fila indica la pantalla exacta y el o
 | **Avatar flotante en todo el sitio** | Editar agente → Apariencia | **Activar** «Mostrar en el sitio sin shortcode» → elegir páginas incluidas/excluidas → **Guardar agente** |
 | **Ocultar el chat sin borrarlo** | Listado de agentes | **Pausar** (vuelve con **Activar**) |
 | **Multilingüe con WPML (ES + EU + EN…)** | Ver §10.12 | Saludo en español → guardar agente → comprobar WPML String Translation → vaciar caché |
-| **Saludo distinto por idioma (automático)** | Personalidad + licencia Core activa | Escribir saludo en idioma base → **Guardar agente** (Core llama al Hub si hay WPML; DTP incluido en Core) |
+| **Saludo distinto por idioma (automático)** | Comportamiento IA + licencia Core activa | Escribir saludo en idioma base → **Guardar agente** (Core llama al Hub si hay WPML; DTP incluido en Core) |
 | **Saludo distinto por idioma (manual)** | WPML → String Translation | Contexto **Xabia AI** → cadena `Agent Greeting - su-agente` → traducir a mano |
 | **Placeholder «Escribe aquí…» traducido** | Core ≥ 1.0.72 + WPML | Instalar 1.0.72 → visitar el front una vez → comprobar dominio `xabia-intelligence` en String Translation |
 | **Conectar CSV o Excel** | General → Archivos CSV | Subir CSV → **Explorar/escanear** → mapear columnas → **Sincronizar** → **Entrenar** |
@@ -100,19 +100,26 @@ En cada tarjeta del listado hay tres acciones: **Editar**, **Pausar** / **Activa
 - **Pausar:** el agente deja de mostrarse en el sitio (no aparece el shortcode ni el disparador flotante). La configuración y la memoria se conservan.
 - Si está pausado, la tarjeta muestra la etiqueta **Pausado** y el botón pasa a **Activar**.
 
-### 2.5 Interfaz del chat por agente (pestaña Apariencia)
+### 2.5 Interfaz del chat por agente (pestañas Apariencia y Comportamiento IA)
 
-Desde la **v1.0.28**, la interfaz se configura **por agente** en **Editar agente → Ajustes / Apariencia**, sección **«Interfaz del chat (avatar y panel)»** (después de colores del chat). **No** hace falta Elementor ni bloques HTML en la página.
+Desde la **v1.0.28**, la interfaz se configura **por agente**. En las versiones actuales verá dos pestañas separadas:
+
+- **Apariencia:** diseño visual (modo de presentación, avatar, burbuja, voz).
+- **Comportamiento IA:** saludo, instrucciones, RAG, sinónimos y límites.
+
+En **Apariencia**, el bloque principal es **«¿Dónde se verá el agente?»**: una **cuadrícula de tarjetas visuales** (con mini‑esquema) para elegir el perfil de presentación sin tener que interpretar nombres técnicos.
 
 Desde la **v1.0.57** hay modos claramente separados; desde la **v1.0.192+** existe además el **lanzador incrustable**:
 
-| Modo | Qué se muestra | Cuándo usarlo |
+| Perfil en la cuadrícula | Qué se muestra | Cuándo usarlo |
 |------|----------------|---------------|
-| **Nativo** (**Mostrar en el sitio sin shortcode** activado) | Avatar flotante + panel de chat inyectados automáticamente en la web. | Cuando quiere el botón Xabia global en páginas del sitio. |
-| **Shortcode chat** (`[xabia_agent id="…"]`) | Solo el chat embebido donde pegue el shortcode; **no** aparece avatar flotante. | Cuando quiere el panel completo en una página o landing. |
-| **Lanzador** (`[xabia_launcher id="…"]` o `[xabia_avatar id="…"]`) | Solo el **botón avatar** incrustado en el contenido; al hacer clic abre el mismo panel que el nativo. | Hero, columnas Elementor, CTAs. Tamaños: `sm` / `md` / `lg` / `xl` o píxeles (`size="320"`). |
+| **Web adaptable** | Burbuja flotante automática (si la activa) + chat embebido por shortcode. | Sitio web normal (desktop + móvil). |
+| **Tótem transparente (vertical / horizontal)** | Pantalla completa sin fondo opaco; avatar y chat en dos zonas (arriba/abajo o izquierda/derecha). | Cristal, escaparate o soporte transparente. |
+| **Pantalla (vertical / horizontal)** | Pantalla completa con fondo sólido; avatar y chat en dos zonas. | Kiosko o pantalla dedicada no transparente. |
+| **Shortcode chat** (`[xabia_agent id="…"]`) | Solo el chat embebido donde pegue el shortcode. | Landing o página concreta sin burbuja global. |
+| **Lanzador** (`[xabia_launcher id="…"]` o `[xabia_avatar id="…"]`) | Solo el botón/avatar incrustado; al hacer clic abre el panel. | Hero, columnas Elementor, CTAs. |
 
-Las reglas **Mostrar solo en estas páginas** y **Excluir estas páginas o entradas** pertenecen al modo **nativo**. En modo shortcode/lanzador el chat o botón aparece únicamente donde esté pegado el shortcode.
+Las reglas **Mostrar solo en estas páginas** y **Excluir estas páginas o entradas** pertenecen a la burbuja de **Web adaptable**. En modo shortcode/lanzador el chat o botón aparece únicamente donde esté pegado el shortcode.
 
 #### Avatar cinético oficial (v1.0.47)
 
@@ -135,18 +142,17 @@ El avatar **mira al cursor** con efecto de profundidad: la cabeza se mueve muy p
 | **Panel de chat** | Flotante derecha/izquierda, **modal centrado con desenfoque**, o pantalla completa. |
 | **Telón** | Al abrir el chat, fondo semitransparente con blur en toda la pantalla. |
 
-#### Opciones en el panel de Apariencia
+#### Opciones principales en Apariencia
 
 | Ajuste | Qué hace |
 |--------|----------|
-| **Tipo de disparador** | Avatar cinético (nativo) o imagen personalizada. |
+| **Modo de presentación (cuadrícula)** | Define el soporte final: web, tótem transparente o pantalla dedicada (vertical/horizontal). |
+| **Tipo de avatar** | Avatar animado (cinético) o imagen personalizada. |
 | **Colores del avatar** | Tinte de cabeza, cuencas y ojos del avatar nativo. |
-| **Posición del disparador** | Abajo-derecha, abajo-izquierda o márgenes personalizados (px, vh, vw). |
-| **Comportamiento del panel** | Flotante derecha, flotante izquierda, modal centrado, pantalla completa. |
-| **Avatar parlante** | Activa el **modo inmersivo** (avatar grande / teatro) al abrir el panel. Independiente del mute TTS: silenciar la voz no desactiva el parlante (Core ≥ 1.0.200). |
-| **Mostrar en el sitio sin shortcode** | Activa el modo nativo: avatar flotante + panel automático. Si se desmarca, use `[xabia_agent]` o `[xabia_launcher]`. |
-| **Mostrar solo en estas páginas** | Limita el modo nativo a páginas concretas. Tiene prioridad sobre las exclusiones generales. |
-| **Exclusiones** | Oculta el modo nativo por tipo de contenido, IDs de página, y carrito/checkout WooCommerce. |
+| **Burbuja flotante (solo web)** | Activa/desactiva la burbuja automática y sus reglas de visibilidad por página. |
+| **Esquina de la burbuja** | Abajo derecha/izquierda o márgenes personalizados. |
+| **Panel al abrir el chat** | Flotante derecha/izquierda, ventana centrada o pantalla amplia (solo web). |
+| **Avatar grande al abrir** | En web se puede activar/desactivar; en tótem/pantalla dedicada queda siempre activo. |
 
 Guarde con **Guardar agente**. En modo nativo el plugin inyecta disparador y assets en `wp_footer` automáticamente. En modo shortcode, pegue `[xabia_agent id="su-agente"]` o `[xabia_launcher id="su-agente" size="lg"]` donde corresponda.
 
@@ -271,8 +277,9 @@ Al pulsar **Editar** o **Nuevo agente**, el formulario usa pestañas. Las predet
 
 1. **General** — datos básicos, motor de IA solo si usa **infraestructura propia**, fuentes (CSV/SQL…) y cómo etiquetar columnas para el bot.
 2. **Smart QR / Tótems** *(Core)* — página de aterrizaje, URLs de túnel, generador de QR por ente, modo kiosko. [Manual detallado Smart QR](./manual-usuario-xabia-smart-qr.md).
-3. **Personalidad** — colores, lectura por voz, cuánto contexto usar, límites de respuesta y el “guión” general del asistente.
-4. **Registro de conversaciones** — historial reciente guardado si lo tiene habilitado.
+3. **Apariencia** — modo de presentación (cuadrícula visual), avatar, burbuja web y voz.
+4. **Comportamiento IA** — saludo, preguntas sugeridas, prompt maestro, RAG/sinónimos/relaciones y límites.
+5. **Registro de conversaciones** — historial reciente guardado si lo tiene habilitado.
 
 Los addons pueden añadir **pestañas extra** dentro del mismo agente (por ejemplo **Avirato**).
 
@@ -485,7 +492,7 @@ La columna derecha (memoria + Playground) **hace scroll con la página** (Core �
 
 - **Registros sincronizados:** líneas incorporadas tras la última **Sincronizar datos**.
 - **Listos para búsqueda inteligente:** cuántos trozos ya llevan preparada la parte “semántica” si usa esa función.
-- **Tokens hoy:** cuántos ha gastado ese agente hoy comparado con su **tope diario** (véase más abajo en Personalidad).
+- **Tokens hoy:** cuántos ha gastado ese agente hoy comparado con su **tope diario** (véase más abajo en Comportamiento IA).
 
 ### 9.2 Botón «1. Sincronizar datos»
 
@@ -505,9 +512,10 @@ Un chat de laboratorio igual que usará el visitante pero sin publicar página t
 
 ---
 
-## 10. Pestaña «Personalidad»
+## 10. Pestaña «Comportamiento IA»
 
-Aquí da “cara y voz” al asistente. Algunos addons pueden añadir más opciones al final de esta pantalla.
+Aquí define el estilo de respuesta del asistente y cómo usa su base de conocimiento.  
+La parte visual (modo de presentación, avatar y burbuja) está en la pestaña **Apariencia**.
 
 ### 10.1 Nombre del asistente (en los mensajes)
 
@@ -583,7 +591,7 @@ Evite en el prompt maestro frases rígidas como «responde exclusivamente en esp
 
 ¿Quieres que tu asistente hable **euskera** o **inglés** de forma automática? Con **WPML** + **String Translation**, **Core ≥ 1.0.72** y licencia **Cloud**, sigue esta ruta rápida de **3 pasos**:
 
-1. Escribe tu **saludo inicial en castellano** dentro de la pestaña **Personalidad** y **guarda el agente**.
+1. Escribe tu **saludo inicial en castellano** dentro de la pestaña **Comportamiento IA** y **guarda el agente**.
 2. Xabia detectará tus idiomas activos y se encargará (gracias a tu licencia Cloud) de **traducir el saludo automáticamente** por detrás.
 3. Ve a **WPML → String Translation** y comprueba que tus traducciones están listas en el contexto **Xabia AI**. ¡Así de fácil!
 
@@ -751,10 +759,10 @@ El **ZIP** del instalador y el contrato siguen llegando por el canal comercial o
 ## 16. Orden práctico para no perderse
 
 1. Modalidad **Cloud** vs **infra propia**, licencia y saldo (pantalla principal).  
-2. **Crear agente** — nombre identificativo y cópielo en el shortcode donde quiera chat.  
+2. **Crear agente** — nombre identificativo y copiar shortcode.  
 3. Elegir **fuente** de datos — mapear con calma; pruebas en staging si existe.  
-4. **Sincronizar datos** → mirar estadísticas lateral → si usa búsqueda inteligente, **Entrenar** hasta que los contadores pinten coherentes.  
-5. Afinar **Personalidad** → probar Playground → publicar página con shortcode → vigilar gasto en Wallet.
+4. **Sincronizar datos** → revisar barra lateral → si usa búsqueda inteligente, **Entrenar**.  
+5. Ajustar **Apariencia** (perfil de presentación) y **Comportamiento IA** → probar Playground → publicar → vigilar gasto en Wallet.
 
 ---
 
@@ -812,7 +820,7 @@ Depende de **condiciones contractuales**: dos direcciones públicas distintas a 
 
 ### ¿Hay saldo en la cartera pero el visitante ve “modo mantenimiento”?
 
-Mire en **Personalidad** el **tope diario de tokens por agente**. La barra lateral **Tokens hoy** muestra si ya alcanzó ese techo para el día técnico en curso; al día siguiente ese contador vuelve a cero para el agente, aunque su **cartera global** siga teniendo saldo disponible para otros agentes u otros días.
+Mire en **Comportamiento IA** el **tope diario de tokens por agente**. La barra lateral **Tokens hoy** muestra si ya alcanzó ese techo para el día técnico en curso; al día siguiente ese contador vuelve a cero para el agente, aunque su **cartera global** siga teniendo saldo disponible para otros agentes u otros días.
 
 ## Notas de versión (Core)
 

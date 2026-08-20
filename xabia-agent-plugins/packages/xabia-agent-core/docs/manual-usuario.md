@@ -1,9 +1,9 @@
 # Manual de usuario — Xabia Agent
 
-> **Nota (julio 2026):** este archivo es el **manual legacy voluminoso**. La guía de producto actualizada es el **manual modular Core v1.0.166**: [manual-usuario-xabia-core.md](./manual-usuario-xabia-core.md) (PDF/HTML en [xabia.ai/docs/](https://xabia.ai/docs/manual-usuario-xabia-core.pdf)). Use este documento solo como referencia histórica o material de redacción.
+> **Nota (agosto 2026):** este archivo es el **manual legacy voluminoso**. La guía de producto actualizada es el **manual modular Core v1.0.242**: [manual-usuario-xabia-core.md](./manual-usuario-xabia-core.md) (PDF/HTML en [xabia.ai/docs/](https://xabia.ai/docs/manual-usuario-xabia-core.pdf)). Use este documento solo como referencia histórica o material de redacción.
 
 **Versión del manual:** 2.0 (legacy)  
-**Producto actual:** Xabia Agent Core **v1.0.166**
+**Producto actual:** Xabia Agent Core **v1.0.242**
 
 ---
 

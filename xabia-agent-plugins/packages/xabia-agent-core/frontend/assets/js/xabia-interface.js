@@ -60,6 +60,7 @@
         const head = root.querySelector('.x-avatar-head-layer');
         const sockets = root.querySelector('.x-avatar-sockets-layer');
         const eyes = root.querySelector('.x-avatar-eyes-layer');
+        const mouth = root.querySelector('.x-avatar-mouth-layer');
         const container = root.querySelector('.x-avatar-container');
         const blinkEyes = root.querySelectorAll('.x-avatar-fill-dot, .x-avatar-fill-secondary');
         if (!head || !sockets || !eyes || !container || !window.gsap) {
@@ -68,13 +69,11 @@
 
         root.setAttribute('data-xabia-kinetic-bound', '1');
 
-        const target = { x: 0, y: 0 };
         const lookProfile = resolveLookProfile(root);
-        const clampY = window.gsap.utils.clamp(-1, 1);
-        const clampX = window.gsap.utils.clamp(lookProfile.clampMinX, lookProfile.clampMaxX);
         const reduceMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
         const isTouchLike = window.matchMedia && window.matchMedia('(hover: none), (pointer: coarse)').matches;
         const idleBias = resolveIdleBias(root, isTouchLike);
+        const isLauncher = root.classList.contains('xabia-interface-trigger');
 
         function axisOffset(layerKey, normalized) {
             const layer = lookProfile.layers[layerKey];
@@ -88,7 +87,7 @@
             transformPerspective: 1000,
             transformOrigin: 'center center',
         });
-        window.gsap.set([head, sockets, eyes], {
+        window.gsap.set([head, sockets, eyes, mouth], {
             transformOrigin: 'center center',
             force3D: true,
         });
@@ -100,114 +99,63 @@
             });
         }
 
-        function normalizedLookVector(clientX, clientY) {
-            const rect = container.getBoundingClientRect();
-            const centerX = rect.left + rect.width / 2;
-            const centerY = rect.top + rect.height / 2;
-            const reachX = Math.max(window.innerWidth * 0.28, rect.width * 2);
-            const reachY = Math.max(window.innerHeight * 0.28, rect.height * 2);
-            let nx = ((clientX - centerX) / reachX + lookProfile.vectorBiasX) * lookProfile.vectorScaleX;
-            let ny = (clientY - centerY) / reachY;
-
-            return {
-                x: clampX(nx),
-                y: clampY(ny),
+        function applyGazePose(nx, ny, duration) {
+            const mouthLayer = lookProfile.layers.mouth || { xRight: 10, xLeft: 8, y: 4 };
+            const pose = {
+                head: {
+                    x: axisOffset('head', nx) * 0.3,
+                    y: ny * lookProfile.layers.head.y * 0.3,
+                },
+                sockets: {
+                    x: axisOffset('sockets', nx),
+                    y: ny * lookProfile.layers.sockets.y,
+                },
+                eyes: {
+                    x: axisOffset('eyes', nx),
+                    y: ny * lookProfile.layers.eyes.y,
+                    rotateY: nx * lookProfile.rotateY,
+                    rotateX: ny * lookProfile.rotateX,
+                },
+                mouth: {
+                    x: nx >= 0 ? nx * mouthLayer.xRight : nx * mouthLayer.xLeft,
+                    y: ny * mouthLayer.y,
+                },
             };
-        }
 
-        function applyLook(clientX, clientY) {
-            const next = normalizedLookVector(clientX, clientY);
-            target.x = next.x;
-            target.y = next.y;
+            if (!duration) {
+                window.gsap.set(head, pose.head);
+                window.gsap.set(sockets, pose.sockets);
+                window.gsap.set(eyes, pose.eyes);
+                if (mouth) {
+                    window.gsap.set(mouth, pose.mouth);
+                }
+                return;
+            }
 
-            window.gsap.to(head, {
-                x: axisOffset('head', target.x),
-                y: target.y * lookProfile.layers.head.y,
-                duration: 0.3,
-                ease: 'power2.out',
-                overwrite: 'auto',
-            });
-
-            window.gsap.to(sockets, {
-                x: axisOffset('sockets', target.x),
-                y: target.y * lookProfile.layers.sockets.y,
-                duration: 0.3,
-                ease: 'power2.out',
-                overwrite: 'auto',
-            });
-
-            window.gsap.to(eyes, {
-                x: axisOffset('eyes', target.x),
-                y: target.y * lookProfile.layers.eyes.y,
-                rotateY: target.x * lookProfile.rotateY,
-                rotateX: target.y * lookProfile.rotateX,
-                duration: 0.3,
-                ease: 'power2.out',
-                overwrite: 'auto',
-            });
+            const tweenOpts = { duration: duration, ease: 'power2.out', overwrite: 'auto' };
+            window.gsap.to(head, Object.assign({}, tweenOpts, pose.head));
+            window.gsap.to(sockets, Object.assign({}, tweenOpts, pose.sockets));
+            window.gsap.to(eyes, Object.assign({}, tweenOpts, pose.eyes));
+            if (mouth) {
+                window.gsap.to(mouth, Object.assign({}, tweenOpts, pose.mouth));
+            }
         }
 
         function applyIdleBias() {
-            window.gsap.to(head, {
-                x: axisOffset('head', idleBias.x),
-                y: idleBias.y * lookProfile.layers.head.y,
-                duration: 0.38,
-                ease: 'power2.out',
-                overwrite: 'auto',
-            });
-            window.gsap.to(sockets, {
-                x: axisOffset('sockets', idleBias.x),
-                y: idleBias.y * lookProfile.layers.sockets.y,
-                duration: 0.38,
-                ease: 'power2.out',
-                overwrite: 'auto',
-            });
-            window.gsap.to(eyes, {
-                x: axisOffset('eyes', idleBias.x),
-                y: idleBias.y * lookProfile.layers.eyes.y,
-                rotateY: idleBias.x * (lookProfile.rotateY - 2),
-                rotateX: idleBias.y * (lookProfile.rotateX + 1),
-                duration: 0.38,
-                ease: 'power2.out',
-                overwrite: 'auto',
-            });
+            applyGazePose(idleBias.x, idleBias.y, 0.38);
         }
 
-        function relaxLook() {
-            if (isTouchLike) {
-                applyIdleBias();
-                return;
-            }
-            window.gsap.to([head, sockets, eyes], { x: 0, y: 0, rotateX: 0, rotateY: 0, duration: 0.45, ease: 'power2.out', overwrite: 'auto' });
-        }
-
+        /* Sin seguimiento del ratón en launcher ni en ningún avatar. */
         if (!reduceMotion) {
-            window.addEventListener('pointermove', function (e) {
-                if (e.pointerType === 'touch') {
-                    return;
-                }
-                /* Si el trigger flotante está oculto (modo inmersivo), no gastar ciclos en él */
-                if (root.classList.contains('xabia-interface-trigger')) {
-                    const style = window.getComputedStyle(root);
-                    if (style.visibility === 'hidden' || style.opacity === '0' || style.pointerEvents === 'none') {
-                        return;
-                    }
-                }
-                applyLook(e.clientX, e.clientY);
-            }, { passive: true });
-
-            window.addEventListener('mouseout', function (e) {
-                if (!e.relatedTarget) {
-                    relaxLook();
-                }
-            });
-
             if (blinkEyes.length) {
                 scheduleBlink();
             }
-        }
-
-        if (isTouchLike) {
+            if (isLauncher || isTouchLike) {
+                applyIdleBias();
+            } else {
+                scheduleIdleGaze();
+            }
+        } else {
             applyIdleBias();
         }
 
@@ -229,6 +177,74 @@
                         overwrite: 'auto',
                     });
             });
+        }
+
+        function scheduleIdleGaze() {
+            const hostChat = root.closest('.xabia-chatbox');
+            const idleGaze = { x: idleBias.x, y: idleBias.y };
+
+            function avatarBusy() {
+                return document.body.classList.contains('xabia-avatar-speaking')
+                    || document.body.classList.contains('xabia-avatar-thinking')
+                    || document.body.classList.contains('xabia-mic-listening')
+                    || (hostChat && hostChat.classList.contains('xabia-mic-is-listening'));
+            }
+
+            function randomGazeX() {
+                if (Math.random() < 0.72) {
+                    return window.gsap.utils.random(0.28, 1);
+                }
+                return window.gsap.utils.random(-0.25, 0.35);
+            }
+
+            function wanderGaze() {
+                if (!root.isConnected) {
+                    return;
+                }
+                if (avatarBusy()) {
+                    window.gsap.to(idleGaze, {
+                        x: idleBias.x,
+                        y: idleBias.y,
+                        duration: 0.28,
+                        ease: 'power2.out',
+                        onUpdate: function () {
+                            applyGazePose(idleGaze.x, idleGaze.y, 0);
+                        },
+                        onComplete: function () {
+                            window.gsap.delayedCall(0.3, wanderGaze);
+                        },
+                    });
+                    return;
+                }
+
+                const targetX = randomGazeX();
+                const targetY = window.gsap.utils.random(-0.22, 0.28);
+                window.gsap.to(idleGaze, {
+                    x: targetX,
+                    y: targetY,
+                    duration: window.gsap.utils.random(0.38, 0.68),
+                    ease: 'power2.inOut',
+                    onUpdate: function () {
+                        applyGazePose(idleGaze.x, idleGaze.y, 0);
+                    },
+                    onComplete: function () {
+                        window.gsap.to(idleGaze, {
+                            x: idleBias.x + (targetX - idleBias.x) * 0.18,
+                            y: idleBias.y + (targetY - idleBias.y) * 0.18,
+                            duration: window.gsap.utils.random(2, 3.4),
+                            delay: window.gsap.utils.random(0.5, 1.2),
+                            ease: 'sine.inOut',
+                            onUpdate: function () {
+                                applyGazePose(idleGaze.x, idleGaze.y, 0);
+                            },
+                            onComplete: wanderGaze,
+                        });
+                    },
+                });
+            }
+
+            applyGazePose(idleBias.x, idleBias.y, 0.38);
+            wanderGaze();
         }
     }
 
@@ -258,6 +274,7 @@
                 sockets: { xRight: 7, xLeft: 7, y: 6 },
                 /* Ojos más allá del socket blanco (desborde a la derecha como en diseño) */
                 eyes: { xRight: 48, xLeft: 32, y: 18 },
+                mouth: { xRight: 11, xLeft: 8, y: 4 },
             },
         };
     }
@@ -273,9 +290,11 @@
         ));
 
         if (isImmersive) {
+            profile.vectorBiasX = 0.16;
             profile.layers.head = { xRight: 4, xLeft: 4, y: 3 };
-            profile.layers.sockets = { xRight: 10, xLeft: 10, y: 8 };
-            profile.layers.eyes = { xRight: 62, xLeft: 44, y: 26 };
+            profile.layers.sockets = { xRight: 14, xLeft: 8, y: 8 };
+            profile.layers.eyes = { xRight: 78, xLeft: 26, y: 26 };
+            profile.layers.mouth = { xRight: 16, xLeft: 10, y: 5 };
             profile.rotateY = 14;
             profile.rotateX = -11;
             return profile;
@@ -309,6 +328,13 @@
     function resolveIdleBias(root, isTouchLike) {
         if (!isTouchLike) {
             return { x: 0, y: 0 };
+        }
+        const isImmersive = !!(root.classList && (
+            root.classList.contains('xabia-kinetic-wrapper--immersive')
+            || (root.closest && root.closest('.xabia-immersive-avatar-stage'))
+        ));
+        if (isImmersive) {
+            return { x: 0.24, y: 0.02 };
         }
         const footerBox = root.closest ? root.closest('.xabia-sticky-footer-box') : null;
         const inward = footerBox && footerBox.classList.contains('xabia-mobile-preset-ultra-compact') ? 0.5 : 0.42;
