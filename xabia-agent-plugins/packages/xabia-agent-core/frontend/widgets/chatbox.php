@@ -450,6 +450,10 @@ function shortcode_xabia_agent_renderer($atts) {
 
         <?php if ($speaking_avatar) : ?>
         <div class="xabia-immersive-avatar-stage" aria-hidden="<?php echo $is_kiosk_presentation ? 'false' : 'true'; ?>">
+            <div class="xabia-immersive-identity">
+                <span class="xabia-chat-header__status" aria-hidden="true"></span>
+                <span class="xabia-immersive-identity__name"><?php echo esc_html($avatar_name); ?></span>
+            </div>
             <?php if ($custom_avatar_url !== '') : ?>
                 <div class="xabia-kinetic-wrapper xabia-kinetic-wrapper--immersive xabia-kinetic-wrapper--custom" aria-hidden="true">
                     <img src="<?php echo esc_url($custom_avatar_url); ?>" alt="" class="xabia-trigger-custom-img xabia-trigger-custom-img--immersive" width="280" height="280" loading="lazy" decoding="async" />

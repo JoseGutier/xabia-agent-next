@@ -1652,15 +1652,34 @@ body.xabia-keyboard-open.xabia-mobile-chat-stack .xabia-chatbox.xabia-panel-shel
         height: auto !important;
         max-height: 25dvh !important;
         min-height: 0 !important;
-        padding: 0.45rem 0.85rem 0.25rem;
+        padding: calc(env(safe-area-inset-top, 0px) + 0.35rem) 0.85rem 0.25rem !important;
         background: #ffffff !important;
         align-items: center !important;
-        justify-content: flex-end !important;
+        justify-content: space-between !important;
+        gap: 0.65rem !important;
+        box-sizing: border-box !important;
+    }
+
+    .xabia-chatbox.xabia-panel-shell.xabia-immersive-mode.is-active .xabia-chat-header {
+        display: none !important;
+        height: 0 !important;
+        min-height: 0 !important;
+        max-height: 0 !important;
+        padding: 0 !important;
+        margin: 0 !important;
+        overflow: hidden !important;
+        border: none !important;
+    }
+
+    .xabia-chatbox.xabia-panel-shell.xabia-immersive-mode.is-active .xabia-immersive-identity {
+        display: flex !important;
     }
 
     .xabia-chatbox.xabia-panel-shell.xabia-immersive-mode.is-active .xabia-kinetic-wrapper--immersive {
         width: min(28vw, 112px) !important;
         height: min(28vw, 112px) !important;
+        flex: 0 0 auto !important;
+        margin-right: 0 !important;
     }
 
     .xabia-chatbox.xabia-panel-shell.xabia-immersive-mode.is-active .xabia-immersive-panel {

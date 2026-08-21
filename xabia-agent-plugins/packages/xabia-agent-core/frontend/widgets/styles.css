@@ -1412,6 +1412,27 @@ body.xabia-mic-listening .xabia-chatbox.xabia-immersive-mode .xabia-mic-listenin
     overflow: visible;
 }
 
+/* Identidad junto al avatar: solo móvil (escritorio usa el header). */
+.xabia-immersive-identity {
+    display: none;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+    flex: 1 1 auto;
+    padding-left: 0.15rem;
+    pointer-events: none;
+}
+
+.xabia-immersive-identity__name {
+    font-size: 15px;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+    color: #111827;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
 .xabia-immersive-mode .xabia-immersive-avatar-stage {
     pointer-events: auto;
     cursor: pointer;
@@ -1683,17 +1704,36 @@ body.xabia-avatar-thinking .x-avatar-thinking-dots,
         max-height: 25dvh !important;
         min-height: 0 !important;
         height: auto !important;
-        padding: 0.45rem 0.85rem 0.25rem;
+        padding: calc(env(safe-area-inset-top, 0px) + 0.35rem) 0.85rem 0.25rem;
         background: #ffffff !important;
         align-items: center;
-        justify-content: flex-end;
+        justify-content: space-between;
+        gap: 0.65rem;
+        box-sizing: border-box;
+    }
+
+    /* Quitar barra de header en móvil inmersivo: identidad vive junto al avatar. */
+    .xabia-ui-modern.xabia-immersive-mode .xabia-chat-header {
+        display: none !important;
+        height: 0 !important;
+        min-height: 0 !important;
+        max-height: 0 !important;
+        padding: 0 !important;
+        margin: 0 !important;
+        overflow: hidden !important;
+        border: none !important;
+    }
+
+    .xabia-immersive-mode .xabia-immersive-identity {
+        display: flex !important;
     }
 
     .xabia-immersive-mode .xabia-kinetic-wrapper--immersive {
         width: min(28vw, 112px) !important;
         height: min(28vw, 112px) !important;
         max-width: 100%;
-        margin-right: 0.35rem;
+        margin-right: 0;
+        flex: 0 0 auto;
     }
 
     .xabia-immersive-mode .xabia-kinetic-wrapper--immersive .x-avatar-container {
@@ -1909,7 +1949,7 @@ body.xabia-kiosk-open .xabia-kiosk-embed {
     height: auto !important;
     padding: 0.45rem 0.85rem 0.25rem;
     align-items: center;
-    justify-content: flex-end;
+    justify-content: space-between;
 }
 
 .xabia-present-vertical .xabia-immersive-panel {
