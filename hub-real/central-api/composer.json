@@ -1,0 +1,16 @@
+{
+    "name": "digixop/xabia-hub",
+    "description": "Hub central para gestión de licencias y proxy de Vertex AI",
+    "type": "project",
+    "require": {
+        "php": ">=7.4"
+    },
+    "autoload": {
+        "psr-4": {
+            "XabiaCentral\\": "src/"
+        }
+    },
+    "config": {
+        "sort-packages": true
+    }
+}

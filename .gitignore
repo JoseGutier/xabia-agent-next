@@ -27,10 +27,18 @@ vendor/
 build/
 xabia-agent-plugins/dist/
 
-# Copias locales / backups no versionados
-hub-real/
+# Backups locales no versionados
 central-api_BACKUP-*/
+
+# Hub real: versionar código; excluir secretos y vendor
+hub-real/**/.env
+hub-real/**/.env.*
+hub-real/**/google-key.json
+hub-real/**/vendor/
+hub-real/dist/
 
 # Nota: el código fuente del Core vive en xabia-agent-plugins/packages/xabia-agent-core/
 # La API del chat (class-xabia-api.php) en xabia-agent-plugins/api/ (se empaqueta en el ZIP Core).
 # Addons comerciales: xabia-agent-plugins/packages/xabia-woo|mec|avirato/
+# Hub: hub-real/central-api/ (espejo prod) + xabia-agent-plugins/central-api/src/ (deploy)
+# Smart QR: integrado en Core (no hay paquete/ZIP xabia-smart-qr)

@@ -265,7 +265,11 @@ REMOTE
 deploy_hub_php() {
   local hub_path
   hub_path="$(normalize_remote_path "$XABIA_PROD_HUB_PATH")"
-  local src_local="$ROOT/xabia-agent-plugins/central-api/src"
+  # Prefer hub-real (espejo completo de prod); fallback al árbol de deploy.
+  local src_local="$ROOT/hub-real/central-api/src"
+  if [[ ! -d "$src_local" ]]; then
+    src_local="$ROOT/xabia-agent-plugins/central-api/src"
+  fi
   local remote_src="${hub_path}/src"
 
   if [[ ! -d "$src_local" ]]; then
@@ -274,7 +278,7 @@ deploy_hub_php() {
     return 0
   fi
 
-  # Puente DTP + Router + pipeline conocimiento Hub.
+  # Núcleo Hub: Router, DTP, conocimiento, Polar, Vertex, Workers.
   local -a hub_files=(
     Router.php
     DtpEntitlement.php
@@ -286,6 +290,10 @@ deploy_hub_php() {
     KnowledgeSlug.php
     LicenseRepository.php
     PolarProductMap.php
+    VertexForwarder.php
+    UpdatesHandler.php
+    UpdateCatalog.php
+    ProxyHandler.php
   )
   local -a hub_worker_files=(
     Workers/VectorizationWorker.php

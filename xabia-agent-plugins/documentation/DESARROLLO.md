@@ -7,7 +7,7 @@
 **Memoria técnica:** [MEMORIA_TECNICA.md](../../MEMORIA_TECNICA.md)  
 **Audiencia:** desarrolladores que mantienen el plugin, añaden integraciones o depuran RAG/LLM.
 
-Esta guía **profundiza en el diseño del software** y complementa [MEMORIA_TECNICA.md](../../MEMORIA_TECNICA.md) (referencia exhaustiva) y [CONTRIBUTING.md](../../CONTRIBUTING.md) (onboarding rápido). El **manual de usuario canónico** es [manual-usuario-xabia-core.md](./manual-usuario-xabia-core.md) (add-ons: MEC, Woo, Avirato, Smart QR en esta misma carpeta).
+Esta guía **profundiza en el diseño del software** y complementa [MEMORIA_TECNICA.md](../../MEMORIA_TECNICA.md) (referencia exhaustiva) y [CONTRIBUTING.md](../../CONTRIBUTING.md) (onboarding rápido). El **manual de usuario canónico** es [manual-usuario-xabia-core.md](./manual-usuario-xabia-core.md). **Smart QR / tótems va incluido en el Core** (no es addon de pago; manual: [manual-usuario-xabia-smart-qr.md](./manual-usuario-xabia-smart-qr.md)). Addons comerciales opcionales: MEC, Woo, Avirato.
 
 ---
 

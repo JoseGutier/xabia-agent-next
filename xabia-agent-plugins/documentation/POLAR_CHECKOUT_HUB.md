@@ -38,7 +38,7 @@ Mapa en código: `central-api/src/PolarProductMap.php`. Overrides opcionales en 
 
 | Funcionalidad | Motivo |
 |---------------|--------|
-| **Smart QR / tótems** | Incluido en Core (`xabia-smart-qr` en el paquete Core). |
+| **Smart QR / tótems** | Incluido en **Xabia Agent Core** (`core/class-xabia-smart-qr.php` + `addons/xabia-qr/`). **No** es producto Polar ni ZIP aparte; el plugin legacy `xabia-smart-qr` está obsoleto. |
 | **DTP / traducción WPML** | Incluido en licencia Core (Hub). |
 | Amelia, Federation | Aún no mapeados en `PolarProductMap` (catálogo futuro). |
 
