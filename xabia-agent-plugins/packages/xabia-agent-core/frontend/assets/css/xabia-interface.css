@@ -1647,20 +1647,28 @@ body.xabia-keyboard-open.xabia-mobile-chat-stack .xabia-chatbox.xabia-panel-shel
 
     .xabia-chatbox.xabia-panel-shell.xabia-immersive-mode.is-active .xabia-immersive-avatar-stage {
         display: flex !important;
-        flex: 0 0 auto !important;
+        flex: 0 0 22% !important;
         width: 100% !important;
         height: auto !important;
-        min-height: 28dvh;
-        padding: 1rem;
+        max-height: 25dvh !important;
+        min-height: 0 !important;
+        padding: 0.45rem 0.85rem 0.25rem;
         background: #ffffff !important;
+        align-items: center !important;
+        justify-content: flex-end !important;
+    }
+
+    .xabia-chatbox.xabia-panel-shell.xabia-immersive-mode.is-active .xabia-kinetic-wrapper--immersive {
+        width: min(28vw, 112px) !important;
+        height: min(28vw, 112px) !important;
     }
 
     .xabia-chatbox.xabia-panel-shell.xabia-immersive-mode.is-active .xabia-immersive-panel {
         display: flex !important;
         flex-direction: column !important;
-        flex: 1 1 auto !important;
+        flex: 1 1 75% !important;
         width: 100% !important;
-        min-height: 0 !important;
+        min-height: 75% !important;
         border-radius: 0 !important;
         overflow: hidden !important;
     }

@@ -1207,6 +1207,19 @@ body.xabia-mic-listening .xabia-chatbox.xabia-immersive-mode .xabia-mic-listenin
     display: inline-flex;
 }
 
+/* Durante escucha: no hinchar el composer con el dictado. */
+.xabia-chatbox.xabia-mic-is-listening .xabia-compose-area .xabia-input-field {
+    min-height: 0 !important;
+    height: 0 !important;
+    max-height: 0 !important;
+    padding-top: 0 !important;
+    padding-bottom: 0 !important;
+    margin: 0 !important;
+    overflow: hidden !important;
+    opacity: 0 !important;
+    pointer-events: none !important;
+}
+
 .xabia-mic-listening-banner__dot {
     width: 8px;
     height: 8px;
@@ -1662,20 +1675,25 @@ body.xabia-avatar-thinking .x-avatar-thinking-dots,
         transform: none !important;
     }
 
+    /* Avatar ≤ ~25% vertical; chat (panel) ≥ 75% */
     .xabia-immersive-mode .xabia-immersive-avatar-stage {
         display: flex;
-        flex: 0 0 42%;
+        flex: 0 0 22% !important;
         width: 100%;
-        height: 42%;
-        min-height: 200px;
-        padding: 0.85rem 1rem 0.35rem;
+        max-height: 25dvh !important;
+        min-height: 0 !important;
+        height: auto !important;
+        padding: 0.45rem 0.85rem 0.25rem;
         background: #ffffff !important;
+        align-items: center;
+        justify-content: flex-end;
     }
 
     .xabia-immersive-mode .xabia-kinetic-wrapper--immersive {
-        width: min(82vw, 340px) !important;
-        height: min(64vw, 264px) !important;
+        width: min(28vw, 112px) !important;
+        height: min(28vw, 112px) !important;
         max-width: 100%;
+        margin-right: 0.35rem;
     }
 
     .xabia-immersive-mode .xabia-kinetic-wrapper--immersive .x-avatar-container {
@@ -1692,9 +1710,9 @@ body.xabia-avatar-thinking .x-avatar-thinking-dots,
     }
 
     .xabia-immersive-mode .xabia-immersive-panel {
-        flex: 1 1 auto;
+        flex: 1 1 75% !important;
         width: 100%;
-        min-height: 0;
+        min-height: 75% !important;
         border-radius: 0 !important;
         box-shadow: none !important;
         overflow: hidden;
@@ -1728,6 +1746,34 @@ body.xabia-avatar-thinking .x-avatar-thinking-dots,
         background: #ffffff !important;
         padding: 10px 12px calc(env(safe-area-inset-bottom, 0px) + 10px);
         padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 10px);
+    }
+
+    /* Botones acción: un poco más grandes y separados en móvil */
+    .xabia-ui-modern .xabia-input-pill {
+        gap: 28px !important;
+        justify-content: center;
+    }
+
+    .xabia-ui-modern .xabia-input-pill .xabia-btn-icon {
+        flex: 0 0 48px !important;
+        width: 48px !important;
+        height: 48px !important;
+        min-height: 48px !important;
+    }
+
+    .xabia-ui-modern .xabia-input-pill .xabia-btn-icon .xabia-lucide,
+    .xabia-ui-modern .xabia-input-pill .xabia-mic .xabia-lucide,
+    .xabia-ui-modern .xabia-input-pill .xabia-mute .xabia-lucide,
+    .xabia-ui-modern .xabia-input-pill .xabia-send .xabia-lucide {
+        width: 22px !important;
+        height: 22px !important;
+    }
+
+    .xabia-present-vertical .xabia-immersive-avatar-stage {
+        flex: 0 0 22% !important;
+        max-height: 25dvh !important;
+        min-height: 0 !important;
+        justify-content: flex-end !important;
     }
 }
 
@@ -1856,13 +1902,14 @@ body.xabia-kiosk-open .xabia-kiosk-embed {
 
 .xabia-present-vertical .xabia-immersive-avatar-stage {
     display: flex !important;
-    flex: 0 0 42% !important;
+    flex: 0 0 22% !important;
     width: 100% !important;
-    min-height: 28dvh;
+    max-height: 25dvh;
+    min-height: 0;
     height: auto !important;
-    padding: 0.85rem 1rem 0.35rem;
+    padding: 0.45rem 0.85rem 0.25rem;
     align-items: center;
-    justify-content: center;
+    justify-content: flex-end;
 }
 
 .xabia-present-vertical .xabia-immersive-panel {

@@ -1945,15 +1945,14 @@
                     text = $.trim((text + ' ' + interim).replace(/\s+/g, ' '));
                 }
             }
-            return $.trim(((session.baseInput || '') + (text ? ' ' + text : '')).replace(/\s+/g, ' '));
+            // Solo la locución actual: no concatenar borrador previo del textarea.
+            return text;
         }
 
         function micInputPreview($box, session, interim) {
-            var $input = $box.find('.xabia-input-field');
-            $input.val(clampUserInputText(micDisplayText(session, interim)));
-            autoSizeInput($input);
-            syncInputLimitState($input);
-            syncChatUiState($box);
+            // No volcar el dictado al textarea mientras escucha: en móvil hincha el composer
+            // y deja texto residual que se acumula en la siguiente locución.
+            session.previewText = micDisplayText(session, interim);
         }
 
         function scheduleMicSilenceStop($box, session, opts) {
@@ -1984,18 +1983,24 @@
                 return;
             }
             var $input = $box.find('.xabia-input-field');
-            var newPart = $.trim(String(session.transcript || ''));
+            var newPart = $.trim(String(session.transcript || session.previewText || ''));
+            var draft = $.trim(String(session.baseInput || ''));
             if (!newPart) {
-                $input.val(session.baseInput || '');
+                $input.val(draft);
                 autoSizeInput($input);
+                syncInputLimitState($input);
                 syncChatUiState($box);
                 return;
             }
-            var merged = $.trim(((session.baseInput || '') + ' ' + newPart).replace(/\s+/g, ' '));
-            $input.val(clampUserInputText(merged));
-            autoSizeInput($input);
-            syncInputLimitState($input);
-            syncChatUiState($box);
+            // Enviar solo la locución (sin acumular borrador tipado) y limpiar el campo.
+            $input.val(clampUserInputText(newPart));
+            submitChatMessage($box);
+            if (draft) {
+                $input.val(draft);
+                autoSizeInput($input);
+                syncInputLimitState($input);
+                syncChatUiState($box);
+            }
         }
 
         function stopMicSession($box) {
@@ -2044,11 +2049,14 @@
             }
 
             var rec = new SpeechRecognition();
+            var typedDraft = $.trim(String($input.val() || ''));
             var session = {
                 rec: rec,
                 transcript: '',
                 committedTranscript: '',
-                baseInput: $.trim(String($input.val() || '')),
+                previewText: '',
+                // Conservar borrador tipado aparte; la locución no se acumula sobre él.
+                baseInput: typedDraft,
                 holding: true,
                 released: false,
                 restarting: false,
@@ -2058,6 +2066,10 @@
                 startedAt: Date.now(),
             };
             micSessions.set($box[0], session);
+            // Durante la escucha el textarea no muestra el dictado (evita ocupación vertical).
+            $input.val('');
+            autoSizeInput($input);
+            syncChatUiState($box);
 
             rec.continuous = true;
             rec.interimResults = true;
