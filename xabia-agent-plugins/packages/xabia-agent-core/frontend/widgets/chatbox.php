@@ -106,6 +106,13 @@ function xabia_enqueue_chatbox_assets_for_project(string $project_id, array $pro
     $url_ente_id = isset($_GET['ente_id']) ? wp_unslash($_GET['ente_id']) : '';
     $data_ente_attr = is_string($url_ente_id) && $url_ente_id !== '' ? (string) $url_ente_id : '';
 
+    /* Asegura handle padre: si falta, styles.css no se imprime en el <head>.
+     * No usar register_page_project aquí: eso inyecta el launcher flotante
+     * aunque «Mostrar sin shortcode» esté desactivado. */
+    if (class_exists('Xabia_Interface', false)) {
+        Xabia_Interface::enqueue_assets();
+    }
+
     $ver = defined('XABIA_VERSION') ? XABIA_VERSION : '1.0';
     $styles_path = __DIR__ . '/styles.css';
     $styles_ver = $ver;
@@ -119,7 +126,10 @@ function xabia_enqueue_chatbox_assets_for_project(string $project_id, array $pro
     }
 
     wp_enqueue_script('jquery');
-    wp_enqueue_style('xabia-frontend-styles', plugins_url('styles.css', __FILE__), ['xabia-interface'], $styles_ver);
+    $style_deps = wp_style_is('xabia-interface', 'registered') || wp_style_is('xabia-interface', 'enqueued')
+        ? ['xabia-interface']
+        : [];
+    wp_enqueue_style('xabia-frontend-styles', plugins_url('styles.css', __FILE__), $style_deps, $styles_ver);
     wp_enqueue_script('xabia-chatbox', plugins_url('chatbox.js', __FILE__), ['jquery'], $js_ver, true);
 
     wp_localize_script(

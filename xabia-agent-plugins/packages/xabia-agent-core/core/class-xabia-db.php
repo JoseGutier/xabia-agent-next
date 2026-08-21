@@ -126,6 +126,40 @@ class Xabia_DB {
 
     public static function init() {
         self::install_tables();
+        self::schedule_maintenance();
+    }
+
+    /**
+     * Programa purga diaria de cachés expiradas (response_cache).
+     */
+    public static function schedule_maintenance(): void {
+        if (!function_exists('wp_next_scheduled') || !function_exists('wp_schedule_event')) {
+            return;
+        }
+        if (!wp_next_scheduled('xabia_daily_cache_cleanup')) {
+            $delay = defined('HOUR_IN_SECONDS') ? HOUR_IN_SECONDS : 3600;
+            wp_schedule_event(time() + $delay, 'daily', 'xabia_daily_cache_cleanup');
+        }
+    }
+
+    /**
+     * Borra filas vencidas de xabia_response_cache en lotes.
+     */
+    public static function purge_expired_cache(): int {
+        global $wpdb;
+        if (!isset($wpdb) || !($wpdb instanceof wpdb)) {
+            return 0;
+        }
+        $table = self::table('response_cache');
+        $table_esc = esc_sql($table);
+        $now = gmdate('Y-m-d H:i:s');
+        // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name from whitelist map.
+        $deleted = $wpdb->query($wpdb->prepare(
+            "DELETE FROM `{$table_esc}` WHERE expiry <= %s LIMIT 5000",
+            $now
+        ));
+
+        return is_int($deleted) ? $deleted : 0;
     }
 
     /**
@@ -965,4 +999,8 @@ class Xabia_DB {
             $license_id
         ));
     }
+}
+
+if (function_exists('add_action')) {
+    add_action('xabia_daily_cache_cleanup', ['Xabia_DB', 'purge_expired_cache']);
 }

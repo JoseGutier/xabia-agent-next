@@ -3,7 +3,7 @@
  * Plugin Name: Xabia Agent Core
  * Plugin URI: https://xabia.ai
  * Description: Agente de Inteligencia Artificial de última generación con voz, texto y acciones en la web. Perfecciona la UX mediante interacciones conversacionales inteligentes, hiperpersonalizadas y políglotas. Smart QRs integrados, addons para Woo, MEC, Amelia, etc.
- * Version: 1.0.247
+ * Version: 1.0.268
  * Author: Digixop
  * Author URI: https://digixop.com
  */
@@ -37,6 +37,23 @@ unset($_xabia_ver);
 
 require_once XABIA_PATH . 'core/class-xabia-mode.php';
 require_once XABIA_PATH . 'includes/class-xabia-features.php';
+
+/**
+ * Tras actualizar, limpia meta de licencia inválida cacheada que degradaba el panel a LITE.
+ * (La clave en opciones se conserva; solo se borra el transient de estado Hub.)
+ */
+add_action('plugins_loaded', static function (): void {
+    if (!function_exists('get_option') || !function_exists('delete_transient')) {
+        return;
+    }
+    $prev = (string) get_option('xabia_core_bootstrapped_version', '');
+    $cur = defined('XABIA_VERSION') ? (string) XABIA_VERSION : '';
+    if ($cur === '' || $prev === $cur) {
+        return;
+    }
+    delete_transient('xabia_digixop_license_meta');
+    update_option('xabia_core_bootstrapped_version', $cur, false);
+}, 1);
 
 if (!function_exists('xabia_api_dir')) {
     /**
@@ -92,6 +109,9 @@ require_once XABIA_PATH . 'core/class-xabia-starter-questions.php';
 require_once XABIA_PATH . 'core/class-xabia-knowledge-ingest.php';
 require_once XABIA_PATH . 'core/class-xabia-knowledge-language-driver.php';
 require_once XABIA_PATH . 'core/class-xabia-rag-language-bridge.php';
+require_once XABIA_PATH . 'core/class-xabia-rag-chunk-enricher.php';
+require_once XABIA_PATH . 'core/class-xabia-rag-hybrid-ranker.php';
+require_once XABIA_PATH . 'core/class-xabia-rag-query-rewriter.php';
 require_once XABIA_PATH . 'core/class-xabia-knowledge-relations.php';
 require_once XABIA_PATH . 'core/class-xabia-relation-entity-catalog.php';
 require_once XABIA_PATH . 'core/class-xabia-catalog-list.php';

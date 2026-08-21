@@ -28,6 +28,57 @@ class Xabia_Admin {
     }
 
     /**
+     * Choices UI de chat (fail-safe si la API empaquetada va desfasada respecto al admin).
+     *
+     * @return list<string>
+     */
+    private static function ui_chat_model_choices(bool $gemini): array {
+        if ($gemini) {
+            if (class_exists('Xabia_API', false) && is_callable(['Xabia_API', 'cloud_chat_model_choices'])) {
+                $choices = Xabia_API::cloud_chat_model_choices();
+                if (is_array($choices) && $choices !== []) {
+                    return array_values(array_map('strval', $choices));
+                }
+            }
+
+            return ['gemini-2.5-flash', 'gemini-2.5-pro'];
+        }
+        if (class_exists('Xabia_API', false) && is_callable(['Xabia_API', 'openai_chat_model_choices'])) {
+            $choices = Xabia_API::openai_chat_model_choices();
+            if (is_array($choices) && $choices !== []) {
+                return array_values(array_map('strval', $choices));
+            }
+        }
+
+        return ['gpt-4o-mini', 'gpt-4o', 'gpt-4.1-mini', 'gpt-4.1'];
+    }
+
+    /**
+     * Modelo de chat del agente (allowlist Cloud=Gemini | BYOK=OpenAI).
+     */
+    private static function sanitize_openai_chat_model_post($raw, array $post = []): string {
+        $normalized = strtolower(trim(preg_replace('/[^a-z0-9.\-]/', '', (string) $raw) ?? ''));
+        $cloud = class_exists('Xabia_Digixop_Client', false) && Xabia_Digixop_Client::is_xabia_cloud_mode();
+        $driver = sanitize_key((string) ($post['ai_driver'] ?? 'openai'));
+        $cfg = ['ai_driver' => $driver];
+        if ($cloud || $driver === 'google_cloud') {
+            $allowed = self::ui_chat_model_choices(true);
+            $default = 'gemini-2.5-flash';
+            if ($normalized !== '' && strpos($normalized, 'gpt-') === 0) {
+                $normalized = $default;
+            }
+        } else {
+            $allowed = self::ui_chat_model_choices(false);
+            $default = 'gpt-4o-mini';
+        }
+        if ($normalized === '' || !in_array($normalized, $allowed, true)) {
+            return $default;
+        }
+
+        return $normalized;
+    }
+
+    /**
      * Expansiones léxicas desde filas visuales (palabra + sinónimos separados por comas → patrón |).
      *
      * @param mixed $rows
@@ -1621,6 +1672,7 @@ class Xabia_Admin {
                             'pass'  => sanitize_text_field($src['sql_pass'] ?? ''),
                             'query' => stripslashes($src['sql_query'] ?? ''),
                             'prefix'=> sanitize_text_field($src['sql_prefix'] ?? ''),
+                            'public_site_url' => esc_url_raw(trim((string) ($src['sql_public_site_url'] ?? ''))),
                         ];
                     }
                     $sources[] = $entry;
@@ -1722,6 +1774,7 @@ class Xabia_Admin {
                 'source_type'      => $source_type,
                 'project_language' => $project_language,
                 'ai_driver'        => sanitize_key($post['ai_driver'] ?? 'openai'),
+                'openai_chat_model'=> self::sanitize_openai_chat_model_post($post['openai_chat_model'] ?? '', is_array($post) ? $post : []),
                 'gcloud_json_path' => sanitize_text_field($post['gcloud_json_path'] ?? ''),
                 'openai_api_key'   => $openai_api_key_store,
                 'addon_slug'       => sanitize_key($post['addon_slug'] ?? ''),
@@ -1735,6 +1788,7 @@ class Xabia_Admin {
                     'pass' => sanitize_text_field($post['sql_pass'] ?? ''),
                     'prefix' => sanitize_text_field($post['sql_prefix'] ?? ''),
                     'query'=> stripslashes($post['sql_query'] ?? ''),
+                    'public_site_url' => esc_url_raw(trim((string) ($post['sql_public_site_url'] ?? ''))),
                 ],
                 'sql_preset'       => sanitize_key($post['sql_preset'] ?? ''),
                 'rules' => $rules,
@@ -3794,21 +3848,72 @@ class Xabia_Admin {
 
                                 <?php if ($is_xabia_cloud_ui) : ?>
                                 <div class="xabia-panel-muted" style="padding:12px;border-radius:6px;margin-bottom:14px;">
-                                    <p style="margin:0;"><strong><?php echo esc_html__('Conexión Segura Xabia', 'xabia-intelligence'); ?></strong></p>
+                                    <p style="margin:0 0 8px;"><strong><?php echo esc_html__('Conexión Segura Xabia', 'xabia-intelligence'); ?></strong></p>
+                                    <p class="description" style="margin:0;"><?php echo esc_html__('El chat y los embeddings se ejecutan en el Hub Xabia (Vertex AI). El protocolo hacia el Hub sigue siendo compatible OpenAI; el motor real es Gemini + text-embedding-004.', 'xabia-intelligence'); ?></p>
                                 </div>
                                 <input type="hidden" name="ai_driver" value="<?php echo esc_attr($data['ai_driver'] ?? 'openai'); ?>">
                                 <input type="hidden" name="gcloud_json_path" value="<?php echo esc_attr($data['gcloud_json_path'] ?? ''); ?>">
+                                <p style="margin:0 0 14px;">
+                                    <label for="openai_chat_model"><strong><?php echo esc_html__('Modelo de chat (Google Gemini)', 'xabia-intelligence'); ?></strong></label>
+                                    <select name="openai_chat_model" id="openai_chat_model" class="widefat">
+                                        <?php
+                                        $chat_model_sel = (string) ($data['openai_chat_model'] ?? 'gemini-2.5-flash');
+                                        if ($chat_model_sel !== '' && strpos($chat_model_sel, 'gpt-') === 0) {
+                                            $chat_model_sel = 'gemini-2.5-flash';
+                                        }
+                                        $chat_model_opts = self::ui_chat_model_choices(true);
+                                        foreach ($chat_model_opts as $opt) :
+                                            $hint = ($opt === 'gemini-2.5-flash')
+                                                ? ' — ' . __('recomendado (rápido / menor coste)', 'xabia-intelligence')
+                                                : '';
+                                            ?>
+                                            <option value="<?php echo esc_attr($opt); ?>" <?php selected($chat_model_sel, $opt); ?>><?php echo esc_html($opt . $hint); ?></option>
+                                        <?php endforeach; ?>
+                                    </select>
+                                    <span class="description"><?php echo esc_html__('Por defecto gemini-2.5-flash (query rewrite + chat). Embeddings unificados: text-embedding-004.', 'xabia-intelligence'); ?></span>
+                                </p>
                                 <?php else : ?>
                                 <div class="xabia-vertex-box">
                                     <label><strong>🧠 Motor de Inteligencia (Driver)</strong></label>
                                     <select name="ai_driver" id="ai_driver_select" class="widefat">
-                                        <option value="openai" <?php selected($data['ai_driver']??'openai', 'openai'); ?>>OpenAI (ChatGPT)</option>
-                                        <option value="google_cloud" <?php selected($data['ai_driver']??'', 'google_cloud'); ?>>Google Cloud (Vertex AI)</option>
+                                        <option value="openai" <?php selected($data['ai_driver']??'openai', 'openai'); ?>>OpenAI (BYOK)</option>
+                                        <option value="google_cloud" <?php selected($data['ai_driver']??'', 'google_cloud'); ?>>Google Cloud Vertex (BYOK)</option>
                                     </select>
                                     <div id="gcloud_json_wrapper" style="margin-top:10px; <?php echo ($data['ai_driver']??'')==='google_cloud' ? '' : 'display:none;'; ?>">
                                         <label>Ruta absoluta JSON Google Cloud (Service Account)</label>
                                         <input type="text" name="gcloud_json_path" value="<?php echo esc_attr($data['gcloud_json_path']??''); ?>" class="widefat" placeholder="Vacío = usar ruta global">
-                                        <p class="description">Opcional. Si se deja vacío, se usa la ruta global definida en ajustes generales (modo infraestructura propia).</p>
+                                        <p class="description">Opcional. Si se deja vacío, se usa la ruta global definida en ajustes generales (modo infraestructura propia). Chat: gemini-2.5-flash · Embeddings: text-embedding-004.</p>
+                                    </div>
+                                    <div id="openai_chat_model_wrapper" style="margin-top:14px;">
+                                        <label for="openai_chat_model_byok"><strong id="openai_chat_model_label"><?php
+                                            echo ($data['ai_driver'] ?? 'openai') === 'google_cloud'
+                                                ? esc_html__('Modelo Gemini (chat, Vertex BYOK)', 'xabia-intelligence')
+                                                : esc_html__('Modelo OpenAI (chat, BYOK)', 'xabia-intelligence');
+                                        ?></strong></label>
+                                        <select name="openai_chat_model" id="openai_chat_model_byok" class="widefat"
+                                            data-openai-opts="<?php echo esc_attr(wp_json_encode(self::ui_chat_model_choices(false))); ?>"
+                                            data-gemini-opts="<?php echo esc_attr(wp_json_encode(self::ui_chat_model_choices(true))); ?>"
+                                            data-current="<?php echo esc_attr((string) ($data['openai_chat_model'] ?? '')); ?>">
+                                            <?php
+                                            $is_vertex_driver = ($data['ai_driver'] ?? 'openai') === 'google_cloud';
+                                            $chat_model_opts = self::ui_chat_model_choices($is_vertex_driver);
+                                            $chat_model_sel = (string) ($data['openai_chat_model'] ?? ($is_vertex_driver ? 'gemini-2.5-flash' : 'gpt-4o-mini'));
+                                            if ($is_vertex_driver && strpos($chat_model_sel, 'gpt-') === 0) {
+                                                $chat_model_sel = 'gemini-2.5-flash';
+                                            }
+                                            if (!$is_vertex_driver && strpos($chat_model_sel, 'gemini-') === 0) {
+                                                $chat_model_sel = 'gpt-4o-mini';
+                                            }
+                                            foreach ($chat_model_opts as $opt) :
+                                                ?>
+                                                <option value="<?php echo esc_attr($opt); ?>" <?php selected($chat_model_sel, $opt); ?>><?php echo esc_html($opt); ?></option>
+                                            <?php endforeach; ?>
+                                        </select>
+                                        <p class="description" id="openai_chat_model_help"><?php
+                                            echo $is_vertex_driver
+                                                ? esc_html__('Vertex local: gemini-2.5-flash · embeddings text-embedding-004.', 'xabia-intelligence')
+                                                : esc_html__('Solo con clave OpenAI propia. Embeddings BYOK: text-embedding-3-small (espacio distinto al Hub).', 'xabia-intelligence');
+                                        ?></p>
                                     </div>
                                     <div style="margin-top:14px;">
                                         <label><strong><?php echo esc_html__('OpenAI — clave por agente (opcional)', 'xabia-intelligence'); ?></strong></label>
@@ -3853,6 +3958,7 @@ class Xabia_Admin {
                                                 <span class="dashicons dashicons-visibility toggle-pass"></span>
                                             </div>
                                         </div>
+                                        <div><label><?php echo esc_html__('URL pública del sitio (medios)', 'xabia-intelligence'); ?></label><input type="url" name="sql_public_site_url" id="sql_public_site_url" value="<?php echo esc_attr($data_cfg['sql_config']['public_site_url'] ?? ''); ?>" placeholder="https://ejemplo.com" class="widefat"><p class="description" style="margin:4px 0 0;"><?php echo esc_html__('Dominio real de uploads (corrige GUIDs con hosts antiguos).', 'xabia-intelligence'); ?></p></div>
                                     </div>
                                 </div>
                                 </div>
@@ -4800,7 +4906,12 @@ class Xabia_Admin {
                 text = text.replace(/&lt;strong&gt;/gi, '<strong>').replace(/&lt;\/strong&gt;/gi, '</strong>');
                 text = text.replace(/\n/g, '<br>');
                 text = text.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+                text = text.replace(/\[([^\]]*)\]\((https?:\/\/[^\s\)]+)\)/g, function(m, _label, url) {
+                    var href = String(url || '').replace(/[.,;)]+$/, '');
+                    return href ? ('[ACTION:URL:' + href + ']') : m;
+                });
                 text = text.replace(/\[ACTION:IMG:(.*?)\]/g, '<img src="$1" alt="Imagen del evento">');
+                text = text.replace(/\[ACTION:URL:(.*?)\]/g, '<a href="$1" target="_blank" rel="noopener" class="xabia-action xabia-action-url">🌐 Abrir enlace</a>');
                 text = text.replace(/\[ACTION:WEB:(.*?)\]/g, '<a href="$1" target="_blank" class="xabia-chat-link">🌐 Abrir en la Web</a>');
                 return text;
             }
@@ -5149,8 +5260,33 @@ class Xabia_Admin {
             });
 
             $('#ai_driver_select').change(function(){
-                if($(this).val() === 'google_cloud') $('#gcloud_json_wrapper').show();
-                else $('#gcloud_json_wrapper').hide();
+                var isVertex = $(this).val() === 'google_cloud';
+                if (isVertex) {
+                    $('#gcloud_json_wrapper').show();
+                } else {
+                    $('#gcloud_json_wrapper').hide();
+                }
+                var $sel = $('#openai_chat_model_byok');
+                if (!$sel.length) return;
+                var opts;
+                try {
+                    opts = JSON.parse(isVertex ? ($sel.attr('data-gemini-opts') || '[]') : ($sel.attr('data-openai-opts') || '[]'));
+                } catch (e) { opts = []; }
+                var cur = $sel.val() || $sel.attr('data-current') || '';
+                var def = isVertex ? 'gemini-2.5-flash' : 'gpt-4o-mini';
+                if (isVertex && String(cur).indexOf('gpt-') === 0) cur = def;
+                if (!isVertex && String(cur).indexOf('gemini-') === 0) cur = def;
+                $sel.empty();
+                (opts || []).forEach(function(o){
+                    $sel.append($('<option>').val(o).text(o).prop('selected', o === cur));
+                });
+                if (!$sel.val() && opts && opts.length) $sel.val(opts[0]);
+                $('#openai_chat_model_label').text(isVertex
+                    ? <?php echo wp_json_encode(__('Modelo Gemini (chat, Vertex BYOK)', 'xabia-intelligence')); ?>
+                    : <?php echo wp_json_encode(__('Modelo OpenAI (chat, BYOK)', 'xabia-intelligence')); ?>);
+                $('#openai_chat_model_help').text(isVertex
+                    ? <?php echo wp_json_encode(__('Vertex local: gemini-2.5-flash · embeddings text-embedding-004.', 'xabia-intelligence')); ?>
+                    : <?php echo wp_json_encode(__('Solo con clave OpenAI propia. Embeddings BYOK: text-embedding-3-small (espacio distinto al Hub).', 'xabia-intelligence')); ?>);
             }).change();
             
             var xabiaPlaygroundBotName = <?php echo wp_json_encode($avatar_name ?: 'Xabia'); ?>;

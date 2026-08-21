@@ -17,7 +17,14 @@ class Xabia_Brain {
     const MAX_RAG_CHUNKS = 15;
     /** Listados de catálogo (varias empresas): evita discriminar por el top-k corto del chat normal. */
     const MAX_CATALOG_RAG_CHUNKS = 50;
-    const EMBEDDING_MODEL = 'text-embedding-3-small';
+    /**
+     * Embeddings vía Hub/Vertex (espacio vectorial unificado).
+     * OpenAI BYOK directo usa {@see self::OPENAI_BYOK_EMBEDDING_MODEL}.
+     */
+    const EMBEDDING_MODEL = 'text-embedding-004';
+
+    /** Embeddings solo cuando el agente llama a api.openai.com con clave propia. */
+    const OPENAI_BYOK_EMBEDDING_MODEL = 'text-embedding-3-small';
     const VECTOR_CANDIDATES_LIMIT = 200;
 
     /**
@@ -134,6 +141,155 @@ class Xabia_Brain {
 
         $results = $wpdb->get_results($wpdb->prepare($sql, $args));
         return self::format_context_from_rows($results);
+    }
+
+    /**
+     * Búsqueda léxica rankeada (para RRF híbrido local).
+     *
+     * @return list<array{id: string, content: string, score: float}>
+     */
+    public static function search_knowledge_ranked($project_id, $query, $scope = 'global', $strict_ente = false, $max_chunks = null) {
+        global $wpdb;
+        $table = Xabia_DB::table('knowledge_vectors');
+
+        $sql = "SELECT id, content_chunk FROM $table WHERE project_id = %s";
+        $args = [$project_id];
+
+        if ($scope !== 'global' && !empty($scope)) {
+            $sql .= " AND ente_id = %s";
+            $args[] = $scope;
+        }
+
+        $query = trim((string) $query);
+        $terms = [];
+        if (!($strict_ente && $scope !== 'global' && !empty($scope))) {
+            $terms = self::normalize_search_like_terms($query);
+            $meta_col = self::knowledge_meta_column_for_search();
+            $like_parts = [];
+            foreach ($terms as $term) {
+                if ($term === '') {
+                    continue;
+                }
+                $pat = '%' . $wpdb->esc_like($term) . '%';
+                if ($meta_col !== null) {
+                    $col_sql = ($meta_col === 'meta_json') ? 'meta_json' : 'meta_data';
+                    $like_parts[] = "(content_chunk LIKE %s OR `{$col_sql}` LIKE %s)";
+                    $args[] = $pat;
+                    $args[] = $pat;
+                } else {
+                    $like_parts[] = 'content_chunk LIKE %s';
+                    $args[] = $pat;
+                }
+            }
+            if (!empty($like_parts)) {
+                $sql .= ' AND (' . implode(' OR ', $like_parts) . ')';
+            }
+            $order_hint = $terms[0] ?? $query;
+            $sql .= ' ORDER BY (CASE WHEN content_chunk LIKE %s THEN 1 ELSE 2 END) ASC, id DESC';
+            $args[] = '%' . $wpdb->esc_like($order_hint) . '%';
+        } else {
+            $sql .= ' ORDER BY id DESC';
+        }
+
+        $limit = $max_chunks !== null ? max(1, min(self::MAX_RAG_CHUNKS, (int) $max_chunks)) : self::DEFAULT_MAX_CHUNKS;
+        if ($max_chunks !== null && (int) $max_chunks > self::MAX_RAG_CHUNKS) {
+            $limit = max(1, min(self::MAX_CATALOG_RAG_CHUNKS, (int) $max_chunks));
+        }
+        $fetch = min(self::MAX_CATALOG_RAG_CHUNKS, max($limit * 3, 24));
+        $sql .= ' LIMIT ' . (int) $fetch;
+
+        $results = $wpdb->get_results($wpdb->prepare($sql, $args));
+        if (!is_array($results) || $results === []) {
+            // Soft-prefix rescue: fetch recent candidates and score in PHP when LIKE misses morphology.
+            if ($query !== '' && class_exists('Xabia_Rag_Language_Bridge', false)) {
+                return self::search_knowledge_ranked_soft($project_id, $query, $scope, $limit);
+            }
+
+            return [];
+        }
+
+        $ranked = [];
+        $rank = 0;
+        foreach ($results as $r) {
+            $content = trim((string) ($r->content_chunk ?? ''));
+            if ($content === '') {
+                continue;
+            }
+            ++$rank;
+            $score = max(0.05, 1.0 - (($rank - 1) * 0.03));
+            if (class_exists('Xabia_Rag_Language_Bridge', false)) {
+                foreach ($terms as $term) {
+                    if ($term !== '' && Xabia_Rag_Language_Bridge::tokens_soft_match($term, $content)) {
+                        $score = min(0.99, $score + 0.08);
+                    }
+                }
+            }
+            $ranked[] = [
+                'id'      => (string) ($r->id ?? (class_exists('Xabia_Rag_Hybrid_Ranker', false)
+                    ? Xabia_Rag_Hybrid_Ranker::content_key($content)
+                    : md5($content))),
+                'content' => $content,
+                'score'   => $score,
+            ];
+            if (count($ranked) >= $limit) {
+                break;
+            }
+        }
+        usort($ranked, static fn ($a, $b) => ($b['score'] <=> $a['score']));
+
+        return array_slice($ranked, 0, $limit);
+    }
+
+    /**
+     * @return list<array{id: string, content: string, score: float}>
+     */
+    private static function search_knowledge_ranked_soft(string $project_id, string $query, string $scope, int $limit): array {
+        global $wpdb;
+        $table = Xabia_DB::table('knowledge_vectors');
+        $sql = "SELECT id, content_chunk FROM $table WHERE project_id = %s";
+        $args = [$project_id];
+        if ($scope !== 'global' && $scope !== '') {
+            $sql .= ' AND ente_id = %s';
+            $args[] = $scope;
+        }
+        $sql .= ' ORDER BY id DESC LIMIT 200';
+        $rows = $wpdb->get_results($wpdb->prepare($sql, $args));
+        if (!is_array($rows)) {
+            return [];
+        }
+        $tokens = class_exists('Xabia_Rag_Language_Bridge', false)
+            ? Xabia_Rag_Language_Bridge::retrieval_term_variants($query)
+            : (preg_split('/\s+/u', mb_strtolower($query, 'UTF-8')) ?: []);
+        if (!is_array($tokens)) {
+            $tokens = [];
+        }
+        $tokens = array_values(array_filter(array_map('strval', $tokens), static function ($t) {
+            return mb_strlen($t, 'UTF-8') >= 4;
+        }));
+        $hits = [];
+        foreach ($rows as $r) {
+            $content = trim((string) ($r->content_chunk ?? ''));
+            if ($content === '') {
+                continue;
+            }
+            $matched = 0;
+            foreach ($tokens as $tok) {
+                if (Xabia_Rag_Language_Bridge::tokens_soft_match($tok, $content)) {
+                    ++$matched;
+                }
+            }
+            if ($matched < 1) {
+                continue;
+            }
+            $hits[] = [
+                'id'      => (string) ($r->id ?? ''),
+                'content' => $content,
+                'score'   => min(0.96, 0.4 + 0.12 * $matched),
+            ];
+        }
+        usort($hits, static fn ($a, $b) => ($b['score'] <=> $a['score']));
+
+        return array_slice($hits, 0, max(1, $limit));
     }
 
     /**
@@ -587,7 +743,12 @@ class Xabia_Brain {
             if (!is_array($vec)) continue;
             $sim = self::cosine_similarity($query_vector, $vec);
             if ($sim >= $threshold) {
-                $scored[] = ['chunk' => $r->content_chunk, 'score' => $sim];
+                $scored[] = [
+                    'id'      => (string) ($r->id ?? ''),
+                    'chunk'   => $r->content_chunk,
+                    'content' => (string) $r->content_chunk,
+                    'score'   => $sim,
+                ];
             }
         }
         usort($scored, function ($a, $b) { return $b['score'] <=> $a['score']; });
@@ -602,6 +763,13 @@ class Xabia_Brain {
             'chunk_count'    => count($sliced),
             'similarity_avg' => $avg,
             'total_found'    => null,
+            'chunks'         => array_map(static function ($s) {
+                return [
+                    'id'      => (string) ($s['id'] ?? ''),
+                    'content' => (string) ($s['content'] ?? $s['chunk'] ?? ''),
+                    'score'   => (float) ($s['score'] ?? 0),
+                ];
+            }, $sliced),
         ];
         if ($total_qualifying > count($sliced)) {
             $out['total_found'] = $total_qualifying;
@@ -614,7 +782,7 @@ class Xabia_Brain {
     }
 
     /**
-     * Genera embedding del texto con OpenAI (mismo modelo que el entrenamiento) o vía proxy Xabia si aplica.
+     * Genera embedding del texto (Hub/Vertex: text-embedding-004; OpenAI BYOK: text-embedding-3-small).
      *
      * @param string $project_id ID del agente (para herencia de claves y licencia).
      */
@@ -627,31 +795,61 @@ class Xabia_Brain {
         if ($text === '') {
             return null;
         }
+        $projects = get_option('xabia_projects_config', []);
+        $config = ($project_id !== '' && isset($projects[$project_id]) && is_array($projects[$project_id]))
+            ? $projects[$project_id]
+            : [];
+        $model = self::resolve_embedding_model_for_project($project_id, $config);
         if (class_exists('Xabia_Embedding_Cache', false)) {
-            $cached = Xabia_Embedding_Cache::get(self::EMBEDDING_MODEL, $text);
+            $cached = Xabia_Embedding_Cache::get($model, $text);
             if ($cached !== null) {
                 return $cached;
             }
         }
-        $vector = self::fetch_embedding_uncached($text, $project_id);
+        $vector = self::fetch_embedding_uncached($text, $project_id, $model, $config);
         if (is_array($vector) && $vector !== [] && class_exists('Xabia_Embedding_Cache', false)) {
-            Xabia_Embedding_Cache::set(self::EMBEDDING_MODEL, $text, $vector);
+            Xabia_Embedding_Cache::set($model, $text, $vector);
         }
 
         return $vector;
     }
 
     /**
+     * Modelo de embedding efectivo: proxy/cloud/Vertex → text-embedding-004; OpenAI BYOK → 3-small.
+     *
+     * @param array<string, mixed> $config
+     */
+    public static function resolve_embedding_model_for_project(string $project_id, array $config = []): string {
+        if (class_exists('Xabia_API', false) && method_exists('Xabia_API', 'resolve_embedding_model')) {
+            return (string) Xabia_API::resolve_embedding_model($config, $project_id);
+        }
+        if (class_exists('Xabia_Digixop_Client', false) && Xabia_Digixop_Client::should_use_openai_proxy($project_id, $config)) {
+            return self::EMBEDDING_MODEL;
+        }
+        if (class_exists('Xabia_Digixop_Client', false) && Xabia_Digixop_Client::should_use_local_vertex($config)) {
+            return self::EMBEDDING_MODEL;
+        }
+
+        return self::OPENAI_BYOK_EMBEDDING_MODEL;
+    }
+
+    /**
+     * @param array<string, mixed> $config
      * @return array<int, float>|null
      */
-    private static function fetch_embedding_uncached(string $text, string $project_id = '') {
-        $projects = get_option('xabia_projects_config', []);
-        $config = ($project_id !== '' && isset($projects[$project_id]) && is_array($projects[$project_id]))
-            ? $projects[$project_id]
-            : [];
+    private static function fetch_embedding_uncached(string $text, string $project_id = '', string $model = '', array $config = []) {
+        if ($config === [] && $project_id !== '') {
+            $projects = get_option('xabia_projects_config', []);
+            $config = (isset($projects[$project_id]) && is_array($projects[$project_id]))
+                ? $projects[$project_id]
+                : [];
+        }
+        if ($model === '') {
+            $model = self::resolve_embedding_model_for_project($project_id, $config);
+        }
 
         if (class_exists('Xabia_Digixop_Client') && Xabia_Digixop_Client::should_use_openai_proxy($project_id, $config)) {
-            return Xabia_Digixop_Client::embedding_via_proxy($text, self::EMBEDDING_MODEL, $project_id, $config);
+            return Xabia_Digixop_Client::embedding_via_proxy($text, $model, $project_id, $config);
         }
 
         $key = class_exists('Xabia_Digixop_Client')
@@ -660,10 +858,12 @@ class Xabia_Brain {
         if ($key === '') {
             return null;
         }
+        // Direct OpenAI only accepts OpenAI embedding ids.
+        $openai_model = self::OPENAI_BYOK_EMBEDDING_MODEL;
 
         $resp = wp_remote_post('https://api.openai.com/v1/embeddings', [
             'headers' => ['Authorization' => 'Bearer ' . $key, 'Content-Type' => 'application/json'],
-            'body'    => json_encode(['input' => $text, 'model' => self::EMBEDDING_MODEL]),
+            'body'    => json_encode(['input' => $text, 'model' => $openai_model]),
             'timeout' => 15,
         ]);
         if (is_wp_error($resp)) {
@@ -704,14 +904,32 @@ class Xabia_Brain {
                     continue;
                 }
                 $seen[$chunk] = true;
-                
-                if (strlen($chunk) > 900) {
-                    $chunk = substr($chunk, 0, 900) . '…';
-                }
+                $chunk = self::truncate_chunk_preserving_imagen($chunk, 900);
                 $chunks[] = $chunk;
             }
         }
         return implode("\n\n", $chunks);
+    }
+
+    /**
+     * Trunca el chunk pero conserva líneas [Imagen disponible: …] al final.
+     */
+    public static function truncate_chunk_preserving_imagen(string $chunk, int $max_chars = 900): string {
+        $chunk = trim($chunk);
+        if ($max_chars < 1 || strlen($chunk) <= $max_chars) {
+            return $chunk;
+        }
+        $imagen_tail = '';
+        if (preg_match_all('/\[Imagen disponible:\s*https?:\/\/[^\s\]]+\s*\]/iu', $chunk, $m)) {
+            $imagen_tail = "\n" . implode("\n", array_unique($m[0]));
+            $chunk = trim((string) preg_replace('/\[Imagen disponible:\s*https?:\/\/[^\s\]]+\s*\]/iu', '', $chunk));
+        }
+        $budget = max(80, $max_chars - strlen($imagen_tail));
+        if (strlen($chunk) > $budget) {
+            $chunk = substr($chunk, 0, $budget) . '…';
+        }
+
+        return rtrim($chunk) . $imagen_tail;
     }
 }
 

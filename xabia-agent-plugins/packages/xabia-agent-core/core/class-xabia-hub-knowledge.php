@@ -352,7 +352,7 @@ final class Xabia_Hub_Knowledge {
                 }
                 $md = json_decode((string) ($r['meta_data'] ?? ''), true);
                 $mdArr = is_array($md) ? $md : [];
-                $chunk = self::append_imagen_for_rag_context($raw_chunk, $mdArr);
+                $chunk = self::append_imagen_for_rag_context($raw_chunk, $mdArr, $project_id);
 
                 $ente_id = class_exists('Xabia_Knowledge_Ingest', false)
                     ? Xabia_Knowledge_Ingest::canonical_slug((string) ($r['ente_id'] ?? ''))
@@ -522,26 +522,27 @@ final class Xabia_Hub_Knowledge {
      *
      * @param array<string, mixed> $meta
      */
+    /**
+     * Valor del campo de imagen en meta_data del vector (mapeo SQL / CSV).
+     * Preferir URLs absolutas ya resueltas en ingesta (__image_url / empresa_logo https).
+     *
+     * @param array<string, mixed> $meta
+     */
     private static function extract_imagen_from_meta(array $meta): string {
-        foreach (['imagen', 'image', 'url_imagen', 'imagen_url', 'featured_image', 'foto', 'photo', 'thumbnail'] as $k) {
+        foreach (['__image_url', 'empresa_logo', 'logotipo', 'logo', 'imagen', 'image', 'url_imagen', 'imagen_url', 'featured_image', 'foto', 'photo', 'thumbnail'] as $k) {
             if (!array_key_exists($k, $meta) || $meta[$k] === null || $meta[$k] === '') {
                 continue;
             }
-            $v = is_scalar($meta[$k]) ? (string) $meta[$k] : '';
-            $v = trim($v);
-            if ($v !== '') {
+            $v = is_scalar($meta[$k]) ? trim((string) $meta[$k]) : '';
+            if ($v !== '' && preg_match('#^https?://#i', $v)) {
                 return $v;
             }
         }
-        foreach ($meta as $k => $v) {
-            if (!is_string($k) || !is_scalar($v)) {
-                continue;
-            }
-            $kl = strtolower($k);
-            if (strpos($kl, 'imag') !== false || $kl === 'foto' || $kl === 'photo' || strpos($kl, 'thumbnail') !== false) {
-                $s = trim((string) $v);
-                if ($s !== '') {
-                    return $s;
+        if (!empty($meta['__image_urls']) && is_string($meta['__image_urls'])) {
+            foreach (explode('|', $meta['__image_urls']) as $part) {
+                $part = trim($part);
+                if ($part !== '' && preg_match('#^https?://#i', $part)) {
+                    return $part;
                 }
             }
         }
@@ -550,22 +551,51 @@ final class Xabia_Hub_Knowledge {
     }
 
     /**
-     * El Hub inyecta en el RAG principalmente content_chunk; meta_json no se expone al modelo salvo reforzos.
-     * Anexamos el valor «imagen» en texto inequívoco para [ACTION:IMG:VALOR].
+     * Anexa marcadores [Imagen disponible: URL] al chunk hacia el Hub.
+     * Solo URLs absolutas (resueltas en ingesta). Si meta aún tiene ID numérico, intenta
+     * resolverlo aquí como parte del pipeline de sync (no en el chat).
      *
      * @param array<string, mixed> $meta
      */
-    private static function append_imagen_for_rag_context(string $content_chunk, array $meta): string {
-        $raw = self::extract_imagen_from_meta($meta);
-        if ($raw === '') {
-            return $content_chunk;
+    private static function append_imagen_for_rag_context(string $content_chunk, array $meta, string $project_id = ''): string {
+        $urls = [];
+        if (class_exists('Xabia_Knowledge_Ingest', false)) {
+            $urls = Xabia_Knowledge_Ingest::extract_imagen_disponible_urls($content_chunk);
         }
-        if ($content_chunk !== '' && stripos($content_chunk, $raw) !== false) {
-            return $content_chunk;
+        $from_meta = self::extract_imagen_from_meta($meta);
+        if ($from_meta !== '') {
+            $urls[] = $from_meta;
         }
-        $suffix = "\n\n=== IMAGEN (mapeo; usar este valor tal cual en [ACTION:IMG:…]) ===\nimagen: " . $raw;
 
-        return $content_chunk . $suffix;
+        // Sync-time only: IDs huérfanos → URL remota (ingesta incompleta / datos viejos).
+        if ($urls === [] && $project_id !== '' && class_exists('Xabia_Knowledge_Ingest', false)) {
+            foreach (['empresa_logo', 'logotipo', 'logo', 'imagen', 'image'] as $k) {
+                if (empty($meta[$k]) || !is_scalar($meta[$k])) {
+                    continue;
+                }
+                $raw = trim((string) $meta[$k]);
+                if ($raw === '' || !ctype_digit($raw)) {
+                    continue;
+                }
+                $resolved = Xabia_Knowledge_Ingest::resolve_media_value_to_absolute_url($raw, [
+                    'project_id' => $project_id,
+                ]);
+                if ($resolved !== '') {
+                    $urls[] = $resolved;
+                    break;
+                }
+            }
+        }
+
+        $urls = array_values(array_unique(array_filter($urls)));
+        if ($urls === []) {
+            return $content_chunk;
+        }
+        if (class_exists('Xabia_Knowledge_Ingest', false)) {
+            return Xabia_Knowledge_Ingest::append_imagen_disponible_markers($content_chunk, $urls);
+        }
+
+        return $content_chunk;
     }
 
     /**

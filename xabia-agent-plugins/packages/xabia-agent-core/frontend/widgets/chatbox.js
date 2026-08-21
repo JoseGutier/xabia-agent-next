@@ -789,6 +789,11 @@
         /* Negrita / cursiva markdown. */
         text = text.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
         text = text.replace(/(^|[^\*])\*([^*\n]+)\*(?!\*)/g, '$1<em>$2</em>');
+        /* Markdown [label](https://…) → ACTION:URL para el botón 🌐. */
+        text = text.replace(/\[([^\]]*)\]\((https?:\/\/[^\s\)]+)\)/g, function(_, _label, url) {
+            var href = String(url || '').replace(/[.,;)]+$/, '');
+            return href ? ('[ACTION:URL:' + href + ']') : _;
+        });
         /* Listas "- …" / "* …" en líneas propias → <ul>. */
         text = text.replace(/(?:^|\n)((?:\s*[-*•]\s+.+(?:\n|$))+)/g, function(_, block) {
             var items = String(block).trim().split(/\n/).map(function(line) {

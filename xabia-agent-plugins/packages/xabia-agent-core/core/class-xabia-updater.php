@@ -471,6 +471,8 @@ final class Xabia_Updater {
             return;
         }
         delete_transient(self::TRANSIENT_KEY);
+        /* Evita quedar atrapado en UI LITE por un validate Hub fallido cacheado. */
+        delete_transient('xabia_digixop_license_meta');
     }
 
     /**

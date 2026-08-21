@@ -14,7 +14,7 @@ if (!function_exists('apply_filters')) {
 
 require_once dirname(__DIR__) . '/core/class-xabia-embedding-cache.php';
 
-$model = 'text-embedding-3-small';
+$model = 'text-embedding-004';
 $text = '¿Qué horario tenéis?';
 
 $key1 = Xabia_Embedding_Cache::transient_key($model, $text);

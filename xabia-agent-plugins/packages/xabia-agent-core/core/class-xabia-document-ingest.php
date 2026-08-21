@@ -145,7 +145,9 @@ class Xabia_Document_Ingest {
                     }
 
                     $ente_id = $this->slugify($title);
-                    $content_chunk = 'Tema: ' . $title . "\n\n" . $body;
+                    $content_chunk = class_exists('Xabia_Rag_Chunk_Enricher', false)
+                        ? Xabia_Rag_Chunk_Enricher::enrich_document($title, $body, ['project_id' => (string) $project_id])
+                        : ('Tema: ' . $title . "\n\n" . $body);
                     $meta_data = [
                         'titulo'         => $title,
                         'origen_archivo' => (string) $file_meta['name'],

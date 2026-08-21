@@ -2000,3 +2000,108 @@ body.xabia-kiosk-open .xabia-kiosk-embed {
     color: #fff !important;
     order: 3 !important;
 }
+
+/* --- Aislamiento shortcode embebido (Elementor / temas): evita bordes magenta y botones rotos --- */
+.xabia-chatbox.xabia-ui-modern,
+.xabia-chatbox.xabia-ui-modern *,
+.xabia-chatbox.xabia-ui-modern *::before,
+.xabia-chatbox.xabia-ui-modern *::after {
+    box-sizing: border-box !important;
+}
+
+.xabia-chatbox.xabia-ui-modern button,
+.xabia-chatbox.xabia-ui-modern input,
+.xabia-chatbox.xabia-ui-modern textarea,
+.xabia-chatbox.xabia-ui-modern select {
+    font-family: inherit !important;
+    appearance: none !important;
+    -webkit-appearance: none !important;
+}
+
+.xabia-chatbox.xabia-ui-modern .xabia-starter-chip {
+    border: 1px solid #dbe4f0 !important;
+    background: #fff !important;
+    color: #374151 !important;
+    border-radius: 999px !important;
+    box-shadow: none !important;
+    outline: none !important;
+}
+
+.xabia-chatbox.xabia-ui-modern .xabia-starter-chip:hover,
+.xabia-chatbox.xabia-ui-modern .xabia-starter-chip:focus-visible {
+    border-color: var(--xabia-accent, #ff9966) !important;
+    color: var(--xabia-accent, #ff9966) !important;
+}
+
+.xabia-chatbox.xabia-ui-modern .xabia-compose-area .xabia-input-field,
+.xabia-chatbox.xabia-ui-modern .xabia-input-field {
+    border: none !important;
+    outline: none !important;
+    box-shadow: none !important;
+    background: transparent !important;
+    resize: none !important;
+    width: 100% !important;
+    color: #111827 !important;
+}
+
+.xabia-chatbox.xabia-ui-modern .xabia-input-pill .xabia-btn-icon,
+.xabia-chatbox.xabia-ui-modern button.xabia-btn-icon {
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    width: 40px !important;
+    height: 40px !important;
+    min-width: 40px !important;
+    min-height: 40px !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    border: none !important;
+    outline: none !important;
+    box-shadow: none !important;
+    border-radius: 999px !important;
+    line-height: 0 !important;
+    cursor: pointer !important;
+}
+
+.xabia-chatbox.xabia-ui-modern .xabia-input-pill .xabia-mic,
+.xabia-chatbox.xabia-ui-modern button.xabia-mic {
+    background: #ef4444 !important;
+    color: #fff !important;
+}
+
+.xabia-chatbox.xabia-ui-modern .xabia-input-pill .xabia-mute:not(.is-voice-on),
+.xabia-chatbox.xabia-ui-modern button.xabia-mute:not(.is-voice-on) {
+    background: #9b968e !important;
+    color: #fff !important;
+}
+
+.xabia-chatbox.xabia-ui-modern .xabia-input-pill .xabia-mute.is-voice-on,
+.xabia-chatbox.xabia-ui-modern button.xabia-mute.is-voice-on {
+    background: #ef4444 !important;
+    color: #fff !important;
+}
+
+.xabia-chatbox.xabia-ui-modern .xabia-input-pill .xabia-send,
+.xabia-chatbox.xabia-ui-modern button.xabia-send {
+    background: #111827 !important;
+    color: #fff !important;
+}
+
+.xabia-chatbox.xabia-ui-modern .xabia-voice-hero__orb,
+.xabia-chatbox.xabia-ui-modern button.xabia-voice-hero__orb {
+    border: none !important;
+    outline: none !important;
+    box-shadow: none !important;
+}
+
+.xabia-chatbox.xabia-ui-modern .xabia-panel-close {
+    border: none !important;
+    outline: none !important;
+    box-shadow: none !important;
+    background: transparent !important;
+}
+
+.xabia-chatbox.xabia-ui-modern .xabia-input-pill {
+    justify-content: center !important;
+    gap: 22px !important;
+}

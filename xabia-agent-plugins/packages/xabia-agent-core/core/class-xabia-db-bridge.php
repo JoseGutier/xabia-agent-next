@@ -484,8 +484,13 @@ class Xabia_DB_Bridge {
             && class_exists('Xabia_Knowledge_Ingest', false)
             && Xabia_Knowledge_Ingest::uses_passport_chunk($project_id, $mapping, $row)
         ) {
+            $projects = get_option('xabia_projects_config', []);
+            $pcfg = is_array($projects[$project_id] ?? null) ? $projects[$project_id] : [];
+
             return Xabia_Knowledge_Ingest::build_passport_chunk($row, $mapping, [
-                'project_id' => (string) $project_id,
+                'project_id'     => (string) $project_id,
+                'project_config' => $pcfg,
+                'sql_config'     => is_array($pcfg['sql_config'] ?? null) ? $pcfg['sql_config'] : [],
             ]);
         }
 
@@ -548,6 +553,29 @@ class Xabia_DB_Bridge {
         $blob = implode(' | ', $text_parts);
         if ($use_kt) {
             $blob = Xabia_Knowledge_Text::finalize_content_chunk($blob);
+        }
+
+        if (class_exists('Xabia_Rag_Chunk_Enricher', false)) {
+            $blob = Xabia_Rag_Chunk_Enricher::enrich($blob, is_array($row) ? $row : [], is_array($mapping) ? $mapping : [], [
+                'project_id' => (string) $project_id,
+            ]);
+        }
+
+        if (class_exists('Xabia_Knowledge_Ingest', false) && $project_id !== '') {
+            $projects = get_option('xabia_projects_config', []);
+            $pcfg = is_array($projects[$project_id] ?? null) ? $projects[$project_id] : [];
+            $finalized = Xabia_Knowledge_Ingest::finalize_media_urls_in_ingest(
+                $meta_array,
+                $blob,
+                is_array($mapping) ? $mapping : [],
+                [
+                    'project_id'     => (string) $project_id,
+                    'project_config' => $pcfg,
+                    'sql_config'     => is_array($pcfg['sql_config'] ?? null) ? $pcfg['sql_config'] : [],
+                ]
+            );
+            $meta_array = $finalized['meta_array'];
+            $blob = $finalized['text_blob'];
         }
 
         return [

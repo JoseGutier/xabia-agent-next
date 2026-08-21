@@ -136,6 +136,17 @@ build_core_zip() {
   local ztmp
   ztmp="$(mktemp -d)"
 
+  # El ZIP pisa api/ con el monorepo compartido. Antes, sincronizar package → mono
+  # para no publicar un admin nuevo con una API antigua (p. ej. cloud_chat_model_choices).
+  if [[ -d "$CORE_DIR/api" && -d "$API_DIR" ]]; then
+    rsync -a \
+      --exclude '.git/' \
+      --exclude 'node_modules/' \
+      --exclude '.DS_Store' \
+      --exclude '*.zip' \
+      "$CORE_DIR/api/" "$API_DIR/"
+  fi
+
   rsync -a \
     --exclude '.git/' \
     --exclude 'node_modules/' \

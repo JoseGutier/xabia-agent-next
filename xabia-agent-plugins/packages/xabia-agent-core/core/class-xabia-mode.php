@@ -94,6 +94,10 @@ final class Xabia_Mode {
 
     /**
      * Detección PRO sin cargar clases Premium (solo opciones/transientes WP).
+     *
+     * Importante: si hay clave guardada, el sitio es PRO. El flag Hub `valid`
+     * (transient) solo informa del estado de facturación; un fallo temporal de
+     * red/API NO debe ocultar el panel PRO ni cargar la UI LITE.
      */
     private static function has_valid_stored_license(): bool {
         if ((defined('XABIA_LITE_BUILD') && XABIA_LITE_BUILD) || (defined('XABIA_AGENT_LITE') && XABIA_AGENT_LITE)) {
@@ -105,12 +109,7 @@ final class Xabia_Mode {
             return false;
         }
 
-        $meta = get_transient('xabia_digixop_license_meta');
-        if (is_array($meta) && array_key_exists('valid', $meta)) {
-            return !empty($meta['valid']);
-        }
-
-        return (bool) apply_filters('xabia_mode_license_key_unlocks_pro', true);
+        return (bool) apply_filters('xabia_mode_license_key_unlocks_pro', true, trim($key));
     }
 
     /**

@@ -336,6 +336,9 @@ class Xabia_Interface {
     }
 
     public static function print_chatbox_scripts_fallback(): void {
+        if (wp_style_is('xabia-frontend-styles', 'enqueued') && !wp_style_is('xabia-frontend-styles', 'done')) {
+            wp_print_styles(['xabia-interface', 'xabia-frontend-styles']);
+        }
         if (!wp_script_is('xabia-chatbox', 'enqueued') || wp_script_is('xabia-chatbox', 'done')) {
             return;
         }
@@ -1150,6 +1153,10 @@ class Xabia_Interface {
 
         foreach (self::$page_projects as $project_id) {
             if (!self::should_render_for_project($project_id)) {
+                continue;
+            }
+            /* Solo burbuja nativa si el agente tiene autoload; el shortcode embebido no debe forzar launcher. */
+            if (!self::project_uses_web_launcher($project_id) && !in_array($project_id, self::$launcher_projects, true)) {
                 continue;
             }
             $settings = self::get_project_settings($project_id);

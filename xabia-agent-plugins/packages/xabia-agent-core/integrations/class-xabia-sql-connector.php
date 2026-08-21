@@ -251,6 +251,125 @@ class Xabia_SQL_Connector {
     }
 
     /**
+     * URL pública del sitio remoto (medios / guid). Prioridad: sql_config.public_site_url → options siteurl/home.
+     *
+     * @param array<string, mixed> $sql_config
+     * @param object|null          $db         wpdb remoto opcional
+     */
+    public static function resolve_public_site_url(array $sql_config, $db = null): string {
+        $manual = trim((string) ($sql_config['public_site_url'] ?? $sql_config['media_base_url'] ?? ''));
+        if ($manual !== '') {
+            $manual = esc_url_raw($manual);
+            return $manual !== '' ? untrailingslashit($manual) : '';
+        }
+
+        $host = trim((string) ($sql_config['host'] ?? ''));
+        if ($host === '') {
+            return untrailingslashit(home_url('/'));
+        }
+
+        if ($db === null) {
+            $db = self::connect($sql_config);
+            if (is_wp_error($db)) {
+                return '';
+            }
+        }
+
+        $prefix = self::resolve_table_prefix($sql_config, $db);
+        $table = $prefix . 'options';
+        // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+        $siteurl = $db->get_var("SELECT option_value FROM `{$table}` WHERE option_name = 'siteurl' LIMIT 1");
+        if (!is_string($siteurl) || trim($siteurl) === '') {
+            // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+            $siteurl = $db->get_var("SELECT option_value FROM `{$table}` WHERE option_name = 'home' LIMIT 1");
+        }
+        $siteurl = is_string($siteurl) ? trim($siteurl) : '';
+        if ($siteurl === '' || !preg_match('#^https?://#i', $siteurl)) {
+            return '';
+        }
+
+        return untrailingslashit($siteurl);
+    }
+
+    /**
+     * Reescribe el host de una URL de medio al site público real (GUID WP a menudo apunta a dominios viejos).
+     */
+    public static function rewrite_media_url_to_public_base(string $url, string $public_base): string {
+        $url = trim($url);
+        $public_base = untrailingslashit(trim($public_base));
+        if ($url === '' || $public_base === '' || !preg_match('#^https?://#i', $url)) {
+            return $url;
+        }
+        if (preg_match('#(/wp-content/uploads/.+)$#i', $url, $m)) {
+            return $public_base . $m[1];
+        }
+        $parts = wp_parse_url($url);
+        $base = wp_parse_url($public_base);
+        if (!is_array($parts) || !is_array($base) || empty($base['host'])) {
+            return $url;
+        }
+        $scheme = $base['scheme'] ?? 'https';
+        $host = $base['host'];
+        $port = isset($base['port']) ? ':' . $base['port'] : '';
+        $path = $parts['path'] ?? '';
+        $query = isset($parts['query']) ? '?' . $parts['query'] : '';
+
+        return $scheme . '://' . $host . $port . $path . $query;
+    }
+
+    /**
+     * Resuelve la URL pública de un attachment en la BD del proyecto (SQL remoto o local).
+     * Usa public_site_url / siteurl remoto + _wp_attached_file; el guid crudo suele llevar hosts obsoletos.
+     *
+     * @param array<string, mixed> $sql_config
+     */
+    public static function resolve_attachment_url(array $sql_config, int $attachment_id): string {
+        $attachment_id = (int) $attachment_id;
+        if ($attachment_id < 1) {
+            return '';
+        }
+
+        $host = trim((string) ($sql_config['host'] ?? ''));
+        if ($host === '') {
+            $url = wp_get_attachment_url($attachment_id);
+
+            return is_string($url) ? $url : '';
+        }
+
+        $db = self::connect($sql_config);
+        if (is_wp_error($db)) {
+            return '';
+        }
+        $prefix = self::resolve_table_prefix($sql_config, $db);
+        $posts = $prefix . 'posts';
+        $meta = $prefix . 'postmeta';
+        $public = self::resolve_public_site_url($sql_config, $db);
+
+        // Preferir ruta relativa de uploads + site público.
+        // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+        $attached = $db->get_var($db->prepare(
+            "SELECT meta_value FROM `{$meta}` WHERE post_id = %d AND meta_key = '_wp_attached_file' LIMIT 1",
+            $attachment_id
+        ));
+        $attached = is_string($attached) ? ltrim(trim($attached), '/') : '';
+        if ($attached !== '' && $public !== '') {
+            return $public . '/wp-content/uploads/' . $attached;
+        }
+
+        // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+        $guid = $db->get_var($db->prepare(
+            "SELECT guid FROM `{$posts}` WHERE ID = %d AND post_type = 'attachment' LIMIT 1",
+            $attachment_id
+        ));
+        $guid = is_string($guid) ? trim($guid) : '';
+        if ($guid !== '' && preg_match('#^https?://#i', $guid)) {
+            return $public !== '' ? self::rewrite_media_url_to_public_base($guid, $public) : $guid;
+        }
+
+        return '';
+    }
+
+    /**
      * Prepara query + prefijo antes de ejecutar.
      *
      * @param array<string, mixed> $config

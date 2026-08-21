@@ -200,9 +200,20 @@ class Xabia_Knowledge_Ingest {
             $meta_array['__canonical_key'] = $canonical;
         }
 
+        if (class_exists('Xabia_Rag_Chunk_Enricher', false)) {
+            $blob = Xabia_Rag_Chunk_Enricher::enrich($blob, $row, is_array($mapping) ? $mapping : [], $options);
+        }
+
+        $finalized = self::finalize_media_urls_in_ingest(
+            $meta_array,
+            $blob,
+            is_array($mapping) ? $mapping : [],
+            $options
+        );
+
         return [
-            'meta_array' => $meta_array,
-            'text_blob'  => $blob,
+            'meta_array' => $finalized['meta_array'],
+            'text_blob'  => $finalized['text_blob'],
         ];
     }
 
@@ -1224,6 +1235,219 @@ class Xabia_Knowledge_Ingest {
         return self::resolve_catalog_visual_role_meta_keys($config, 'logotipo', [
             'logotipo',
         ], '/\b(logotipo|logo)\b/u', '/\b(logotipo|logo)\b/u');
+    }
+
+    /**
+     * ¿El atributo mapeado es un campo de medio (imagen / logotipo)?
+     *
+     * @param array<string, mixed> $attr
+     */
+    public static function attribute_is_media_field(array $attr): bool {
+        $role = strtolower(trim((string) ($attr['visual_role'] ?? 'none')));
+        if (in_array($role, ['img', 'image', 'logotipo', 'logo', 'thumbnail', 'photo', 'foto'], true)) {
+            return true;
+        }
+        $col = (string) ($attr['csv_col'] ?? '');
+        $label = (string) ($attr['label'] ?? $col);
+
+        return (bool) preg_match('/\b(empresa_logo|logotipo|logo|imagen|image|foto|photo|thumbnail)\b/iu', $col . ' ' . $label);
+    }
+
+    /**
+     * Resuelve un valor de medio (ID de attachment o URL) a URL absoluta https.
+     * En SQL remoto usa {@see Xabia_SQL_Connector::resolve_attachment_url}; local usa wp_get_attachment_url.
+     *
+     * @param array<string, mixed> $options project_id, sql_config, project_config
+     */
+    public static function resolve_media_value_to_absolute_url(string $raw, array $options = []): string {
+        $raw = trim($raw);
+        if ($raw === '') {
+            return '';
+        }
+        if (preg_match('#^https?://#i', $raw)) {
+            $public = '';
+            if (isset($options['sql_config']) && is_array($options['sql_config']) && class_exists('Xabia_SQL_Connector', false)) {
+                $manual = trim((string) ($options['sql_config']['public_site_url'] ?? ''));
+                if ($manual !== '') {
+                    $public = untrailingslashit(esc_url_raw($manual));
+                }
+            }
+            return $public !== '' ? Xabia_SQL_Connector::rewrite_media_url_to_public_base($raw, $public) : $raw;
+        }
+        if (strpos($raw, '//') === 0 && strlen($raw) > 2) {
+            return 'https:' . $raw;
+        }
+        if (!ctype_digit($raw)) {
+            return '';
+        }
+        $id = (int) $raw;
+        if ($id < 1) {
+            return '';
+        }
+
+        $sql = [];
+        if (isset($options['sql_config']) && is_array($options['sql_config'])) {
+            $sql = $options['sql_config'];
+        } elseif (!empty($options['project_config']['sql_config']) && is_array($options['project_config']['sql_config'])) {
+            $sql = $options['project_config']['sql_config'];
+        } else {
+            $pid = isset($options['project_id']) ? sanitize_key((string) $options['project_id']) : '';
+            if ($pid !== '') {
+                $projects = get_option('xabia_projects_config', []);
+                if (is_array($projects[$pid]['sql_config'] ?? null)) {
+                    $sql = $projects[$pid]['sql_config'];
+                }
+            }
+        }
+
+        if (!empty($sql['host']) && class_exists('Xabia_SQL_Connector', false)) {
+            $url = Xabia_SQL_Connector::resolve_attachment_url($sql, $id);
+            if (is_string($url) && preg_match('#^https?://#i', $url)) {
+                return $url;
+            }
+        }
+
+        $local = wp_get_attachment_url($id);
+
+        return is_string($local) && preg_match('#^https?://#i', $local) ? $local : '';
+    }
+
+    /**
+     * Durante la ingesta: convierte IDs de medios en URLs absolutas en meta y anexa
+     * «[Imagen disponible: URL]» al chunk (una vez por URL).
+     *
+     * @param array<string, string>            $meta_array
+     * @param array<int, array<string, mixed>> $mapping
+     * @param array<string, mixed>             $options
+     * @return array{meta_array: array<string, string>, text_blob: string}
+     */
+    public static function finalize_media_urls_in_ingest(array $meta_array, string $text_blob, array $mapping = [], array $options = []): array {
+        $urls = [];
+        $media_keys = [];
+
+        if (!empty($mapping)) {
+            foreach ($mapping as $attr) {
+                if (!is_array($attr) || !self::attribute_is_media_field($attr)) {
+                    continue;
+                }
+                $col = (string) ($attr['csv_col'] ?? '');
+                $label = (string) ($attr['label'] ?? $col);
+                $key = sanitize_key($label !== '' ? $label : $col);
+                if ($key !== '') {
+                    $media_keys[] = $key;
+                }
+                if ($col !== '') {
+                    $media_keys[] = sanitize_key($col);
+                }
+            }
+        }
+        $media_keys = array_values(array_unique(array_merge($media_keys, [
+            'empresa_logo', 'logotipo', 'logo', 'imagen', 'image', 'foto', 'photo', 'thumbnail', 'url_imagen', 'imagen_url',
+        ])));
+
+        foreach ($media_keys as $key) {
+            if (empty($meta_array[$key])) {
+                continue;
+            }
+            $raw = trim((string) $meta_array[$key]);
+            if ($raw === '') {
+                continue;
+            }
+            $url = self::resolve_media_value_to_absolute_url($raw, $options);
+            if ($url === '') {
+                // No persistir IDs huérfanos que el chat no podrá resolver.
+                if (ctype_digit($raw)) {
+                    unset($meta_array[$key]);
+                }
+                continue;
+            }
+            $meta_array[$key] = $url;
+            $urls[] = $url;
+        }
+
+        // Heurística: cualquier meta restante con «logo|imagen» y valor numérico.
+        foreach ($meta_array as $key => $val) {
+            if (!is_string($key) || !is_scalar($val)) {
+                continue;
+            }
+            if (!preg_match('/logo|imagen|image|foto|photo|thumbnail/i', $key)) {
+                continue;
+            }
+            $raw = trim((string) $val);
+            if ($raw === '' || preg_match('#^https?://#i', $raw)) {
+                if (preg_match('#^https?://#i', $raw)) {
+                    $urls[] = $raw;
+                }
+                continue;
+            }
+            $url = self::resolve_media_value_to_absolute_url($raw, $options);
+            if ($url === '') {
+                if (ctype_digit($raw)) {
+                    unset($meta_array[$key]);
+                }
+                continue;
+            }
+            $meta_array[$key] = $url;
+            $urls[] = $url;
+        }
+
+        $urls = array_values(array_unique(array_filter($urls)));
+        if ($urls !== []) {
+            $meta_array['__image_url'] = $urls[0];
+            if (count($urls) > 1) {
+                $meta_array['__image_urls'] = implode('|', $urls);
+            }
+            $text_blob = self::append_imagen_disponible_markers($text_blob, $urls);
+        }
+
+        return [
+            'meta_array' => $meta_array,
+            'text_blob'  => $text_blob,
+        ];
+    }
+
+    /**
+     * Marcador canónico en el chunk para el LLM / [ACTION:IMG:].
+     *
+     * @param list<string> $urls
+     */
+    public static function append_imagen_disponible_markers(string $content_chunk, array $urls): string {
+        $content_chunk = (string) $content_chunk;
+        foreach ($urls as $url) {
+            $url = trim((string) $url);
+            if ($url === '' || !preg_match('#^https?://#i', $url)) {
+                continue;
+            }
+            $marker = '[Imagen disponible: ' . $url . ']';
+            if (stripos($content_chunk, $marker) !== false) {
+                continue;
+            }
+            if (preg_match('/\[Imagen disponible:\s*' . preg_quote($url, '/') . '\s*\]/iu', $content_chunk)) {
+                continue;
+            }
+            // Sustituir bloques legacy de mapeo con ID crudo.
+            $content_chunk = preg_replace(
+                '/\n*=== IMAGEN \(mapeo[^]]*\) ===\s*\n(?:imagen|logotipo|empresa_logo):\s*\d+\s*/iu',
+                "\n",
+                $content_chunk
+            ) ?? $content_chunk;
+            $content_chunk = rtrim($content_chunk) . "\n" . $marker;
+        }
+
+        return $content_chunk;
+    }
+
+    /**
+     * Extrae URLs de marcadores [Imagen disponible: …] en un chunk/contexto.
+     *
+     * @return list<string>
+     */
+    public static function extract_imagen_disponible_urls(string $text): array {
+        if ($text === '' || !preg_match_all('/\[Imagen disponible:\s*(https?:\/\/[^\s\]]+)\s*\]/iu', $text, $m)) {
+            return [];
+        }
+
+        return array_values(array_unique(array_map('trim', $m[1])));
     }
 
     /**
