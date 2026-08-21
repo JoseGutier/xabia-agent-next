@@ -1717,9 +1717,14 @@ class Xabia_Admin {
                     'max_output_tokens' => (isset($post['max_output_tokens']) && $post['max_output_tokens'] !== '')
                         ? max(1200, min(3000, absint($post['max_output_tokens'])))
                         : 1200,
+                    'max_tokens_per_session' => (isset($post['max_tokens_per_session']) && $post['max_tokens_per_session'] !== '')
+                        ? max(0, absint($post['max_tokens_per_session']))
+                        : 15000,
+                    'custom_user_limit_message' => sanitize_textarea_field((string) ($post['custom_user_limit_message'] ?? '')),
                     'daily_token_limit' => (isset($post['daily_token_limit']) && $post['daily_token_limit'] !== '')
                         ? max(0, absint($post['daily_token_limit']))
-                        : 20000,
+                        : 0,
+                    'custom_daily_limit_message' => sanitize_textarea_field((string) ($post['custom_daily_limit_message'] ?? '')),
                     'greeting'     => wp_kses_post($post['greeting']),
                     'starter_questions_enabled' => !empty($post['starter_questions_enabled']) ? 1 : 0,
                     'starter_questions' => class_exists('Xabia_Starter_Questions', false)
@@ -4550,7 +4555,7 @@ class Xabia_Admin {
                                 <div class="xabia-admin-section">
                                     <div class="xabia-admin-section__head">
                                         <h3 class="xabia-admin-section__title"><?php echo esc_html__('Límites de uso', 'xabia-intelligence'); ?></h3>
-                                        <p class="description"><?php echo esc_html__('Control de longitud de respuestas y consumo diario.', 'xabia-intelligence'); ?></p>
+                                        <p class="description"><?php echo esc_html__('Doble cortafuegos: bolsa por visitante (anti-bot) y cupo diario global del agente.', 'xabia-intelligence'); ?></p>
                                     </div>
                                     <div style="display:flex;flex-wrap:wrap;gap:18px 28px;">
                                         <p style="margin:0;">
@@ -4559,12 +4564,25 @@ class Xabia_Admin {
                                             <span class="description"><?php echo esc_html__('1200–3000', 'xabia-intelligence'); ?></span>
                                         </p>
                                         <p style="margin:0;">
-                                            <label><strong><?php echo esc_html__('Límite diario', 'xabia-intelligence'); ?></strong></label><br>
-                                            <input type="number" min="0" step="100" name="daily_token_limit" value="<?php echo esc_attr($data['rules']['daily_token_limit'] ?? '20000'); ?>" class="small-text" style="width:120px;">
-                                            <span class="description"><?php echo esc_html__('0 = sin límite', 'xabia-intelligence'); ?></span>
+                                            <label><strong><?php echo esc_html__('Máx. tokens por sesión (visitante)', 'xabia-intelligence'); ?></strong></label><br>
+                                            <input type="number" min="0" step="100" name="max_tokens_per_session" value="<?php echo esc_attr($data['rules']['max_tokens_per_session'] ?? '15000'); ?>" class="small-text" style="width:120px;">
+                                            <span class="description"><?php echo esc_html__('Default 15000 · 0 = desactivado', 'xabia-intelligence'); ?></span>
+                                        </p>
+                                        <p style="margin:0;">
+                                            <label><strong><?php echo esc_html__('Límite diario del proyecto', 'xabia-intelligence'); ?></strong></label><br>
+                                            <input type="number" min="0" step="100" name="daily_token_limit" value="<?php echo esc_attr($data['rules']['daily_token_limit'] ?? '0'); ?>" class="small-text" style="width:120px;">
+                                            <span class="description"><?php echo esc_html__('0 = sin límite global', 'xabia-intelligence'); ?></span>
                                         </p>
                                     </div>
-                                    <p class="description" style="margin-top:10px;"><?php echo esc_html__('Al superar el límite diario, el agente entra en mantenimiento hasta el día siguiente (UTC).', 'xabia-intelligence'); ?></p>
+                                    <p style="margin:14px 0 0;">
+                                        <label for="xabia_custom_user_limit_message"><strong><?php echo esc_html__('Mensaje límite de usuario / sesión', 'xabia-intelligence'); ?></strong></label><br>
+                                        <textarea id="xabia_custom_user_limit_message" name="custom_user_limit_message" rows="2" class="large-text" placeholder="<?php echo esc_attr__('Has alcanzado el límite de uso de este asistente por ahora…', 'xabia-intelligence'); ?>"><?php echo esc_textarea((string) ($data['rules']['custom_user_limit_message'] ?? '')); ?></textarea>
+                                    </p>
+                                    <p style="margin:10px 0 0;">
+                                        <label for="xabia_custom_daily_limit_message"><strong><?php echo esc_html__('Mensaje límite diario del proyecto', 'xabia-intelligence'); ?></strong></label><br>
+                                        <textarea id="xabia_custom_daily_limit_message" name="custom_daily_limit_message" rows="2" class="large-text" placeholder="<?php echo esc_attr__('El asistente está en mantenimiento por hoy…', 'xabia-intelligence'); ?>"><?php echo esc_textarea((string) ($data['rules']['custom_daily_limit_message'] ?? '')); ?></textarea>
+                                    </p>
+                                    <p class="description" style="margin-top:10px;"><?php echo esc_html__('El límite por sesión suma tokens del visitante (visitor_key) en este agente. El límite diario suma todo el consumo del proyecto (UTC). Ambos se comprueban antes de llamar al Hub/modelo.', 'xabia-intelligence'); ?></p>
                                 </div>
                                 <?php do_action('xabia_agent_admin_personality_bottom', $edit_id, $data ?? []); ?>
                             </div>

@@ -891,6 +891,71 @@ class Xabia_Brain {
     }
 
     /**
+     * Densifica contexto RAG: mismas entidades/datos, menos tokens de etiquetas y whitespace.
+     * Conserva líneas [Imagen disponible: …].
+     */
+    public static function densify_rag_context(string $context): string {
+        $context = trim($context);
+        if ($context === '') {
+            return '';
+        }
+        $enabled = apply_filters('xabia_rag_densify_context', true, $context);
+        if (!$enabled) {
+            return $context;
+        }
+        $parts = preg_split('/\n\n+/u', $context);
+        if (!is_array($parts) || $parts === []) {
+            return self::densify_rag_chunk($context);
+        }
+        $out = [];
+        foreach ($parts as $part) {
+            $d = self::densify_rag_chunk((string) $part);
+            if ($d !== '') {
+                $out[] = $d;
+            }
+        }
+
+        return implode("\n\n", $out);
+    }
+
+    /**
+     * Compacta un chunk individual sin perder hechos ni URLs de imagen.
+     */
+    public static function densify_rag_chunk(string $chunk): string {
+        $chunk = trim($chunk);
+        if ($chunk === '') {
+            return '';
+        }
+
+        $imagen_tail = '';
+        if (preg_match_all('/\[Imagen disponible:\s*https?:\/\/[^\s\]]+\s*\]/iu', $chunk, $m)) {
+            $imagen_tail = "\n" . implode("\n", array_unique($m[0]));
+            $chunk = trim((string) preg_replace('/\[Imagen disponible:\s*https?:\/\/[^\s\]]+\s*\]/iu', '', $chunk));
+        }
+
+        // Quitar etiquetas redundantes (EMPRESA:, CATEGORÍA:, …); conservar el valor.
+        $label_re = '/\b(?:'
+            . 'EMPRESA|NOMBRE|NAME|ENTIDAD|ENTITY|T[IÍ]TULO|TITLE|'
+            . 'CATEGOR[IÍ]A|CATEGORY|TIPO|TYPE|LOCALIDAD|CIUDAD|CITY|ZONA|BARRIO|AREA|'
+            . 'DESCRIPCI[OÓ]N(?:\s+GENERAL)?|DESCRIPTION|RESUMEN|SUMMARY|'
+            . 'HORARIO|SCHEDULE|FECHA|DATE|HORA|TIME|'
+            . 'DIRECCI[OÓ]N|ADDRESS|TEL[EÉ]FONO|PHONE|WEB|URL|EMAIL|CORREO|'
+            . 'PRECIO|PRICE|SLUG|ID|ENTE_ID|SOURCE'
+            . ')\s*:\s*/iu';
+        $chunk = preg_replace($label_re, '', $chunk);
+        $chunk = is_string($chunk) ? $chunk : '';
+
+        $chunk = preg_replace('/[ \t]+/u', ' ', $chunk);
+        $chunk = preg_replace('/\s*\|\s*/u', ' | ', $chunk);
+        $chunk = preg_replace('/(?:\s*\|\s*){2,}/u', ' | ', $chunk);
+        $chunk = preg_replace('/\n{3,}/u', "\n\n", $chunk);
+        $chunk = preg_replace('/^\s*\|\s*|\s*\|\s*$/u', '', (string) $chunk);
+        $chunk = trim((string) $chunk);
+
+        return rtrim($chunk) . $imagen_tail;
+    }
+
+    /**
      * Ensambla chunks recuperados para el LLM: sin viñetas ni pipes; bloques separados por línea en blanco
      * (más denso frente al límite ~20k del prompt).
      */
@@ -905,6 +970,10 @@ class Xabia_Brain {
                 }
                 $seen[$chunk] = true;
                 $chunk = self::truncate_chunk_preserving_imagen($chunk, 900);
+                $chunk = self::densify_rag_chunk($chunk);
+                if ($chunk === '') {
+                    continue;
+                }
                 $chunks[] = $chunk;
             }
         }

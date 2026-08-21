@@ -28,6 +28,9 @@ if (!class_exists('Xabia_API')) {
         /** Bypass de caché RAG durante la petición actual (modo desarrollo). */
         private static $rag_development_mode_active = false;
 
+        /** Visitante anónimo de la petición actual (cortafuegos de tokens). */
+        private static $request_visitor_key = '';
+
         /** Vertex directo (JSON en WordPress): alineado con Hub / modelo económico. */
         private const VERTEX_LOCAL_LOCATION = 'europe-west1';
         private const VERTEX_LOCAL_CHAT_MODEL = 'gemini-2.5-flash';
@@ -635,15 +638,72 @@ if (!class_exists('Xabia_API')) {
             wp_send_json_success(['ok' => true]);
         }
 
+        /**
+         * Identificador anónimo del visitante (frontend visitor_key o md5(IP+UA)).
+         */
+        private static function resolve_request_visitor_key(string $project_id = ''): string {
+            unset($project_id);
+            $raw = isset($_POST['visitor_key']) ? sanitize_text_field(wp_unslash((string) $_POST['visitor_key'])) : '';
+            $raw = preg_replace('/[^a-zA-Z0-9_-]/', '', (string) $raw);
+            if (is_string($raw) && strlen($raw) >= 8 && strlen($raw) <= 64) {
+                return substr($raw, 0, 64);
+            }
+            $ip = isset($_SERVER['REMOTE_ADDR']) ? (string) $_SERVER['REMOTE_ADDR'] : '';
+            $ua = isset($_SERVER['HTTP_USER_AGENT']) ? (string) $_SERVER['HTTP_USER_AGENT'] : '';
+            return md5($ip . $ua);
+        }
+
+        /**
+         * Límite de tokens por visitante/sesión. Ausente → 15000; 0 → desactivado.
+         *
+         * @param array<string, mixed> $config
+         */
+        private static function max_tokens_per_session_for_project(array $config): int {
+            $rules = is_array($config['rules'] ?? null) ? $config['rules'] : [];
+            if (!array_key_exists('max_tokens_per_session', $rules)) {
+                return max(0, (int) apply_filters('xabia_max_tokens_per_session_default', 15000, $config));
+            }
+            $limit = (int) $rules['max_tokens_per_session'];
+            if ($limit < 0) {
+                $limit = 0;
+            }
+            return $limit;
+        }
+
+        /**
+         * Límite diario global del proyecto. 0 = desactivado (sin techo rígido).
+         *
+         * @param array<string, mixed> $config
+         */
         private static function daily_token_limit_for_project(array $config): int {
             $limit = isset($config['rules']['daily_token_limit']) ? (int) $config['rules']['daily_token_limit'] : 0;
             if ($limit < 0) {
                 $limit = 0;
             }
-            if ($limit === 0) {
-                $limit = (int) apply_filters('xabia_daily_token_limit_default', 20000, $config);
+            return $limit;
+        }
+
+        /**
+         * Mensaje al visitante cuando agota su bolsa de sesión.
+         *
+         * @param array<string, mixed> $config
+         */
+        private static function session_token_limit_user_message(array $config): string {
+            $custom = '';
+            if (!empty($config['rules']['custom_user_limit_message']) && is_string($config['rules']['custom_user_limit_message'])) {
+                $custom = trim($config['rules']['custom_user_limit_message']);
             }
-            return max(0, $limit);
+            if ($custom === '') {
+                $filtered = apply_filters('xabia_session_token_limit_message', '', $config);
+                if (is_string($filtered) && $filtered !== '') {
+                    $custom = $filtered;
+                }
+            }
+            if ($custom !== '') {
+                return $custom;
+            }
+
+            return __('Has alcanzado el límite de uso de este asistente por ahora. Puedes seguir navegando la web con normalidad.', 'xabia-intelligence');
         }
 
         /**
@@ -652,8 +712,17 @@ if (!class_exists('Xabia_API')) {
          * @param array<string, mixed> $config
          */
         private static function daily_token_limit_user_message(array $config): string {
-            $custom = apply_filters('xabia_daily_token_limit_message', '', $config);
-            if (is_string($custom) && $custom !== '') {
+            $custom = '';
+            if (!empty($config['rules']['custom_daily_limit_message']) && is_string($config['rules']['custom_daily_limit_message'])) {
+                $custom = trim($config['rules']['custom_daily_limit_message']);
+            }
+            if ($custom === '') {
+                $filtered = apply_filters('xabia_daily_token_limit_message', '', $config);
+                if (is_string($filtered) && $filtered !== '') {
+                    $custom = $filtered;
+                }
+            }
+            if ($custom !== '') {
                 return $custom;
             }
 
@@ -675,6 +744,64 @@ if (!class_exists('Xabia_API')) {
                 $end
             ));
             return (int) $sum;
+        }
+
+        /**
+         * Tokens acumulados por visitante en el proyecto (bolsa de sesión / anti-bot).
+         */
+        private static function consumed_tokens_for_visitor(string $project_id, string $visitor_key): int {
+            $visitor_key = substr(sanitize_text_field($visitor_key), 0, 64);
+            if ($visitor_key === '') {
+                return 0;
+            }
+            global $wpdb;
+            $table = Xabia_DB::table('usage_logs');
+            if ($wpdb->get_var("SHOW TABLES LIKE '$table'") !== $table) {
+                return 0;
+            }
+            if (class_exists('Xabia_DB', false)) {
+                Xabia_DB::ensure_usage_logs_visitor_key_column();
+            }
+            $sum = $wpdb->get_var($wpdb->prepare(
+                "SELECT COALESCE(SUM(tokens_input + tokens_output),0) FROM $table WHERE project_id = %s AND visitor_key = %s",
+                $project_id,
+                $visitor_key
+            ));
+            return (int) $sum;
+        }
+
+        /**
+         * Doble cortafuegos: bolsa por visitante + cupo diario del proyecto.
+         * Se ejecuta antes de Hub/Vertex; los addons heredan la protección.
+         *
+         * @param array<string, mixed> $config
+         */
+        private static function enforce_cost_firewalls(string $project_id, array $config, bool $bypass): void {
+            if ($bypass) {
+                return;
+            }
+            $visitor_key = self::$request_visitor_key !== ''
+                ? self::$request_visitor_key
+                : self::resolve_request_visitor_key($project_id);
+            self::$request_visitor_key = $visitor_key;
+
+            $session_limit = self::max_tokens_per_session_for_project($config);
+            if ($session_limit > 0) {
+                $session_tokens = self::consumed_tokens_for_visitor($project_id, $visitor_key);
+                if ($session_tokens >= $session_limit) {
+                    wp_send_json_success(['response' => self::session_token_limit_user_message($config)]);
+                    return;
+                }
+            }
+
+            $daily_limit = self::daily_token_limit_for_project($config);
+            if ($daily_limit > 0) {
+                $today_tokens = self::consumed_tokens_today($project_id);
+                if ($today_tokens >= $daily_limit) {
+                    wp_send_json_success(['response' => self::daily_token_limit_user_message($config)]);
+                    return;
+                }
+            }
         }
 
         private static function estimate_cost_usd(string $model, int $in, int $out): float {
@@ -705,6 +832,13 @@ if (!class_exists('Xabia_API')) {
             $tokens_input = (int) (self::$last_generation_metrics['prompt_tokens'] ?? 0);
             $tokens_output = (int) (self::$last_generation_metrics['completion_tokens'] ?? 0);
             $tokens_count = $tokens_input + $tokens_output;
+            if (class_exists('Xabia_DB', false)) {
+                Xabia_DB::ensure_usage_logs_visitor_key_column();
+            }
+            $visitor_key = self::$request_visitor_key !== ''
+                ? self::$request_visitor_key
+                : self::resolve_request_visitor_key($project_id);
+            self::$request_visitor_key = $visitor_key;
             $wpdb->insert($table, [
                 'project_id'     => $project_id,
                 'model_used'     => (string) (self::$last_generation_metrics['model'] ?? 'unknown'),
@@ -714,6 +848,7 @@ if (!class_exists('Xabia_API')) {
                 'estimated_cost' => (float) (self::$last_generation_metrics['estimated_cost'] ?? 0.0),
                 'sensitive_detected' => $sensitive ? 1 : 0,
                 'query_fingerprint' => $fingerprint,
+                'visitor_key'    => substr(sanitize_text_field($visitor_key), 0, 64),
                 'created_at'     => gmdate('Y-m-d H:i:s'),
             ]);
             if ($wpdb->insert_id && class_exists('Xabia_DB', false)) {
@@ -776,6 +911,68 @@ if (!class_exists('Xabia_API')) {
             return array_merge([
                 ['role' => 'system', 'content' => 'Resumen de contexto previo: ' . trim($summary)],
             ], array_slice($history, -6));
+        }
+
+        /**
+         * Historial asimétrico: user íntegro; assistant pasado sin tags UI y truncado.
+         * Reduce tokens del hilo sin tocar RAG ni system prompt ni la respuesta que verá el usuario.
+         *
+         * @param array{role?: string, content?: string} $msg
+         * @return array{role: string, content: string}|null
+         */
+        private static function compact_history_message_for_llm(array $msg): ?array {
+            $role = (string) ($msg['role'] ?? 'user');
+            if ($role === 'system') {
+                $content = trim((string) ($msg['content'] ?? ''));
+                return $content !== '' ? ['role' => 'system', 'content' => $content] : null;
+            }
+            $content = trim((string) ($msg['content'] ?? ''));
+            if ($content === '') {
+                return null;
+            }
+            if ($role !== 'assistant') {
+                return ['role' => 'user', 'content' => $content];
+            }
+
+            $clean = preg_replace('/\[ACTION:[^\]]+\]/i', '', $content);
+            $clean = is_string($clean) ? $clean : $content;
+            $clean = preg_replace('/\n{3,}/', "\n\n", $clean);
+            $clean = trim((string) $clean);
+            if ($clean === '') {
+                return null;
+            }
+
+            $max_chars = (int) apply_filters('xabia_asymmetric_history_assistant_max_chars', 450, $msg);
+            if ($max_chars < 120) {
+                $max_chars = 120;
+            }
+            if (function_exists('mb_strlen') && function_exists('mb_substr')) {
+                if (mb_strlen($clean, 'UTF-8') > $max_chars) {
+                    $clean = rtrim(mb_substr($clean, 0, $max_chars, 'UTF-8')) . '…';
+                }
+            } elseif (strlen($clean) > $max_chars) {
+                $clean = rtrim(substr($clean, 0, $max_chars)) . '…';
+            }
+
+            return ['role' => 'assistant', 'content' => $clean];
+        }
+
+        /**
+         * @param list<array{role?: string, content?: string}> $history
+         * @return list<array{role: string, content: string}>
+         */
+        private static function asymmetric_history_slice_for_llm(array $history, int $limit = 6): array {
+            $out = [];
+            foreach (array_slice($history, -$limit) as $msg) {
+                if (!is_array($msg)) {
+                    continue;
+                }
+                $compacted = self::compact_history_message_for_llm($msg);
+                if ($compacted !== null) {
+                    $out[] = $compacted;
+                }
+            }
+            return $out;
         }
 
         /**
@@ -1804,14 +2001,8 @@ if (!class_exists('Xabia_API')) {
                 $skip_response_cache = true;
                 self::enable_rag_dev_fresh_queries();
             }
-            $daily_limit = self::daily_token_limit_for_project($config);
-            if ($daily_limit > 0 && !$skip_response_cache) {
-                $today_tokens = self::consumed_tokens_today($project_id);
-                if ($today_tokens >= $daily_limit) {
-                    wp_send_json_success(['response' => self::daily_token_limit_user_message($config)]);
-                    return;
-                }
-            }
+            self::$request_visitor_key = self::resolve_request_visitor_key($project_id);
+            self::enforce_cost_firewalls($project_id, $config, $skip_response_cache);
             if (!$skip_response_cache && class_exists('Xabia_Router')) {
                 $early_cached = Xabia_Router::find_cached_response_for_query($project_id, $user_msg, $lang_code);
                 if (is_array($early_cached) && !empty($early_cached['response'])) {
@@ -2322,6 +2513,9 @@ if (!class_exists('Xabia_API')) {
                 $context = self::truncate_chat_rag_context($context, $context_trim_limit, $prefer);
             }
             $context = self::rewrite_remote_media_hosts_in_text((string) $context, $project_id);
+            if (class_exists('Xabia_Brain', false) && method_exists('Xabia_Brain', 'densify_rag_context')) {
+                $context = Xabia_Brain::densify_rag_context((string) $context);
+            }
             
             if (empty($context) || strlen($context) < 10) {
                 $had_knowledge_rows = false;
@@ -2487,7 +2681,7 @@ if (!class_exists('Xabia_API')) {
                 }
             }
             $messages = [['role' => 'system', 'content' => $system_prompt_final]];
-            foreach (array_slice($history, -6) as $msg) {
+            foreach (self::asymmetric_history_slice_for_llm(is_array($history) ? $history : [], 6) as $msg) {
                 $messages[] = $msg;
             }
             $messages[] = ['role' => 'user', 'content' => $user_msg];
@@ -6450,7 +6644,7 @@ if (!class_exists('Xabia_API')) {
 
         /**
          * MOTOR 2: GOOGLE CLOUD VERTEX AI (Gemini 2.5 Flash vía {@see self::VERTEX_LOCAL_CHAT_MODEL}).
-         * Sin herramientas: un solo turno user con historial concatenado (Intérprete y chat sin nodos).
+         * Sin herramientas: systemInstruction + contents (roles user/model) para prefijo cacheable.
          * Con nodos federados: generateContent con functionDeclarations (ask_federated_node) y bucle functionCall → functionResponse.
          *
          * @param array  $messages
@@ -6500,18 +6694,6 @@ if (!class_exists('Xabia_API')) {
                 
                 $location = self::VERTEX_LOCAL_LOCATION;
 
-                
-                $full_prompt = self::xabia_polyglot_language_rule($config['_xabia_proxy_user_lang'] ?? null) . "\n\n";
-                foreach ($messages as $m) {
-                    $content = isset($m['content']) ? (string) $m['content'] : '';
-                    if (function_exists('mb_convert_encoding')) {
-                        $content = mb_convert_encoding($content, 'UTF-8', 'UTF-8');
-                    }
-                    if ($m['role'] === 'system') $full_prompt .= "INSTRUCCIONES: " . $content . "\n";
-                    else $full_prompt .= strtoupper($m['role']) . ": " . $content . "\n";
-                }
-
-                
                 if (!class_exists('Google\Auth\Credentials\ServiceAccountCredentials')) return "Error: Librería Google Auth no cargada.";
                 
                 $creds = new \Google\Auth\Credentials\ServiceAccountCredentials('https://www.googleapis.com/auth/cloud-platform', $json_path);
@@ -6526,14 +6708,21 @@ if (!class_exists('Xabia_API')) {
                 }
                 $url = "https://{$location}-aiplatform.googleapis.com/v1/projects/{$project_id}/locations/{$location}/publishers/google/models/{$model_id}:generateContent";
 
-                $body = json_encode([
-                    "contents" => [["role" => "user", "parts" => [["text" => $full_prompt]]]],
-                    "generationConfig" => [
-                        "temperature" => (float) $temperature,
-                        "maxOutputTokens" => (int) $max_tokens,
-                        "candidateCount" => 1
-                    ]
-                ]);
+                // systemInstruction + contents (roles user/model): prefijo estable cacheable por Vertex.
+                $generation_config = [
+                    'temperature'     => (float) $temperature,
+                    'maxOutputTokens' => (int) $max_tokens,
+                    'candidateCount'  => 1,
+                ];
+                $payload = self::vertex_build_gemini_body_from_openai_messages(
+                    is_array($messages) ? $messages : [],
+                    is_array($config) ? $config : [],
+                    $generation_config
+                );
+                if (empty($payload['contents']) || !is_array($payload['contents'])) {
+                    return 'Error: no hay contenido de usuario para Vertex.';
+                }
+                $body = wp_json_encode($payload);
                 if ($body === false) return "Error: no se pudo preparar la petición a la IA (encoding).";
 
                 $response = wp_remote_post($url, [
@@ -6551,10 +6740,20 @@ if (!class_exists('Xabia_API')) {
                 $data = json_decode($raw_body, true);
                 
                 if (isset($data['candidates'][0]['content']['parts'][0]['text'])) {
-                    $textOut = (string) $data['candidates'][0]['content']['parts'][0]['text'];
+                    $textOut = self::vertex_extract_text_from_candidate(is_array($data) ? $data : []);
+                    if ($textOut === '') {
+                        $textOut = (string) $data['candidates'][0]['content']['parts'][0]['text'];
+                    }
                     self::$last_generation_finish_reason = strtolower(trim((string) ($data['candidates'][0]['finishReason'] ?? '')));
-                    $promptTokensApprox = (int) max(1, floor(strlen($full_prompt) / 4));
-                    $completionTokensApprox = (int) max(1, floor(strlen($textOut) / 4));
+                    $usage = is_array($data['usageMetadata'] ?? null) ? $data['usageMetadata'] : [];
+                    $promptTokensApprox = (int) ($usage['promptTokenCount'] ?? 0);
+                    $completionTokensApprox = (int) ($usage['candidatesTokenCount'] ?? 0);
+                    if ($promptTokensApprox < 1) {
+                        $promptTokensApprox = (int) max(1, floor(strlen($body) / 4));
+                    }
+                    if ($completionTokensApprox < 1) {
+                        $completionTokensApprox = (int) max(1, floor(strlen($textOut) / 4));
+                    }
                     self::$last_generation_metrics = [
                         'prompt_tokens' => $promptTokensApprox,
                         'completion_tokens' => $completionTokensApprox,

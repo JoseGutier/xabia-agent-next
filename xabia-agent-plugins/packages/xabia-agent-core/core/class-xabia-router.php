@@ -45,10 +45,80 @@ class Xabia_Router {
         return null;
     }
 
+    /**
+     * Normaliza la consulta para caché FAQ: une variantes cercanas sin fusionar intenciones distintas.
+     */
     public static function normalize_query(string $q): string {
-        $q = strtolower(trim($q));
-        $q = preg_replace('/\s+/', ' ', $q);
-        return (string) $q;
+        $q = trim($q);
+        if ($q === '') {
+            return '';
+        }
+        if (function_exists('mb_strtolower')) {
+            $q = mb_strtolower($q, 'UTF-8');
+        } else {
+            $q = strtolower($q);
+        }
+
+        // Quitar signos de interrogación/exclamación y puntuación superficial.
+        $q = preg_replace('/[¿?¡!.,;:\"\'«»]+/u', ' ', $q);
+        $q = is_string($q) ? $q : '';
+
+        // Muletillas / cortesía que no cambian la intención factual.
+        $fillers = [
+            'por favor', 'porfa', 'gracias', 'hola', 'hey', 'buenas', 'buenos dias', 'buenas tardes', 'buenas noches',
+            'me puedes decir', 'me podrias decir', 'puedes decirme', 'podrias decirme', 'puedes decir', 'podrias decir',
+            'dime', 'sabes', 'quiero saber', 'necesito saber', 'me gustaria saber', 'me interesa saber',
+            'a ver', 'oye', 'eh',
+        ];
+        foreach ($fillers as $f) {
+            $q = str_replace($f, ' ', $q);
+        }
+
+        // Variantes FAQ frecuentes (agnósticas; ampliables por filtro).
+        $synonyms = [
+            'fuegos artificiales' => 'fuegos',
+            'pirotecnia' => 'fuegos',
+            'castillo de fuegos' => 'fuegos',
+            'horario del metro' => 'metro horario',
+            'hora del metro' => 'metro horario',
+            'hasta que hora el metro' => 'metro horario',
+            'hasta que hora metro' => 'metro horario',
+            'a que hora son' => 'hora',
+            'a que hora es' => 'hora',
+            'a que hora' => 'hora',
+            'que hora' => 'hora',
+            'actividades infantiles' => 'infantil',
+            'para ninos' => 'infantil',
+            'para niños' => 'infantil',
+            'para ninas' => 'infantil',
+            'para niñas' => 'infantil',
+        ];
+        /** @var array<string, string> $synonyms */
+        $synonyms = apply_filters('xabia_response_cache_query_synonyms', $synonyms, $q);
+        if (is_array($synonyms)) {
+            uksort($synonyms, static function ($a, $b) {
+                return strlen((string) $b) <=> strlen((string) $a);
+            });
+            foreach ($synonyms as $from => $to) {
+                $from = trim((string) $from);
+                $to = trim((string) $to);
+                if ($from === '') {
+                    continue;
+                }
+                $q = str_replace($from, $to !== '' ? $to : ' ', $q);
+            }
+        }
+
+        $q = preg_replace('/\s+/u', ' ', $q);
+        $q = trim((string) $q);
+
+        /** @var string $filtered */
+        $filtered = apply_filters('xabia_response_cache_normalize_query', $q);
+        if (is_string($filtered) && $filtered !== '') {
+            $q = $filtered;
+        }
+
+        return $q;
     }
 
     public static function query_hash(string $project_id, string $query, string $route, string $lang): string {

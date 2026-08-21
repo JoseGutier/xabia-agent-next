@@ -28,6 +28,40 @@
         return 'xabia_ask_ai';
     }
 
+    /**
+     * Identificador anónimo estable por proyecto (localStorage). El Core lo usa
+     * para el límite de tokens por sesión / anti-bot.
+     */
+    function xabiaVisitorKey(projectId) {
+        var pid = String(projectId || 'default').replace(/[^a-zA-Z0-9_-]/g, '') || 'default';
+        var storageKey = 'xabia_visitor_key_' + pid;
+        try {
+            var existing = window.localStorage ? localStorage.getItem(storageKey) : '';
+            if (existing && /^[a-zA-Z0-9_-]{8,64}$/.test(existing)) {
+                return existing;
+            }
+            var next = '';
+            if (window.crypto && typeof window.crypto.randomUUID === 'function') {
+                next = String(window.crypto.randomUUID()).replace(/-/g, '');
+            } else {
+                var i;
+                for (i = 0; i < 32; i++) {
+                    next += Math.floor(Math.random() * 16).toString(16);
+                }
+            }
+            next = String(next).replace(/[^a-zA-Z0-9]/g, '').substring(0, 64);
+            if (next.length < 8) {
+                next = (next + 'xabiafall') .substring(0, 16);
+            }
+            if (window.localStorage) {
+                localStorage.setItem(storageKey, next);
+            }
+            return next;
+        } catch (eVk) {
+            return '';
+        }
+    }
+
     function xabiaChatboxMain($) {
 
     var SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -2180,7 +2214,8 @@
                 message: val,
                 x_scope: $box.data('scope') || 'global',
                 lang: String($box.data('lang') || 'es').toLowerCase().replace(/[^a-z]/g, '').substring(0, 2) || 'es',
-                user_lang: htmlLang || String($box.data('lang') || 'es').trim()
+                user_lang: htmlLang || String($box.data('lang') || 'es').trim(),
+                visitor_key: xabiaVisitorKey($box.data('project'))
             };
             if (xabiaIsLiteMode()) {
                 var liteCfg = xabiaChatSettings();

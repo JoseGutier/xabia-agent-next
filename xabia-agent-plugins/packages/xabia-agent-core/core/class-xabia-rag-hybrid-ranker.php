@@ -115,6 +115,12 @@ class Xabia_Rag_Hybrid_Ranker {
                     $chunk = substr($chunk, 0, $max_chunk_chars) . '…';
                 }
             }
+            if (class_exists('Xabia_Brain', false) && method_exists('Xabia_Brain', 'densify_rag_chunk')) {
+                $chunk = Xabia_Brain::densify_rag_chunk($chunk);
+            }
+            if ($chunk === '') {
+                continue;
+            }
             $chunks[] = $chunk;
         }
 

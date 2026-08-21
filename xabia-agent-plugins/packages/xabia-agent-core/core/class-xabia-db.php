@@ -250,9 +250,11 @@ class Xabia_DB {
             estimated_cost decimal(12,6) NOT NULL DEFAULT 0,
             sensitive_detected tinyint(1) NOT NULL DEFAULT 0,
             query_fingerprint varchar(64) DEFAULT '',
+            visitor_key varchar(64) NOT NULL DEFAULT '',
             created_at datetime DEFAULT CURRENT_TIMESTAMP,
             PRIMARY KEY (id),
-            KEY project_date (project_id, created_at)
+            KEY project_date (project_id, created_at),
+            KEY project_visitor (project_id, visitor_key)
         ) $charset;";
 
         $sql_wallets = "CREATE TABLE $table_wallets (
@@ -327,6 +329,46 @@ class Xabia_DB {
         dbDelta($sql_analytics);
         self::ensure_knowledge_vector_optimizer_columns();
         self::ensure_analytics_events_columns();
+        self::ensure_usage_logs_visitor_key_column();
+    }
+
+    /**
+     * Columna visitor_key en usage_logs (cortafuegos por sesión / anti-bot).
+     */
+    public static function ensure_usage_logs_visitor_key_column(): void {
+        global $wpdb;
+        $table = self::table('usage_logs');
+        if ($wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $table)) !== $table) {
+            return;
+        }
+        // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+        $cols_raw = $wpdb->get_results("SHOW COLUMNS FROM `{$table}`", ARRAY_A);
+        $cols = [];
+        if (is_array($cols_raw)) {
+            foreach ($cols_raw as $row) {
+                if (!empty($row['Field'])) {
+                    $cols[(string) $row['Field']] = true;
+                }
+            }
+        }
+        if (!isset($cols['visitor_key'])) {
+            // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
+            $wpdb->query("ALTER TABLE `{$table}` ADD COLUMN visitor_key varchar(64) NOT NULL DEFAULT '' AFTER query_fingerprint");
+        }
+        // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+        $indexes = $wpdb->get_results("SHOW INDEX FROM `{$table}`", ARRAY_A);
+        $index_names = [];
+        if (is_array($indexes)) {
+            foreach ($indexes as $idx) {
+                if (!empty($idx['Key_name'])) {
+                    $index_names[(string) $idx['Key_name']] = true;
+                }
+            }
+        }
+        if (!isset($index_names['project_visitor'])) {
+            // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
+            $wpdb->query("ALTER TABLE `{$table}` ADD KEY project_visitor (project_id, visitor_key)");
+        }
     }
 
     /**
