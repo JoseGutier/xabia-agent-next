@@ -192,10 +192,21 @@ def main() -> None:
     root = Path(__file__).resolve().parents[1]
     load_dotenv_local(root)
 
-    parser = argparse.ArgumentParser(description="Upload Core retail ZIP to Polar")
+    parser = argparse.ArgumentParser(description="Upload retail ZIP to Polar downloadables benefit")
     parser.add_argument("version", nargs="?", help="Semver, ej. 1.0.201")
     parser.add_argument("--list", action="store_true", help="Listar orgs y benefits downloadables")
     parser.add_argument("--zip", dest="zip_path", help="Ruta ZIP (override)")
+    parser.add_argument(
+        "--benefit",
+        dest="benefit_id",
+        help="UUID del benefit downloadables (override POLAR_CORE_BENEFIT_ID)",
+    )
+    parser.add_argument(
+        "--slug",
+        dest="slug",
+        default="xabia-agent-core",
+        help="Slug del plugin para ruta dist/retail por defecto (xabia-agent-core|xabia-woo|…)",
+    )
     parser.add_argument("--keep-old", action="store_true", help="No archivar ZIPs previos del benefit")
     args = parser.parse_args()
 
@@ -212,9 +223,9 @@ def main() -> None:
 
     version = args.version
     org_id = (os.environ.get("POLAR_ORGANIZATION_ID") or "").strip() or None
-    benefit_id = (os.environ.get("POLAR_CORE_BENEFIT_ID") or "").strip()
+    benefit_id = (args.benefit_id or os.environ.get("POLAR_CORE_BENEFIT_ID") or "").strip()
     if not benefit_id:
-        die("Falta POLAR_CORE_BENEFIT_ID en .env.local (usa --list para descubrirlo)")
+        die("Falta --benefit o POLAR_CORE_BENEFIT_ID en .env.local (usa --list para descubrirlo)")
 
     if args.zip_path:
         zip_path = Path(args.zip_path)
@@ -224,12 +235,12 @@ def main() -> None:
             / "xabia-agent-plugins"
             / "dist"
             / "retail"
-            / f"xabia-agent-core-{version}-retail.zip"
+            / f"{args.slug}-{version}-retail.zip"
         )
     if not zip_path.is_file():
         die(f"No existe ZIP: {zip_path}")
 
-    print(f"→ Subiendo {zip_path.name} a Polar…")
+    print(f"→ Subiendo {zip_path.name} a Polar (benefit {benefit_id})…")
     file_id = upload_file(token, org_id, zip_path, version)
     attach_to_benefit(token, benefit_id, file_id, archive_old=not args.keep_old)
     print("✓ Polar retail listo")
