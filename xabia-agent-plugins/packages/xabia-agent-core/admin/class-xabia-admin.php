@@ -1619,8 +1619,9 @@ class Xabia_Admin {
 
             $csv_filename = '';
             $existing_project = $projects[$id] ?? null;
-            if (!empty($post['selected_csv_file'])) {
-                $csv_filename = sanitize_file_name($post['selected_csv_file']);
+            // selected_csv_file presente (aunque vacío) = intención explícita; no restaurar el CSV anterior.
+            if (array_key_exists('selected_csv_file', $post)) {
+                $csv_filename = sanitize_file_name((string) $post['selected_csv_file']);
             } elseif (!empty($existing_project['csv_filename'])) {
                 $csv_filename = sanitize_file_name($existing_project['csv_filename']);
             }
@@ -2044,14 +2045,18 @@ class Xabia_Admin {
         }
         if ($csv_filename !== '') {
             $exact = $this->get_project_csv_dir($project_id) . '/' . $csv_filename;
-            if (file_exists($exact)) {
+            if (is_file($exact)) {
                 return $exact;
             }
+
+            // Nombre pedido inexistente: no caer al primer CSV del directorio (evita borrar otro archivo).
+            return '';
         }
         $files = $this->get_project_csv_files($project_id);
         if ($files !== []) {
             return (string) $files[0];
         }
+
         return '';
     }
 
@@ -2129,16 +2134,45 @@ class Xabia_Admin {
             wp_send_json_error(['message' => __('Project ID inválido.', 'xabia-intelligence')]);
             return;
         }
-        $file = $this->resolve_project_csv_path($project_id, sanitize_file_name(wp_unslash($_POST['csv_file'] ?? '')));
-        if ($file !== '' && file_exists($file)) {
-            @unlink($file);
+        $requested = sanitize_file_name(wp_unslash($_POST['csv_file'] ?? ''));
+        if ($requested === '') {
+            wp_send_json_error(['message' => __('No hay CSV seleccionado.', 'xabia-intelligence')]);
+            return;
+        }
+        $file = $this->resolve_project_csv_path($project_id, $requested);
+        $deleted = false;
+        if ($file !== '' && is_file($file)) {
+            $deleted = @unlink($file);
+            if (!$deleted && is_file($file)) {
+                wp_send_json_error([
+                    'message' => __('No se pudo borrar el archivo del disco (permisos).', 'xabia-intelligence'),
+                    'nonce'   => wp_create_nonce('xabia_admin_nonce'),
+                ]);
+                return;
+            }
         }
         $projects = get_option('xabia_projects_config', []);
         if (isset($projects[$project_id]) && is_array($projects[$project_id])) {
             $projects[$project_id]['csv_filename'] = '';
-            update_option('xabia_projects_config', $projects);
+            // Multi-fuente: limpia referencias al mismo CSV.
+            if (!empty($projects[$project_id]['sources']) && is_array($projects[$project_id]['sources'])) {
+                foreach ($projects[$project_id]['sources'] as $i => $src) {
+                    if (!is_array($src)) {
+                        continue;
+                    }
+                    if (sanitize_file_name((string) ($src['csv_filename'] ?? '')) === $requested) {
+                        $projects[$project_id]['sources'][$i]['csv_filename'] = '';
+                    }
+                }
+            }
+            update_option('xabia_projects_config', $projects, false);
         }
-        $this->admin_json_success(['message' => __('CSV eliminado.', 'xabia-intelligence')]);
+        $this->admin_json_success([
+            'message' => $deleted
+                ? __('CSV eliminado.', 'xabia-intelligence')
+                : __('CSV desvinculado (el archivo ya no estaba en disco).', 'xabia-intelligence'),
+            'cleared' => $requested,
+        ]);
     }
 
     public function ajax_test_sql_connection() {
@@ -3393,16 +3427,12 @@ class Xabia_Admin {
             $source_type = 'csv';
         }
         $csv_project_dir = $this->get_project_csv_dir((string) $edit_id);
-        $csv_project_files = $edit_id ? $this->get_project_csv_files((string) $edit_id) : [];
         $active_csv_name = '';
-        if ($csv_project_files !== []) {
-            $preferred_name = sanitize_file_name((string) ($data['csv_filename'] ?? ''));
-            if ($preferred_name !== '' && file_exists($csv_project_dir . '/' . $preferred_name)) {
-                $active_csv_name = $preferred_name;
-            } else {
-                $active_csv_name = basename((string) $csv_project_files[0]);
-            }
+        $preferred_name = sanitize_file_name((string) ($data['csv_filename'] ?? ''));
+        if ($preferred_name !== '' && $preferred_name !== '.' && file_exists($csv_project_dir . '/' . $preferred_name)) {
+            $active_csv_name = $preferred_name;
         }
+        // Si no hay CSV vinculado en config, no auto-activar el primer .csv del directorio.
 
         if (class_exists('Xabia_Digixop_Client', false)) {
             Xabia_Digixop_Client::refresh_license_meta_from_hub_if_stale();
@@ -5151,20 +5181,20 @@ class Xabia_Admin {
             function loadCsvFiles() {
                 xabiaAdminPost({ action: 'xabia_list_csv_files', project_id: '<?php echo esc_js($edit_id); ?>' }, function(r) {
                     var files = xabiaListCsvFilesFromResponse(r);
-                    var hasAny = files.length > 0;
-                    var preferred = String($('#xabia-csv-state').attr('data-active-csv') || '');
+                    var preferred = String($('#xabia-csv-state').attr('data-active-csv') || $('#selected_csv_file').val() || '');
                     var current = '';
-                    if (hasAny) {
-                        current = String(files[0].name || '');
+                    if (preferred) {
                         files.forEach(function(file) {
-                            if (preferred && String(file.name || '') === preferred) {
+                            if (String(file.name || '') === preferred) {
                                 current = preferred;
                             }
                         });
                     }
+                    // Sin CSV vinculado: mostrar subida aunque queden huérfanos en el directorio.
                     $('#selected_csv_file').val(current);
+                    $('#xabia-csv-state').attr('data-active-csv', current);
                     $('#xabia-csv-active-name').text(current);
-                    if (hasAny) {
+                    if (current) {
                         $('#xabia-csv-has-file').show();
                         $('#xabia-csv-no-file').hide();
                     } else {
@@ -5248,10 +5278,18 @@ class Xabia_Admin {
 
             $('#xabia-csv-delete-btn').on('click', function(e) {
                 e.preventDefault();
-                var projectId = String($('#xabia-csv-state').data('project-id') || '');
-                var current = String($('#selected_csv_file').val() || '');
-                if (!projectId || !current) return;
+                var projectId = String($('#xabia-csv-state').attr('data-project-id') || $('#xabia-csv-state').data('project-id') || '');
+                var current = String($('#selected_csv_file').val() || $('#xabia-csv-state').attr('data-active-csv') || '');
+                if (!projectId) {
+                    $('#csv-feedback').text('❌ Project ID no disponible.');
+                    return;
+                }
+                if (!current) {
+                    $('#csv-feedback').text('❌ No hay CSV seleccionado.');
+                    return;
+                }
                 if (!window.confirm('¿Eliminar el CSV activo de este proyecto?')) return;
+                $('#csv-feedback').text('⏳ Eliminando CSV...');
                 xabiaAdminPost({
                     action: 'xabia_delete_csv',
                     project_id: projectId,
@@ -5263,7 +5301,10 @@ class Xabia_Admin {
                         $('#xabia-csv-active-name').text('');
                         $('#xabia-csv-has-file').hide();
                         $('#xabia-csv-no-file').show();
-                        $('#csv-feedback').text('🗑️ CSV eliminado');
+                        $('#csv-feedback').text('🗑️ ' + ((r.data && r.data.message) ? r.data.message : 'CSV eliminado'));
+                        if ($('#xabia-source-select').val() === 'multi') {
+                            loadMultiCsvOptions();
+                        }
                     } else {
                         $('#csv-feedback').text('❌ ' + ((r && r.data && r.data.message) ? r.data.message : 'Error al eliminar CSV'));
                     }
