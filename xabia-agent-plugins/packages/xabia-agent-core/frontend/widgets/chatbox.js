@@ -1812,9 +1812,7 @@
             return xabiaI18n('micHttps', 'El micrófono requiere HTTPS.');
         }
 
-        $(document).on('focusin', '.xabia-chatbox.xabia-chatbot .xabia-input-field', function() {
-            openShortcodeFocus($, $(this).closest('.xabia-chatbox'));
-        });
+        /* [xabia_agent] embebido: no expandir a inmersivo al enfocar el textarea (evita launcher a pantalla completa al escribir). */
 
         $(document).on('click', '#xabia-shortcode-focus-overlay', function(e) {
             e.preventDefault();
