@@ -137,6 +137,12 @@ class Xabia_Rag_Chunk_Enricher {
             }
         }
 
+        foreach (['term_slug', 'categoria_slug', 'slug'] as $slug_col) {
+            if (!empty($row[$slug_col]) && trim((string) $row[$slug_col]) !== '') {
+                $classification[] = str_replace('-', ' ', trim((string) $row[$slug_col]));
+            }
+        }
+
         $loc = self::first_row_value($row, [
             'empresa_localizacion', 'localizacion', 'ubicacion', 'location', 'ciudad', 'city', 'address', 'direccion',
         ]);
@@ -178,12 +184,28 @@ class Xabia_Rag_Chunk_Enricher {
         $location = array_values(array_unique(array_filter(array_map('strval', $location))));
         $attributes = array_values(array_unique(array_filter(array_map('strval', $attributes))));
 
+        foreach (self::taxonomy_labels_from_wp_post($row, $options) as $tax_label) {
+            $classification[] = $tax_label;
+        }
+        $classification = array_values(array_unique(array_filter(array_map('strval', $classification))));
+
+        $keyword_tokens = self::taxonomy_keyword_tokens($classification);
+        if (function_exists('apply_filters')) {
+            $filtered_kw = apply_filters('xabia_rag_taxonomy_keyword_tokens', $keyword_tokens, $classification, $row, $options);
+            if (is_array($filtered_kw)) {
+                $keyword_tokens = array_values(array_filter(array_map('strval', $filtered_kw)));
+            }
+        }
+
         $parts = [];
         if ($entity !== '') {
             $parts[] = '[Entidad: ' . $entity . ']';
         }
         if ($classification !== []) {
             $parts[] = '[Clasificación: ' . implode(', ', array_slice($classification, 0, 24)) . ']';
+        }
+        if ($keyword_tokens !== []) {
+            $parts[] = '[KEYWORDS: ' . implode(' | ', array_slice($keyword_tokens, 0, 40)) . ']';
         }
         if ($location !== []) {
             $parts[] = '[Ubicación: ' . implode(', ', array_slice($location, 0, 6)) . ']';
@@ -233,5 +255,145 @@ class Xabia_Rag_Chunk_Enricher {
         }
 
         return 'attr';
+    }
+
+    /**
+     * Etiquetas de taxonomía WP del post (nombres y slugs). Sin diccionarios: solo lo asignado al objeto.
+     *
+     * @param array<string, mixed> $row
+     * @param array<string, mixed> $options
+     * @return list<string>
+     */
+    private static function taxonomy_labels_from_wp_post(array $row, array $options): array {
+        unset($options);
+        $post_id = 0;
+        foreach (['ID', 'id', 'post_id'] as $key) {
+            if (!empty($row[$key]) && is_numeric($row[$key])) {
+                $post_id = (int) $row[$key];
+                break;
+            }
+        }
+        if ($post_id < 1) {
+            return [];
+        }
+        if (!function_exists('get_post_type') || !function_exists('get_object_taxonomies') || !function_exists('wp_get_object_terms')) {
+            return [];
+        }
+        $post_type = get_post_type($post_id);
+        if (!is_string($post_type) || $post_type === '') {
+            return [];
+        }
+        $taxes = get_object_taxonomies($post_type, 'names');
+        if (!is_array($taxes) || $taxes === []) {
+            return [];
+        }
+        $skip = [
+            'language', 'post_translations', 'term_language', 'term_translations',
+            'translation_priority', 'origin', 'post_format',
+        ];
+        $out = [];
+        foreach ($taxes as $tax) {
+            $tax = (string) $tax;
+            if ($tax === '' || in_array($tax, $skip, true)) {
+                continue;
+            }
+            $terms = wp_get_object_terms($post_id, $tax);
+            if ((function_exists('is_wp_error') && is_wp_error($terms)) || !is_array($terms)) {
+                continue;
+            }
+            foreach ($terms as $term) {
+                if (!is_object($term)) {
+                    continue;
+                }
+                $name = isset($term->name) ? trim((string) $term->name) : '';
+                if ($name !== '') {
+                    $out[] = $name;
+                }
+                $slug = isset($term->slug) ? trim((string) $term->slug) : '';
+                if ($slug !== '') {
+                    $out[] = str_replace('-', ' ', $slug);
+                }
+            }
+        }
+
+        return $out;
+    }
+
+    /**
+     * Variantes de búsqueda derivadas del propio rótulo (minúsculas, sin acentos, tokens).
+     * No introduce sinónimos de dominio.
+     *
+     * @param list<string> $labels
+     * @return list<string>
+     */
+    public static function taxonomy_keyword_tokens(array $labels): array {
+        $seen = [];
+        $out = [];
+        $function_words = [
+            'para', 'como', 'esta', 'este', 'con', 'sin', 'del', 'las', 'los', 'una', 'uno',
+            'and', 'the', 'for', 'with', 'from',
+        ];
+        foreach ($labels as $label) {
+            $label = trim(wp_strip_all_tags((string) $label));
+            if ($label === '') {
+                continue;
+            }
+            foreach (self::label_search_variants($label) as $token) {
+                $key = mb_strtolower($token, 'UTF-8');
+                if ($key === '' || isset($seen[$key])) {
+                    continue;
+                }
+                if (mb_strlen($key, 'UTF-8') < 3) {
+                    continue;
+                }
+                if (in_array($key, $function_words, true)) {
+                    continue;
+                }
+                $seen[$key] = true;
+                $out[] = $token;
+            }
+        }
+
+        return $out;
+    }
+
+    /**
+     * @return list<string>
+     */
+    private static function label_search_variants(string $label): array {
+        $out = [$label];
+        $lower = mb_strtolower($label, 'UTF-8');
+        $out[] = $lower;
+        $folded = self::fold_latin_accents($lower);
+        $out[] = $folded;
+        $slugish = trim((string) preg_replace('/[^a-z0-9]+/u', ' ', $folded));
+        if ($slugish !== '') {
+            $out[] = $slugish;
+        }
+        $pieces = preg_split('/[\s,\/|;·•\-]+/u', $folded) ?: [];
+        foreach ($pieces as $piece) {
+            $piece = trim((string) $piece);
+            if (mb_strlen($piece, 'UTF-8') >= 4) {
+                $out[] = $piece;
+            }
+        }
+
+        return $out;
+    }
+
+    private static function fold_latin_accents(string $text): string {
+        if (function_exists('remove_accents')) {
+            return (string) remove_accents($text);
+        }
+        $map = [
+            'á' => 'a', 'à' => 'a', 'ä' => 'a', 'â' => 'a', 'ã' => 'a',
+            'é' => 'e', 'è' => 'e', 'ë' => 'e', 'ê' => 'e',
+            'í' => 'i', 'ì' => 'i', 'ï' => 'i', 'î' => 'i',
+            'ó' => 'o', 'ò' => 'o', 'ö' => 'o', 'ô' => 'o', 'õ' => 'o',
+            'ú' => 'u', 'ù' => 'u', 'ü' => 'u', 'û' => 'u',
+            'ñ' => 'n', 'ç' => 'c',
+        ];
+
+        return strtr($text, $map);
     }
 }

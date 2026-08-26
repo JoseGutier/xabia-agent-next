@@ -191,7 +191,8 @@ class Xabia_Knowledge_Train {
             $vector_col_val = isset($row->vector_col) ? (string) $row->vector_col : '';
             $has_vector = $vector_col_val !== '' && $vector_col_val !== '[]' && $vector_col_val !== 'null';
 
-            if ($stored_hash !== '' && hash_equals($stored_hash, $live_hash) && $has_vector) {
+            if ($stored_hash !== '' && Xabia_DB::content_hash_matches($stored_hash, (string) $row->content_chunk) && $has_vector) {
+                Xabia_DB::maybe_upgrade_legacy_content_hash((int) $row->id, (string) $row->content_chunk, $stored_hash);
                 $skipped_count++;
                 unset($rows[$idx], $row);
                 continue;

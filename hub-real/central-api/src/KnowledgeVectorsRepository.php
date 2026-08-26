@@ -458,7 +458,7 @@ final class KnowledgeVectorsRepository
             $sourceId = $identity['source_record_id'];
             $chunk = (string) ($row['content_chunk'] ?? '');
             $hash = isset($row['content_hash']) && $row['content_hash'] !== ''
-                ? substr((string) $row['content_hash'], 0, 32)
+                ? self::normalizeContentHash((string) $row['content_hash'])
                 : null;
             $metaJson = $row['meta_json'] ?? null;
             $vecJson = (string) ($row['vector_json'] ?? '');
@@ -607,5 +607,21 @@ final class KnowledgeVectorsRepository
         } catch (Throwable $e) {
             return null;
         }
+    }
+
+    /**
+     * SHA-256 (64 hex) o MD5 legado (32). No truncar a 32: invalidaría el delta y re-embebería todo.
+     */
+    private static function normalizeContentHash(string $hash): ?string
+    {
+        $hash = strtolower(trim($hash));
+        if ($hash === '') {
+            return null;
+        }
+        if (preg_match('/^[0-9a-f]{32}([0-9a-f]{32})?$/', $hash) !== 1) {
+            return substr($hash, 0, 64);
+        }
+
+        return $hash;
     }
 }

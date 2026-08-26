@@ -206,7 +206,10 @@ final class KnowledgeSearchHandler
             $lexicalQueryText = $queryText;
         }
 
-        $signalNeedles = $lexicalQueryText !== '' ? self::signalNeedlesForQuery($lexicalQueryText) : [];
+        $keywordExpansions = self::parseKeywordExpansions($input['keyword_expansions'] ?? null);
+        $signalNeedles = $lexicalQueryText !== ''
+            ? self::signalNeedlesForQuery($lexicalQueryText, $keywordExpansions)
+            : [];
 
         $vectorScored = [];
         foreach ($rows as $r) {
@@ -244,7 +247,7 @@ final class KnowledgeSearchHandler
         $lexPoolLimit = $catalogList ? self::CANDIDATE_LIMIT : self::CANDIDATE_LIMIT;
         $lexScored = [];
         if ($lexicalQueryText !== '') {
-            $lexScored = self::lexicalFallbackMatches($rows, $lexicalQueryText, $lexPoolLimit);
+            $lexScored = self::lexicalFallbackMatches($rows, $lexicalQueryText, $lexPoolLimit, $keywordExpansions);
         }
 
         $bigPool = self::CANDIDATE_LIMIT;
@@ -549,9 +552,81 @@ final class KnowledgeSearchHandler
     }
 
     /**
+     * @param array<string, string>|null $raw
+     *
+     * @return array<string, string> needle(lowercase) → pipe-separated alts
+     */
+    private static function parseKeywordExpansions($raw): array
+    {
+        if (!\is_array($raw)) {
+            return [];
+        }
+        $out = [];
+        foreach ($raw as $key => $pattern) {
+            $k = mb_strtolower(trim((string) $key), 'UTF-8');
+            $p = trim((string) $pattern);
+            if ($k === '' || $p === '' || mb_strlen($k, 'UTF-8') < 2) {
+                continue;
+            }
+            if (preg_match('/[\r\n]/', $p) === 1) {
+                continue;
+            }
+            if (mb_strlen($p, 'UTF-8') > 500) {
+                $p = mb_substr($p, 0, 500, 'UTF-8');
+            }
+            $out[$k] = $p;
+        }
+
+        return $out;
+    }
+
+    /**
+     * Amplía agujas con rules.keyword_expansions del plugin (p. ej. caballo → hípica|equitación).
+     *
+     * @param list<string>           $needles
+     * @param array<string, string>  $expansions
+     *
      * @return list<string>
      */
-    private static function signalNeedlesForQuery(string $query): array
+    private static function expandNeedlesWithKeywordMap(array $needles, array $expansions): array
+    {
+        if ($needles === [] || $expansions === []) {
+            return $needles;
+        }
+        $out = [];
+        $seen = [];
+        $add = static function (string $t) use (&$out, &$seen): void {
+            $t = trim($t);
+            if ($t === '' || mb_strlen($t, 'UTF-8') < 3) {
+                return;
+            }
+            $k = mb_strtolower($t, 'UTF-8');
+            if (isset($seen[$k])) {
+                return;
+            }
+            $seen[$k] = true;
+            $out[] = $t;
+        };
+        foreach ($needles as $n) {
+            $add((string) $n);
+            $nl = mb_strtolower(trim((string) $n), 'UTF-8');
+            if ($nl === '' || !isset($expansions[$nl])) {
+                continue;
+            }
+            foreach (preg_split('/\|/', $expansions[$nl]) ?: [] as $part) {
+                $add((string) $part);
+            }
+        }
+
+        return $out;
+    }
+
+    /**
+     * @param array<string, string> $keywordExpansions
+     *
+     * @return list<string>
+     */
+    private static function signalNeedlesForQuery(string $query, array $keywordExpansions = []): array
     {
         $terms = self::normalizeQueryTermsForLexical($query);
         $meaningful = self::meaningfulQueryTokens($terms);
@@ -563,7 +638,7 @@ final class KnowledgeSearchHandler
             $needles = self::fallbackLongNeedlesOnly($meaningful);
         }
 
-        return $needles;
+        return self::expandNeedlesWithKeywordMap($needles, $keywordExpansions);
     }
 
     /**
@@ -776,11 +851,16 @@ final class KnowledgeSearchHandler
 
     /**
      * @param list<array<string, mixed>> $rows
+     * @param array<string, string>      $keywordExpansions
      *
      * @return list<array{content: string, score: float}>
      */
-    private static function lexicalFallbackMatches(array $rows, string $query, int $maxChunks): array
-    {
+    private static function lexicalFallbackMatches(
+        array $rows,
+        string $query,
+        int $maxChunks,
+        array $keywordExpansions = []
+    ): array {
         $terms = self::normalizeQueryTermsForLexical($query);
         $meaningful = self::meaningfulQueryTokens($terms);
         $literals = self::literalQuerySubstrings($query);
@@ -791,6 +871,7 @@ final class KnowledgeSearchHandler
         if ($needles === []) {
             $needles = self::fallbackLongNeedlesOnly($meaningful);
         }
+        $needles = self::expandNeedlesWithKeywordMap($needles, $keywordExpansions);
         $hits = [];
         foreach ($rows as $r) {
             if (!\is_array($r)) {

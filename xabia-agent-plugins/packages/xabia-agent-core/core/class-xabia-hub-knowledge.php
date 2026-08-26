@@ -52,6 +52,9 @@ final class Xabia_Hub_Knowledge {
             return ['context' => '', 'chunk_count' => 0, 'similarity_avg' => null, 'total_found' => null];
         }
         $mc = $max_chunks !== null ? (int) $max_chunks : 4;
+        if (!empty($hub_opts['catalog_list']) && class_exists('Xabia_Catalog_Intent', false)) {
+            $mc = Xabia_Catalog_Intent::rag_chunk_limit($mc);
+        }
         $body = [
             'project_id'           => $project_id,
             'query_embedding'      => $qv,
@@ -403,7 +406,9 @@ final class Xabia_Hub_Knowledge {
                         : 'hash:' . substr(hash('sha256', $raw_chunk), 0, 59);
                 }
 
-                $meta_only = $has_valid_vec && ($stored_hash !== '' && hash_equals($stored_hash, $live_hash));
+                $meta_only = $has_valid_vec && class_exists('Xabia_DB', false)
+                    ? Xabia_DB::content_hash_matches($stored_hash, $raw_chunk)
+                    : ($stored_hash !== '' && hash_equals($stored_hash, $live_hash));
 
                 $items[] = [
                     'source_record_id' => $source_record_id,

@@ -109,6 +109,7 @@ $enriched = Xabia_Rag_Chunk_Enricher::enrich(
 assert(strpos($enriched, '[Entidad:') !== false, 'enricher adds Entidad prefix');
 assert(strpos($enriched, '[Clasificación:') !== false, 'enricher adds Clasificación prefix');
 assert(strpos($enriched, 'Experiencias urbanas') !== false, 'enricher keeps taxonomy values');
+assert(strpos($enriched, '[KEYWORDS:') !== false, 'enricher adds KEYWORDS from taxonomy labels');
 
 $skip = Xabia_Rag_Chunk_Enricher::enrich(
     'EMPRESA: Demo',

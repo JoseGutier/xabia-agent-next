@@ -380,7 +380,6 @@ class Xabia_DB_Bridge {
             return false;
         }
 
-        $content_hash = Xabia_DB::compute_content_hash($text_blob);
         $existing = null;
         if ($canonical_key !== '') {
             $existing = Xabia_DB::find_knowledge_row_by_ente((string) $project_id, $canonical_key);
@@ -410,40 +409,55 @@ class Xabia_DB_Bridge {
             $ente_id = $canonical_key;
         }
 
-        if ($existing !== null && isset($existing->id)) {
-            $stored_hash = (string) ($existing->content_hash ?? '');
-            if ($stored_hash !== '' && hash_equals($stored_hash, $content_hash)) {
-                $prev_meta = [];
-                if (!empty($existing->meta_blob)) {
-                    $decoded = json_decode((string) $existing->meta_blob, true);
-                    if (is_array($decoded)) {
-                        $prev_meta = $decoded;
-                    }
-                }
-                $merged = class_exists('Xabia_Knowledge_Optimizer', false)
-                    ? Xabia_Knowledge_Optimizer::merge_volatile_meta($prev_meta, $prepared['meta_array'])
-                    : array_merge($prev_meta, $prepared['meta_array']);
-                if ($identity !== [] && self::row_needs_identity_migration($existing, $identity)) {
-                    $ok = Xabia_DB::update_knowledge_identity((int) $existing->id, $identity, $merged);
-                    unset($prepared, $ente, $row, $prev_meta, $merged, $existing);
+        $extras = [
+            'source_record_id' => $source_id,
+        ];
+        if ($identity !== []) {
+            $extras['identity'] = $identity;
+        }
 
-                    return $ok ? 'content_update' : false;
+        if (
+            $existing !== null
+            && isset($existing->id)
+            && $identity !== []
+            && Xabia_DB::content_hash_matches((string) ($existing->content_hash ?? ''), $text_blob)
+            && self::row_needs_identity_migration($existing, $identity)
+        ) {
+            $prev_meta = [];
+            if (!empty($existing->meta_blob)) {
+                $decoded = json_decode((string) $existing->meta_blob, true);
+                if (is_array($decoded)) {
+                    $prev_meta = $decoded;
                 }
-                $ok = Xabia_DB::update_knowledge_meta_only((int) $existing->id, $merged);
-                unset($prepared, $ente, $row, $prev_meta, $merged, $existing);
-
-                return $ok ? 'unchanged' : false;
             }
-            $ok = Xabia_DB::update_knowledge_content((int) $existing->id, $text_blob, $prepared['meta_array'], $content_hash, $identity);
-            unset($prepared, $ente, $row, $existing);
+            $merged = class_exists('Xabia_Knowledge_Optimizer', false)
+                ? Xabia_Knowledge_Optimizer::merge_volatile_meta($prev_meta, $prepared['meta_array'])
+                : array_merge($prev_meta, $prepared['meta_array']);
+            Xabia_DB::maybe_upgrade_legacy_content_hash((int) $existing->id, $text_blob, (string) ($existing->content_hash ?? ''));
+            $ok = Xabia_DB::update_knowledge_identity((int) $existing->id, $identity, $merged);
+            unset($prepared, $ente, $row, $prev_meta, $merged, $existing);
 
             return $ok ? 'content_update' : false;
         }
 
-        $extras = [
-            'source_record_id' => $source_id,
-            'content_hash'     => $content_hash,
-        ];
+        if (class_exists('Xabia_Knowledge_Ingest', false)) {
+            $delta = Xabia_Knowledge_Ingest::process_chunk_delta_sync(
+                (string) $project_id,
+                (string) $ente_id,
+                $text_blob,
+                $prepared['meta_array'],
+                (string) $source_id,
+                $extras,
+                $existing
+            );
+            unset($prepared, $ente, $row, $extras, $existing);
+            $action = (string) ($delta['action'] ?? 'error');
+
+            return $action === 'error' ? false : $action;
+        }
+
+        $content_hash = Xabia_DB::compute_content_hash($text_blob);
+        $extras['content_hash'] = $content_hash;
         $ok = Xabia_DB::insert_knowledge_vector_row(
             $project_id,
             $ente_id,
@@ -451,7 +465,7 @@ class Xabia_DB_Bridge {
             $prepared['meta_array'],
             $extras
         );
-        unset($prepared, $ente, $row, $extras);
+        unset($prepared, $ente, $row, $extras, $existing);
 
         return $ok ? 'insert' : false;
     }

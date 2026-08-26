@@ -196,7 +196,7 @@ class Xabia_DB {
             vector_data longtext,
             source_file varchar(255),
             source_record_id varchar(100) DEFAULT NULL,
-            content_hash char(32) DEFAULT NULL,
+            content_hash varchar(64) DEFAULT NULL,
             ente_id varchar(100) DEFAULT 'global',
             federation_node_id varchar(80) DEFAULT NULL,
             created_at datetime DEFAULT CURRENT_TIMESTAMP,
@@ -205,7 +205,8 @@ class Xabia_DB {
             KEY ente_id (ente_id),
             KEY federation_node_id (federation_node_id),
             KEY project_source (project_id, source_record_id),
-            KEY content_hash (content_hash)
+            KEY content_hash (content_hash),
+            FULLTEXT KEY ft_content_chunk (content_chunk)
         ) $charset;";
 
         $sql_logs = "CREATE TABLE $table_logs (
@@ -424,7 +425,7 @@ class Xabia_DB {
     }
 
     /**
-     * Columnas v1.0.61: content_hash + source_record_id (ahorro tokens / upsert incremental).
+     * Columnas de delta sync + índice FULLTEXT (SHA-256 / MATCH AGAINST).
      */
     public static function ensure_knowledge_vector_optimizer_columns(): void {
         global $wpdb;
@@ -440,9 +441,65 @@ class Xabia_DB {
         }
         if (!isset($cols['content_hash'])) {
             // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
-            $wpdb->query("ALTER TABLE `{$table_esc}` ADD COLUMN content_hash char(32) DEFAULT NULL AFTER source_record_id");
+            $wpdb->query("ALTER TABLE `{$table_esc}` ADD COLUMN content_hash varchar(64) DEFAULT NULL AFTER source_record_id");
+            // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
+            $wpdb->query("ALTER TABLE `{$table_esc}` ADD INDEX content_hash (content_hash)");
+        } else {
+            // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
+            $col_info = $wpdb->get_row("SHOW COLUMNS FROM `{$table_esc}` LIKE 'content_hash'", ARRAY_A);
+            $type = strtolower((string) ($col_info['Type'] ?? ''));
+            if (strpos($type, 'varchar(64)') === false) {
+                // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
+                $wpdb->query("ALTER TABLE `{$table_esc}` MODIFY COLUMN content_hash varchar(64) DEFAULT NULL");
+            }
         }
         self::$knowledge_vectors_column_map_cache = null;
+        self::$knowledge_vectors_fulltext_cache = null;
+        self::ensure_knowledge_vector_fulltext_index();
+    }
+
+    /** @var bool|null */
+    private static $knowledge_vectors_fulltext_cache = null;
+
+    /**
+     * Índice FULLTEXT sobre content_chunk (InnoDB MySQL 5.6+ / MariaDB). Fail-open si el motor no lo admite.
+     */
+    public static function ensure_knowledge_vector_fulltext_index(): void {
+        global $wpdb;
+        $table = self::table('knowledge_vectors');
+        if ($wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $table)) !== $table) {
+            return;
+        }
+        if (self::knowledge_vectors_has_fulltext_index()) {
+            return;
+        }
+        $table_esc = esc_sql($table);
+        $before = (string) $wpdb->last_error;
+        // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
+        $wpdb->query("ALTER TABLE `{$table_esc}` ADD FULLTEXT KEY ft_content_chunk (content_chunk)");
+        self::$knowledge_vectors_fulltext_cache = null;
+        if ($wpdb->last_error !== '' && $wpdb->last_error !== $before) {
+            $wpdb->last_error = '';
+        }
+    }
+
+    public static function knowledge_vectors_has_fulltext_index(): bool {
+        if (self::$knowledge_vectors_fulltext_cache !== null) {
+            return self::$knowledge_vectors_fulltext_cache;
+        }
+        global $wpdb;
+        $table = self::table('knowledge_vectors');
+        if ($wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $table)) !== $table) {
+            self::$knowledge_vectors_fulltext_cache = false;
+
+            return false;
+        }
+        $table_esc = esc_sql($table);
+        // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
+        $existing = $wpdb->get_results("SHOW INDEX FROM `{$table_esc}` WHERE Key_name = 'ft_content_chunk' OR Index_type = 'FULLTEXT'");
+        self::$knowledge_vectors_fulltext_cache = is_array($existing) && $existing !== [];
+
+        return self::$knowledge_vectors_fulltext_cache;
     }
 
     /** @var array<string, true>|null */
@@ -452,8 +509,54 @@ class Xabia_DB {
         if (class_exists('Xabia_Knowledge_Optimizer', false)) {
             return Xabia_Knowledge_Optimizer::content_hash($content_chunk);
         }
+        $content = trim($content_chunk);
 
-        return md5($content_chunk);
+        return $content === '' ? '' : hash('sha256', $content);
+    }
+
+    /**
+     * True si el hash almacenado corresponde al chunk (SHA-256 actual o MD5 legado).
+     */
+    public static function content_hash_matches(string $stored_hash, string $content_chunk): bool {
+        $stored = trim($stored_hash);
+        $chunk = (string) $content_chunk;
+        if ($stored === '' || $chunk === '') {
+            return false;
+        }
+        $sha = hash('sha256', trim($chunk));
+        if ($sha !== '' && strlen($stored) === strlen($sha) && hash_equals($stored, $sha)) {
+            return true;
+        }
+        if (strlen($stored) === 32) {
+            $md5_raw = md5($chunk);
+            $md5_trim = md5(trim($chunk));
+
+            return (strlen($stored) === strlen($md5_raw) && hash_equals($stored, $md5_raw))
+                || (strlen($stored) === strlen($md5_trim) && hash_equals($stored, $md5_trim));
+        }
+
+        return false;
+    }
+
+    /**
+     * Migra MD5 legado a SHA-256 sin invalidar el embedding.
+     */
+    public static function maybe_upgrade_legacy_content_hash(int $row_id, string $content_chunk, string $stored_hash): void {
+        $row_id = (int) $row_id;
+        if ($row_id < 1 || strlen(trim($stored_hash)) !== 32) {
+            return;
+        }
+        $fresh = self::compute_content_hash($content_chunk);
+        if ($fresh === '' || hash_equals(trim($stored_hash), $fresh)) {
+            return;
+        }
+        global $wpdb;
+        $table = self::table('knowledge_vectors');
+        $cols = self::knowledge_vectors_column_map();
+        if (!isset($cols['content_hash'])) {
+            return;
+        }
+        $wpdb->update($table, ['content_hash' => $fresh], ['id' => $row_id], ['%s'], ['%d']);
     }
 
     /**
@@ -617,7 +720,7 @@ class Xabia_DB {
             return "({$pending})";
         }
 
-        return "({$pending} OR (content_hash IS NOT NULL AND content_hash != MD5(content_chunk)))";
+        return "({$pending} OR (content_hash IS NOT NULL AND content_hash != SHA2(TRIM(content_chunk), 256) AND content_hash != SHA2(content_chunk, 256) AND content_hash != MD5(content_chunk) AND content_hash != MD5(TRIM(content_chunk))))";
     }
 
     /**

@@ -678,7 +678,10 @@ class Xabia_Knowledge_Ingest {
     /**
      * @param array<string, mixed> $row
      */
-    private static function row_language_code(array $row): string {
+    /**
+     * Idioma de una fila de catálogo (WPML/Polylang/meta). Público para fuentes PHP (páginas web).
+     */
+    public static function row_language_code(array $row): string {
         foreach (['language_code', 'wpml_language', 'lang', 'pll_lang', 'language', 'idioma'] as $col) {
             if (!isset($row[$col])) {
                 continue;
@@ -1817,5 +1820,127 @@ ORDER BY p.post_title";
         }
 
         return $raw_data;
+    }
+
+    /**
+     * Hash SHA-256 de un chunk de conocimiento (Delta Sync v2.0).
+     */
+    public static function compute_chunk_hash(string $text_blob): string {
+        if (class_exists('Xabia_DB', false)) {
+            return Xabia_DB::compute_content_hash($text_blob);
+        }
+        if (class_exists('Xabia_Knowledge_Optimizer', false)) {
+            return Xabia_Knowledge_Optimizer::content_hash($text_blob);
+        }
+        $text_blob = trim($text_blob);
+
+        return $text_blob === '' ? '' : hash('sha256', $text_blob);
+    }
+
+    /**
+     * Motor de Delta Sync:
+     * - Hash idéntico (SHA-256 o MD5 legado): solo metadatos volátiles (0 tokens de embedding).
+     * - Hash distinto: actualiza content_chunk, nuevo hash y anula el vector.
+     * - Sin fila: inserta y deja el embedding pendiente.
+     *
+     * @param array<string, mixed> $meta_array
+     * @param array{source_file?: string, federation_node_id?: string|null, identity?: array<string, string>} $extras
+     * @param object|null $existing Fila ya resuelta (p. ej. lookup canónico/legado del bridge).
+     * @return array{action: 'unchanged'|'content_update'|'insert'|'error', needs_embedding: bool, row_id: int}
+     */
+    public static function process_chunk_delta_sync(
+        string $project_id,
+        string $ente_id,
+        string $text_blob,
+        array $meta_array,
+        string $source_record_id = '',
+        array $extras = [],
+        $existing = null
+    ): array {
+        $project_id = sanitize_key($project_id);
+        $ente_id = self::canonical_slug($ente_id !== '' ? $ente_id : 'global');
+        if ($ente_id === '') {
+            $ente_id = 'global';
+        }
+        $text_blob = trim($text_blob);
+        if ($project_id === '' || $text_blob === '') {
+            return ['action' => 'error', 'needs_embedding' => false, 'row_id' => 0];
+        }
+        if (!class_exists('Xabia_DB', false)) {
+            return ['action' => 'error', 'needs_embedding' => false, 'row_id' => 0];
+        }
+
+        $new_hash = self::compute_chunk_hash($text_blob);
+        if (!is_object($existing) || !isset($existing->id)) {
+            $existing = null;
+            if ($ente_id !== 'global') {
+                $existing = Xabia_DB::find_knowledge_row_by_ente($project_id, $ente_id);
+            }
+            if ($existing === null && $source_record_id !== '') {
+                $existing = Xabia_DB::find_knowledge_row_by_source($project_id, $source_record_id);
+            }
+        }
+
+        $identity = [
+            'ente_id'          => $ente_id,
+            'source_record_id' => $source_record_id !== '' ? $source_record_id : $ente_id,
+        ];
+        if (isset($extras['identity']) && is_array($extras['identity'])) {
+            $identity = array_merge($identity, $extras['identity']);
+        }
+
+        if ($existing !== null && isset($existing->id)) {
+            $stored_hash = (string) ($existing->content_hash ?? '');
+            $row_id = (int) $existing->id;
+            if ($stored_hash !== '' && Xabia_DB::content_hash_matches($stored_hash, $text_blob)) {
+                Xabia_DB::maybe_upgrade_legacy_content_hash($row_id, $text_blob, $stored_hash);
+                $prev_meta = [];
+                if (!empty($existing->meta_blob)) {
+                    $decoded = json_decode((string) $existing->meta_blob, true);
+                    if (is_array($decoded)) {
+                        $prev_meta = $decoded;
+                    }
+                }
+                $merged = class_exists('Xabia_Knowledge_Optimizer', false)
+                    ? Xabia_Knowledge_Optimizer::merge_volatile_meta($prev_meta, $meta_array)
+                    : array_merge($prev_meta, $meta_array);
+                Xabia_DB::update_knowledge_meta_only($row_id, $merged);
+
+                return [
+                    'action'          => 'unchanged',
+                    'needs_embedding' => false,
+                    'row_id'          => $row_id,
+                ];
+            }
+            $ok = Xabia_DB::update_knowledge_content($row_id, $text_blob, $meta_array, $new_hash, $identity);
+
+            return [
+                'action'          => $ok ? 'content_update' : 'error',
+                'needs_embedding' => $ok,
+                'row_id'          => $row_id,
+            ];
+        }
+
+        $insert_extras = $extras;
+        unset($insert_extras['identity']);
+        $insert_extras = array_merge($insert_extras, [
+            'source_record_id' => $source_record_id !== '' ? $source_record_id : $ente_id,
+            'content_hash'     => $new_hash,
+        ]);
+        $inserted = Xabia_DB::insert_knowledge_vector_row(
+            $project_id,
+            $ente_id,
+            $text_blob,
+            $meta_array,
+            $insert_extras
+        );
+        global $wpdb;
+        $row_id = (int) $wpdb->insert_id;
+
+        return [
+            'action'          => $inserted ? 'insert' : 'error',
+            'needs_embedding' => (bool) $inserted,
+            'row_id'          => $row_id,
+        ];
     }
 }

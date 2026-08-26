@@ -5,7 +5,7 @@ Tags: chatbot, ai, gemini, virtual assistant, rag, wordpress
 Requires at least: 6.0
 Tested up to: 6.9
 Requires PHP: 7.4
-Stable tag: 1.0.274
+Stable tag: 1.0.283
 License: GPLv2 or later
 License URI: http://www.gnu.org/licenses/gpl-2.0.html
 
@@ -25,6 +25,36 @@ Documentación: https://xabia.ai/documentacion/
 4. Cree un agente, sincronice datos y publique con shortcode o modo nativo.
 
 == Changelog ==
+
+= 1.0.283 =
+* Admin Playground: alt de `[ACTION:IMG:…]` pasa a «Imagen de la entidad» (agnóstico; ya no «Imagen del evento»).
+
+= 1.0.282 =
+* RAG: el Hub aplica `keyword_expansions` en la búsqueda léxica; el trim prioriza también esos sinónimos (p. ej. caballo → hípica).
+
+= 1.0.281 =
+* RAG: densifica y trocea fichas Hub antes del trim; evita substr UTF-8 inválido que vaciaba el contexto (p. ej. «caballo» → «no hay resultados»).
+
+= 1.0.280 =
+* RAG: enrutador semántico híbrido (regex fast-path + micro-LLM CATALOG|GENERAL) para intención de catálogo sin más diccionarios de dominio.
+
+= 1.0.279 =
+* RAG: «¿hacéis…?», «¿tenéis…?», «hay opciones…», «buscando…» y «me recomiendas…» disparan intención de catálogo (top-K 20).
+
+= 1.0.278 =
+* RAG léxico FULLTEXT: tokeniza frases compuestas (p. ej. «excursiones a caballo») sin pegar palabras en un solo término obligatorio.
+
+= 1.0.277 =
+* Sync: corrige fatal al sincronizar páginas web complementarias (row_language_code era private).
+* Admin AJAX sync: captura Throwable para devolver JSON de error en lugar de HTTP 500 opaco.
+
+= 1.0.276 =
+* Delta Sync: content_hash pasa a SHA-256 (varchar 64) con compatibilidad MD5 legado, sin re-embeber texto idéntico.
+* RAG léxico: índice FULLTEXT en content_chunk (MATCH … AGAINST BOOLEAN MODE) y fallback LIKE si el motor no soporta FULLTEXT.
+
+= 1.0.275 =
+* RAG: detector de intención de catálogo más amplio (sin vocabularios de dominio) y top-K 10–15 antes del recorte elástico.
+* Ingesta: las taxonomías del chunk se indexan como KEYWORDS (nombre, slug y forma sin acentos), sin diccionarios de sinónimos.
 
 = 1.0.211 =
 * MEC: enlaces usan permalink nativo (WPML /eu/…) cuando el evento existe en el mismo WordPress.

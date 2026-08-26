@@ -13,8 +13,13 @@ class Xabia_Knowledge_Optimizer {
     public const COOLDOWN_HOOK = 'xabia_sync_cooldown_fire';
     public const COOLDOWN_SECONDS = 300;
 
+    /**
+     * Hash SHA-256 canónico para Delta Sync (trim para que espacios no invaliden el vector).
+     */
     public static function content_hash(string $plain_text): string {
-        return md5($plain_text);
+        $plain_text = trim($plain_text);
+
+        return $plain_text === '' ? '' : hash('sha256', $plain_text);
     }
 
     /**

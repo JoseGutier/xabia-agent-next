@@ -228,11 +228,11 @@ img[alt="Xabia"] {
 <body>
 <h1>Manual de usuario — Xabia Agent Core</h1>
 <blockquote>
-<p><strong>Versión del producto:</strong> Xabia Agent Core <strong>v1.0.242</strong> (agosto 2026)<br><strong>Índice de manuales:</strong> <a href="https://xabia.ai/docs/">https://xabia.ai/docs/</a><br><strong>PDF en línea:</strong> <a href="https://xabia.ai/docs/manual-usuario-xabia-core.pdf">https://xabia.ai/docs/manual-usuario-xabia-core.pdf</a><br><strong>HTML en línea:</strong> <a href="https://xabia.ai/docs/manual-usuario-xabia-core.html">https://xabia.ai/docs/manual-usuario-xabia-core.html</a></p>
+<p><strong>Versión del producto:</strong> Xabia Agent Core <strong>v1.0.283</strong> (agosto 2026)<br><strong>Índice de manuales:</strong> <a href="https://xabia.ai/docs/">https://xabia.ai/docs/</a><br><strong>PDF en línea:</strong> <a href="https://xabia.ai/docs/manual-usuario-xabia-core.pdf">https://xabia.ai/docs/manual-usuario-xabia-core.pdf</a><br><strong>HTML en línea:</strong> <a href="https://xabia.ai/docs/manual-usuario-xabia-core.html">https://xabia.ai/docs/manual-usuario-xabia-core.html</a></p>
 </blockquote>
 <h2>Guía rápida de instalación</h2>
 <ol>
-<li>Descargue el ZIP de <strong>Xabia Agent Core</strong> (<code>xabia-agent-core-1.0.242.zip</code> o paquete retail equivalente).</li>
+<li>Descargue el ZIP de <strong>Xabia Agent Core</strong> (<code>xabia-agent-core-1.0.283.zip</code> o paquete retail equivalente).</li>
 <li>En WordPress, vaya a <strong>Plugins → Añadir nuevo → Subir plugin</strong>, seleccione el ZIP y pulse <strong>Instalar ahora → Activar</strong>.</li>
 <li>Abra <strong>Xabia Agent</strong> y configure <strong>Conexión a la IA</strong>: pegue la licencia <code>XABIA--…</code>, elija <strong>Xabia Cloud</strong> (recomendado) o <strong>Infraestructura propia</strong>, y guarde.</li>
 <li>Cree un agente desde <strong>Nuevo agente</strong>, escriba nombre, saludo e instrucciones básicas.</li>
@@ -869,6 +869,7 @@ img[alt="Xabia"] {
 <p>Limpia la memoria matemática asociada a este agente (no borra necesariamente el CSV en disco). Úselo cuando quiera empezar de cero después de mover muchos datos.</p>
 <h3>9.5 Zona de pruebas («Playground»)</h3>
 <p>Un chat de laboratorio igual que usará el visitante pero sin publicar página todavía. Ideal para tunear antes de abrir al público.</p>
+<p>Cuando la respuesta incluye <code>[ACTION:IMG:…]</code>, el Playground muestra la etiqueta (alt) <strong>«Imagen de la entidad»</strong>: es un texto <strong>agnóstico</strong> (empresa, producto, POI…), no específico de eventos. En el Playground <strong>no es obligatorio</strong> que la imagen cargue visualmente; el alt solo identifica el marcador.</p>
 <hr>
 <h2>10. Pestaña «Comportamiento IA»</h2>
 <p>Aquí define el estilo de respuesta del asistente y cómo usa su base de conocimiento.<br>La parte visual (modo de presentación, avatar y burbuja) está en la pestaña <strong>Apariencia</strong>.</p>
@@ -908,6 +909,7 @@ img[alt="Xabia"] {
 <ul>
 <li><strong>Activar búsqueda vectorial:</strong> conviene solo si ya ha hecho <strong>Entrenar</strong> y ve en la barra lateral que hay memoria lista. Si no hay nada entrenado, el texto de ayuda le avisará.</li>
 <li><strong>Umbral de similitud (0–1):</strong> qué tan parecido debe ser un trozo a la pregunta para contar. <strong>Valores muy altos</strong> pueden hacer que “no encuentre nada” sobre temas relacionados pero no idénticos.</li>
+<li><strong>Expansiones de palabras clave</strong> (Comportamiento IA / reglas avanzadas): mapa opcional <em>aguja → sinónimos</em> (p. ej. <code>caballo</code> → <code>hípica|equitación|pony</code>). Con <strong>Xabia Cloud ≥ 1.0.282</strong>, el Hub usa esas expansiones en la búsqueda léxica y el recorte de contexto prioriza fichas que coincidan con los sinónimos. Úselo cuando el visitante pregunta con un término y sus fichas usan otro (sin inventar un diccionario de todo el sector).</li>
 </ul>
 <h3>10.9 Saludo inicial</h3>
 <p>Texto HTML sencillo que ve el visitante al abrir el chat. WordPress aplicará sus reglas de seguridad habituales sobre etiquetas permitidas.</p>
@@ -1220,6 +1222,23 @@ img[alt="Xabia"] {
 <h3>¿Hay saldo en la cartera pero el visitante ve “modo mantenimiento”?</h3>
 <p>Mire en <strong>Comportamiento IA</strong> el <strong>tope diario de tokens por agente</strong>. La barra lateral <strong>Tokens hoy</strong> muestra si ya alcanzó ese techo para el día técnico en curso; al día siguiente ese contador vuelve a cero para el agente, aunque su <strong>cartera global</strong> siga teniendo saldo disponible para otros agentes u otros días.</p>
 <h2>Notas de versión (Core)</h2>
+<h3>Core v1.0.283 (agosto 2026)</h3>
+<ul>
+<li>Playground: alt de imágenes <code>[ACTION:IMG:…]</code> → <strong>«Imagen de la entidad»</strong> (agnóstico; sustituye «Imagen del evento»).</li>
+</ul>
+<h3>Core v1.0.282 (agosto 2026)</h3>
+<ul>
+<li>RAG Cloud: el Hub aplica <strong>expansiones de palabras clave</strong> del agente en la búsqueda léxica.</li>
+<li>Recorte de contexto: prioriza fichas que coinciden con esos sinónimos (p. ej. pregunta «caballo» y ficha etiquetada «hípica»).</li>
+</ul>
+<h3>Core v1.0.281 (agosto 2026)</h3>
+<ul>
+<li>RAG: densifica y trocea fichas del Hub <strong>antes</strong> del límite de caracteres; evita que un recorte UTF-8 inválido vacíe el contexto y el asistente diga que «no hay resultados».</li>
+</ul>
+<h3>Core v1.0.280 (agosto 2026)</h3>
+<ul>
+<li>RAG: enrutador de intención de catálogo híbrido (regex + micro-LLM CATALOG/GENERAL) sin diccionarios de dominio.</li>
+</ul>
 <h3>Core v1.0.208 (agosto 2026)</h3>
 <ul>
 <li>Actualizaciones: corrige el aviso en <strong>Plugins</strong> cuando WordPress aún no había creado el transient <code>update_plugins</code>.</li>

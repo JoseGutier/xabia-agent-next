@@ -2165,13 +2165,17 @@ if (!class_exists('Xabia_API')) {
             if ($rag_lexical_query !== '') {
                 $hub_rag_opts['lexical_query_text'] = $rag_lexical_query;
             }
-            // Listado amplio cuando la query parece filtro de catálogo (patrón estructural, sin léxico de dominio).
-            if (self::query_implies_catalog_filter_listing($user_msg_clean !== '' ? $user_msg_clean : $search_term)) {
+            // Listado amplio: Capa 1 regex + Capa 2 micro-LLM (CATALOG|GENERAL). Top-K elevado antes del recorte.
+            $catalog_intent = self::resolve_catalog_list_intent(
+                $user_msg_clean !== '' ? $user_msg_clean : $search_term,
+                (string) $project_id,
+                is_array($config) ? $config : []
+            );
+            if (!empty($catalog_intent['hit'])) {
                 $hub_rag_opts['catalog_list'] = true;
-                $rag_fetch_limit = max((int) $rag_fetch_limit, min(
-                    class_exists('Xabia_Brain', false) ? (int) Xabia_Brain::MAX_CATALOG_RAG_CHUNKS : 24,
-                    16
-                ));
+                $rag_fetch_limit = class_exists('Xabia_Catalog_Intent', false)
+                    ? Xabia_Catalog_Intent::rag_chunk_limit((int) $rag_fetch_limit, (string) ($catalog_intent['source'] ?? 'regex'))
+                    : max((int) $rag_fetch_limit, 15);
             }
             $retrieval_search_term = self::rag_retrieval_search_term($search_term, $user_msg_clean);
 
@@ -2220,17 +2224,19 @@ if (!class_exists('Xabia_API')) {
             }
 
             self::$last_rag_debug = [
-                'chunk_count'          => 0,
-                'keyword_boost_status' => 'not_evaluated',
-                'search_term'          => $search_term,
-                'retrieval_term'       => $retrieval_search_term,
-                'keyword_needles'      => $rag_keyword_needles,
-                'needles_csv'          => implode(',', $rag_keyword_needles),
-                'lexical_query'        => $rag_lexical_query,
-                'velero_in_raw_context'=> 'n/a',
-                'rescue_needle'        => '',
-                'rag_dev_mode'         => self::$rag_development_mode_active,
-                'query_rewritten'      => self::$last_rag_debug['query_rewritten'] ?? 'n/a',
+                'chunk_count'            => 0,
+                'keyword_boost_status'   => 'not_evaluated',
+                'search_term'            => $search_term,
+                'retrieval_term'         => $retrieval_search_term,
+                'keyword_needles'        => $rag_keyword_needles,
+                'needles_csv'            => implode(',', $rag_keyword_needles),
+                'lexical_query'          => $rag_lexical_query,
+                'velero_in_raw_context'  => 'n/a',
+                'rescue_needle'          => '',
+                'rag_dev_mode'           => self::$rag_development_mode_active,
+                'query_rewritten'        => self::$last_rag_debug['query_rewritten'] ?? 'n/a',
+                'catalog_intent_hit'     => !empty($catalog_intent['hit']) ? 'yes' : 'no',
+                'catalog_intent_source'  => (string) ($catalog_intent['source'] ?? 'none'),
             ];
 
             $context = "";
@@ -2503,19 +2509,25 @@ if (!class_exists('Xabia_API')) {
                 }
             }
 
+            // Densificar/trocear ANTES del trim: Hub devuelve fichas ~10kB; substr byte-wise rompe UTF-8
+            // y densify posterior deja contexto vacío → el LLM dice «no hay resultados».
+            if (class_exists('Xabia_Brain', false) && method_exists('Xabia_Brain', 'prepare_rag_context_for_prompt')) {
+                $context = Xabia_Brain::prepare_rag_context_for_prompt((string) $context);
+            } elseif (class_exists('Xabia_Brain', false) && method_exists('Xabia_Brain', 'densify_rag_context')) {
+                $context = Xabia_Brain::densify_rag_context((string) $context);
+            }
+
             // Presupuesto elástico: Gemini Flash admite ventanas grandes; el límite solo acota coste/latencia.
             $context_trim_limit = (int) apply_filters('xabia_chat_rag_context_trim_limit', 12000, $project_id, $config ?? []);
-            if (self::query_implies_catalog_filter_listing($user_msg_clean !== '' ? $user_msg_clean : $search_term)) {
+            if (!empty($catalog_intent['hit'])) {
                 $context_trim_limit = (int) apply_filters('xabia_chat_rag_context_trim_limit_catalog', max($context_trim_limit, 18000), $project_id, $config ?? []);
             }
             if (strlen($context) > $context_trim_limit) {
                 $prefer = trim($named_entity !== '' ? $named_entity : ($entity_anchor !== '' ? $entity_anchor : $user_msg_clean));
+                $prefer = self::expand_prefer_hint_with_keyword_expansions($prefer, is_array($config) ? $config : []);
                 $context = self::truncate_chat_rag_context($context, $context_trim_limit, $prefer);
             }
             $context = self::rewrite_remote_media_hosts_in_text((string) $context, $project_id);
-            if (class_exists('Xabia_Brain', false) && method_exists('Xabia_Brain', 'densify_rag_context')) {
-                $context = Xabia_Brain::densify_rag_context((string) $context);
-            }
             
             if (empty($context) || strlen($context) < 10) {
                 $had_knowledge_rows = false;
@@ -2880,7 +2892,7 @@ if (!class_exists('Xabia_API')) {
          * Texto base del Intérprete (router), neutro y compacto. Ampliable vía filtro xabia_system_prompt_rules (contexto 'interpreter').
          */
         private static function get_default_interpreter_rules($current_ymd) {
-            return 'Eres el Intérprete. Tu salida son palabras clave separadas por espacios para buscar en la base de conocimiento: términos que puedan aparecer en los datos indexados (etiquetas, valores, categorías, formas flexivas y conceptos afines). No repitas la pregunta del usuario de forma literal. Incluye variantes de género/número del criterio pedido y, si preguntan por un tipo o ambiente, hiperónimos/hipónimos habituales en fichas sin inventar nombres de entidades. No inventes nombres de entidades concretas. Corrige errores tipográficos evidentes. Para fechas relativas, usa como referencia HOY: ' . $current_ymd . '.';
+            return 'Eres el Intérprete. Tu salida son palabras clave separadas por espacios para buscar en la base de conocimiento: términos que puedan aparecer en los datos indexados (etiquetas, valores, categorías, formas flexivas y conceptos afines). No repitas la pregunta del usuario de forma literal. Incluye variantes de género/número del criterio pedido y, si preguntan por un tipo o ambiente, hiperónimos/hipónimos habituales en fichas sin inventar nombres de entidades. Si el usuario nombra una actividad en lenguaje cotidiano, añade etiquetas de catálogo equivalentes (nombres de categoría o tipo) que podrían figurar en los datos. No inventes nombres de entidades concretas. Corrige errores tipográficos evidentes. Para fechas relativas, usa como referencia HOY: ' . $current_ymd . '.';
         }
 
         /**
@@ -4713,6 +4725,9 @@ if (!class_exists('Xabia_API')) {
          */
         private static function truncate_chat_rag_context(string $context, int $limit, string $prefer_hint = ''): string
         {
+            if (class_exists('Xabia_Brain', false) && method_exists('Xabia_Brain', 'ensure_valid_utf8')) {
+                $context = Xabia_Brain::ensure_valid_utf8($context);
+            }
             if ($limit < 200 || strlen($context) <= $limit) {
                 return $context;
             }
@@ -4725,7 +4740,11 @@ if (!class_exists('Xabia_API')) {
             $parts = preg_split('/\n\n+/u', $context) ?: [];
             $parts = array_values(array_filter(array_map('trim', $parts)));
             if ($parts === []) {
-                return substr($context, 0, $limit) . '... [CORTADO POR LÍMITE]';
+                $safe = class_exists('Xabia_Brain', false) && method_exists('Xabia_Brain', 'truncate_chunk_preserving_imagen')
+                    ? Xabia_Brain::truncate_chunk_preserving_imagen($context, $limit)
+                    : (mb_substr($context, 0, max(1, $limit - 3), 'UTF-8') . '…');
+
+                return $safe . '... [CORTADO POR LÍMITE]';
             }
 
             $hint = mb_strtolower(trim(remove_accents($prefer_hint)), 'UTF-8');
@@ -4834,7 +4853,7 @@ if (!class_exists('Xabia_API')) {
                     return Xabia_Brain::truncate_chunk_preserving_imagen($joined, $limit);
                 }
 
-                return substr($joined, 0, $limit) . $cut;
+                return mb_substr($joined, 0, max(1, $limit - mb_strlen($cut, 'UTF-8')), 'UTF-8') . $cut;
             }
 
             return $joined;
@@ -4865,6 +4884,77 @@ if (!class_exists('Xabia_API')) {
             unset($text);
 
             return false;
+        }
+
+        /**
+         * Intención de listado de catálogo (híbrido: regex + micro-LLM).
+         * Firma ampliada opcional; sin $project_id/$config solo Capa 1 (regex).
+         */
+        public static function query_implies_catalog_filter_listing(string $text, string $project_id = '', array $config = []): bool
+        {
+            $resolved = self::resolve_catalog_list_intent($text, $project_id, $config);
+
+            return !empty($resolved['hit']);
+        }
+
+        /**
+         * @return array{hit: bool, source: string}
+         */
+        public static function resolve_catalog_list_intent(string $text, string $project_id = '', array $config = []): array
+        {
+            if (!class_exists('Xabia_Catalog_Intent', false)) {
+                $q = mb_strtolower(trim(wp_strip_all_tags((string) $text)), 'UTF-8');
+                if ($q === '') {
+                    return ['hit' => false, 'source' => 'none'];
+                }
+                $hit = (bool) preg_match(
+                    '/\b(hay|existen|teneis|tenéis|ofrec[eé]is|busco|quiero|alguna|algunas|qu[eé])\b.{0,100}\b(en|de|tipo|categor[ií]a|entorno|ambiente)\b/u',
+                    $q
+                ) || (bool) preg_match(
+                    '/\b(actividades?|opciones?|experiencias?|empresas?|servicios?)\b.{0,60}\b(en|de|tipo|categor[ií]a|entorno|ambiente)\b/u',
+                    $q
+                );
+
+                return ['hit' => $hit, 'source' => $hit ? 'regex' : 'none'];
+            }
+
+            $ctx = [
+                'project_id' => $project_id,
+                'config'     => $config,
+            ];
+            if ($project_id !== '' || $config !== []) {
+                $ctx['llm_classify'] = static function (string $msg) use ($project_id, $config): string {
+                    return self::classify_catalog_intent_micro($msg, $project_id, $config);
+                };
+            }
+
+            return Xabia_Catalog_Intent::resolve($text, $ctx);
+        }
+
+        /**
+         * Micro-enrutador CATALOG|GENERAL (max 5 tokens, temperature 0). Fail-open → GENERAL implícito.
+         */
+        private static function classify_catalog_intent_micro(string $user_msg, string $project_id, array $config): string
+        {
+            $user_msg = trim(wp_strip_all_tags($user_msg));
+            if ($user_msg === '') {
+                return Xabia_Catalog_Intent::LABEL_GENERAL;
+            }
+            // Prompt alineado al brief: la pregunta aparece en el mensaje de sistema + user turn limpio.
+            $system = Xabia_Catalog_Intent::micro_router_system_prompt()
+                . " El usuario dice: '" . mb_substr($user_msg, 0, 500, 'UTF-8') . "'.";
+            $messages = [
+                ['role' => 'system', 'content' => $system],
+                ['role' => 'user', 'content' => $user_msg],
+            ];
+            $messages = self::sanitize_llm_messages_for_external_api($messages, $project_id, $config);
+            $raw = self::call_auxiliary_llm($messages, 5, 0.0, $project_id, $config);
+            if (self::looks_like_llm_transport_error($raw)) {
+                return Xabia_Catalog_Intent::LABEL_GENERAL;
+            }
+            $label = Xabia_Catalog_Intent::parse_router_label($raw);
+
+            return $label !== null ? $label : Xabia_Catalog_Intent::LABEL_GENERAL;
         }
 
         /**
@@ -5002,30 +5092,6 @@ if (!class_exists('Xabia_API')) {
             }
 
             return array_values(array_unique($matched));
-        }
-
-        /**
-         * Query de filtro/listado de catálogo por patrón estructural (sin léxico de dominio).
-         */
-        public static function query_implies_catalog_filter_listing(string $text): bool
-        {
-            $q = mb_strtolower(trim(wp_strip_all_tags((string) $text)), 'UTF-8');
-            if ($q === '') {
-                return false;
-            }
-
-            // «hay/existen/busco … en/de/tipo …» o «actividades/opciones … en/de …»
-            if (preg_match(
-                '/\b(hay|existen|teneis|tenéis|ofrec[eé]is|busco|quiero|alguna|algunas|qu[eé])\b.{0,100}\b(en|de|tipo|categor[ií]a|entorno|ambiente)\b/u',
-                $q
-            )) {
-                return true;
-            }
-
-            return (bool) preg_match(
-                '/\b(actividades?|opciones?|experiencias?|empresas?|servicios?)\b.{0,60}\b(en|de|tipo|categor[ií]a|entorno|ambiente)\b/u',
-                $q
-            );
         }
 
         /**
@@ -5931,6 +5997,50 @@ if (!class_exists('Xabia_API')) {
             }
 
             return false;
+        }
+
+        /**
+         * Añade sinónimos de rules.keyword_expansions al hint de preferencia del trim
+         * (p. ej. «caballo» → también prioriza fichas con «hípica»).
+         *
+         * @param array<string, mixed> $config
+         */
+        private static function expand_prefer_hint_with_keyword_expansions(string $prefer, array $config): string {
+            $prefer = trim($prefer);
+            if ($prefer === '') {
+                return '';
+            }
+            $expansions = self::resolve_rag_keyword_expansions($config);
+            if ($expansions === []) {
+                return $prefer;
+            }
+            $extra = [];
+            $tokens = preg_split('/\s+/u', mb_strtolower(function_exists('remove_accents') ? remove_accents($prefer) : $prefer, 'UTF-8')) ?: [];
+            foreach ($tokens as $tok) {
+                $tok = trim((string) $tok, " \t\n\r\0\x0B.,;:¿?¡!");
+                if ($tok === '' || mb_strlen($tok, 'UTF-8') < 3) {
+                    continue;
+                }
+                // Match exact key or accent-folded key.
+                foreach ($expansions as $key => $pattern) {
+                    $key_l = mb_strtolower((string) $key, 'UTF-8');
+                    $key_flat = function_exists('remove_accents') ? remove_accents($key_l) : $key_l;
+                    if ($tok !== $key_l && $tok !== $key_flat) {
+                        continue;
+                    }
+                    foreach (preg_split('/\|/', (string) $pattern) ?: [] as $part) {
+                        $part = trim((string) $part);
+                        if ($part !== '' && mb_strlen($part, 'UTF-8') >= 3) {
+                            $extra[] = $part;
+                        }
+                    }
+                }
+            }
+            if ($extra === []) {
+                return $prefer;
+            }
+
+            return trim($prefer . ' ' . implode(' ', array_values(array_unique($extra))));
         }
 
         /**

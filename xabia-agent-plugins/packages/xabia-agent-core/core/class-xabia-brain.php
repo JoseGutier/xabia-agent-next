@@ -1,7 +1,7 @@
 <?php
 /**
- * XABIA BRAIN — búsqueda RAG (LIKE y vectorial) y formateo de contexto.
- * - LIKE: prioridad frase exacta y palabras clave (cuando no hay vectores o use_vector = false).
+ * XABIA BRAIN — búsqueda RAG (FULLTEXT + LIKE de respaldo y vectorial) y formateo de contexto.
+ * - Léxico: MATCH ... AGAINST BOOLEAN MODE sobre content_chunk; fallback LIKE (chunk + meta).
  * - Vector: embeddings + similitud coseno, umbral y top_k (cuando use_vector y hay vector_data).
  */
 
@@ -15,6 +15,11 @@ class Xabia_Brain {
     const DEFAULT_MAX_CHUNKS = 4;
     /** Coincide con el límite del Hub y el campo «Resultados máximos de contexto» en el admin. */
     const MAX_RAG_CHUNKS = 15;
+    /**
+     * Suelo de chunks al detectar intención de catálogo, antes del recorte elástico.
+     * Alineado con {@see Xabia_Catalog_Intent::RAG_CHUNK_FLOOR} (15–24).
+     */
+    const CATALOG_INTENT_MIN_CHUNKS = 20;
     /** Listados de catálogo (varias empresas): evita discriminar por el top-k corto del chat normal. */
     const MAX_CATALOG_RAG_CHUNKS = 50;
     /**
@@ -40,6 +45,25 @@ class Xabia_Brain {
         }
 
         return self::DEFAULT_MAX_CHUNKS;
+    }
+
+    /**
+     * Top-K vectorial: el listado de catálogo no hereda el techo corto del chat (4).
+     *
+     * @param array{catalog_list?: bool} $hub_opts
+     */
+    public static function resolve_vector_top_k($max_chunks, array $hub_opts = []): int {
+        $base = $max_chunks !== null ? max(1, (int) $max_chunks) : self::DEFAULT_MAX_CHUNKS;
+        if (!empty($hub_opts['catalog_list'])) {
+            $floor = self::CATALOG_INTENT_MIN_CHUNKS;
+            if (class_exists('Xabia_Catalog_Intent', false)) {
+                $floor = Xabia_Catalog_Intent::RAG_CHUNK_FLOOR;
+            }
+
+            return max(1, min(self::MAX_CATALOG_RAG_CHUNKS, max($base, $floor)));
+        }
+
+        return max(1, min(self::MAX_RAG_CHUNKS, $base));
     }
 
     /**
@@ -89,118 +113,193 @@ class Xabia_Brain {
     }
 
     /**
-     * Búsqueda por LIKE (keywords). Usado cuando no hay vector search o como fallback.
+     * Construye una consulta booleana segura para MySQL FULLTEXT (+termino1* +termino2*).
+     * Soluciona el bug de frases compuestas (ej. "excursiones a caballo").
+     *
+     * @param list<string> $terms
+     */
+    public static function build_fulltext_boolean_query(string $raw_query, array $terms = []): string {
+        // 1. Unir la query original y los términos extra en un solo bloque de texto
+        $combined_text = $raw_query . ' ' . implode(' ', $terms);
+
+        // 2. Limpiar caracteres especiales que rompan el FULLTEXT de MySQL
+        $clean = preg_replace('/[+\-><\(\)~*"@%]+/u', ' ', $combined_text);
+
+        // 3. Extraer palabras individuales (tokenizar por espacios)
+        $tokens = preg_split('/\s+/u', trim((string) $clean), -1, PREG_SPLIT_NO_EMPTY) ?: [];
+
+        // 4. Filtrar palabras únicas para no repetir
+        $unique_tokens = array_values(array_unique($tokens));
+        $boolean_parts = [];
+
+        // 5. Lista de stop-words básicas a ignorar en léxico para no generar ruido
+        $stop_words = ['con', 'las', 'los', 'del', 'que', 'una', 'para', 'por'];
+
+        foreach ($unique_tokens as $t) {
+            $t = trim((string) $t, "'-.,;");
+            $t_lower = function_exists('mb_strtolower') ? mb_strtolower($t, 'UTF-8') : strtolower($t);
+
+            // Requerir mínimo 3 letras y no ser stop-word
+            $len = function_exists('mb_strlen') ? mb_strlen($t, 'UTF-8') : strlen($t);
+            if ($len >= 3 && !in_array($t_lower, $stop_words, true)) {
+                $boolean_parts[] = '+' . $t . '*';
+            }
+        }
+
+        // Limitar a un máximo de palabras clave para no saturar el índice
+        return implode(' ', array_slice($boolean_parts, 0, 12));
+    }
+
+    /**
+     * Fallback LIKE (y meta) cuando FULLTEXT no aplica o no devuelve filas.
+     *
+     * @param list<string> $terms
+     * @return list<object>
+     */
+    private static function search_knowledge_like_fallback(string $project_id, array $terms, string $scope, int $limit, bool $with_id = false): array {
+        global $wpdb;
+        $table = Xabia_DB::table('knowledge_vectors');
+        $select = $with_id ? 'id, content_chunk' : 'content_chunk';
+        $sql = "SELECT {$select} FROM {$table} WHERE project_id = %s";
+        $args = [$project_id];
+        if ($scope !== 'global' && $scope !== '') {
+            $sql .= ' AND ente_id = %s';
+            $args[] = $scope;
+        }
+        $meta_col = self::knowledge_meta_column_for_search();
+        $like_parts = [];
+        foreach ($terms as $term) {
+            $term = trim((string) $term);
+            if ($term === '') {
+                continue;
+            }
+            $pat = '%' . $wpdb->esc_like($term) . '%';
+            if ($meta_col !== null) {
+                $col_sql = ($meta_col === 'meta_json') ? 'meta_json' : 'meta_data';
+                $like_parts[] = "(content_chunk LIKE %s OR `{$col_sql}` LIKE %s)";
+                $args[] = $pat;
+                $args[] = $pat;
+            } else {
+                $like_parts[] = 'content_chunk LIKE %s';
+                $args[] = $pat;
+            }
+        }
+        if ($like_parts !== []) {
+            $sql .= ' AND (' . implode(' OR ', $like_parts) . ')';
+        }
+        $order_hint = $terms[0] ?? '';
+        if ($order_hint !== '') {
+            $sql .= ' ORDER BY (CASE WHEN content_chunk LIKE %s THEN 1 ELSE 2 END) ASC, id DESC';
+            $args[] = '%' . $wpdb->esc_like($order_hint) . '%';
+        } else {
+            $sql .= ' ORDER BY id DESC';
+        }
+        $sql .= ' LIMIT ' . (int) $limit;
+
+        $rows = $wpdb->get_results($wpdb->prepare($sql, $args));
+
+        return is_array($rows) ? $rows : [];
+    }
+
+    /**
+     * Léxico FULLTEXT MATCH ... AGAINST BOOLEAN MODE, con fallback LIKE.
+     *
+     * @return list<object>
+     */
+    private static function search_knowledge_lexical_rows(
+        string $project_id,
+        string $query,
+        string $scope,
+        int $limit,
+        bool $with_id
+    ): array {
+        global $wpdb;
+        $table = Xabia_DB::table('knowledge_vectors');
+        $terms = self::normalize_search_like_terms($query);
+        $ft_query = self::build_fulltext_boolean_query($query, $terms);
+        $results = [];
+        $use_ft = $ft_query !== ''
+            && class_exists('Xabia_DB', false)
+            && Xabia_DB::knowledge_vectors_has_fulltext_index();
+        if ($use_ft) {
+            $select = $with_id
+                ? 'id, content_chunk, MATCH(content_chunk) AGAINST(%s IN BOOLEAN MODE) AS ft_score'
+                : 'content_chunk, MATCH(content_chunk) AGAINST(%s IN BOOLEAN MODE) AS ft_score';
+            $sql = "SELECT {$select} FROM {$table} WHERE project_id = %s";
+            $args = [$ft_query, $project_id];
+            if ($scope !== 'global' && $scope !== '') {
+                $sql .= ' AND ente_id = %s';
+                $args[] = $scope;
+            }
+            $sql .= ' AND MATCH(content_chunk) AGAINST(%s IN BOOLEAN MODE) ORDER BY ft_score DESC, id DESC LIMIT ' . (int) $limit;
+            $args[] = $ft_query;
+            $rows = $wpdb->get_results($wpdb->prepare($sql, $args));
+            $results = is_array($rows) ? $rows : [];
+        }
+        if ($results === [] && $terms !== []) {
+            $results = self::search_knowledge_like_fallback($project_id, $terms, $scope, $limit, $with_id);
+        }
+
+        return $results;
+    }
+
+    /**
+     * Búsqueda léxica (FULLTEXT + fallback LIKE). Usado cuando no hay vector search o como fallback.
      */
     public static function search_knowledge($project_id, $query, $scope = 'global', $strict_ente = false, $max_chunks = null) {
         global $wpdb;
         $table = Xabia_DB::table('knowledge_vectors');
-        
-        $sql = "SELECT content_chunk FROM $table WHERE project_id = %s";
-        $args = [$project_id];
-
-        if ($scope !== 'global' && !empty($scope)) {
-            $sql .= " AND ente_id = %s";
-            $args[] = $scope;
-        }
-
-        $query = trim((string)$query);
-        if (!($strict_ente && $scope !== 'global' && !empty($scope))) {
-            $terms = self::normalize_search_like_terms($query);
-            $meta_col = self::knowledge_meta_column_for_search();
-            $like_parts = [];
-            foreach ($terms as $term) {
-                if ($term === '') {
-                    continue;
-                }
-                $pat = '%' . $wpdb->esc_like($term) . '%';
-                if ($meta_col !== null) {
-                    $col_sql = ($meta_col === 'meta_json') ? 'meta_json' : 'meta_data';
-                $like_parts[] = "(content_chunk LIKE %s OR `{$col_sql}` LIKE %s)";
-                    $args[] = $pat;
-                    $args[] = $pat;
-                } else {
-                    $like_parts[] = 'content_chunk LIKE %s';
-                    $args[] = $pat;
-                }
-            }
-            if (!empty($like_parts)) {
-                $sql .= ' AND (' . implode(' OR ', $like_parts) . ')';
-            }
-            $order_hint = $terms[0] ?? $query;
-            $sql .= ' ORDER BY (CASE WHEN content_chunk LIKE %s THEN 1 ELSE 2 END) ASC, id DESC';
-            $args[] = '%' . $wpdb->esc_like($order_hint) . '%';
-        } else {
-            $sql .= " ORDER BY id DESC";
-        }
-
+        $project_id = sanitize_key($project_id);
+        $query = trim((string) $query);
         $limit = $max_chunks !== null ? max(1, min(self::MAX_RAG_CHUNKS, (int) $max_chunks)) : self::DEFAULT_MAX_CHUNKS;
         if ($max_chunks !== null && (int) $max_chunks > self::MAX_RAG_CHUNKS) {
             $limit = max(1, min(self::MAX_CATALOG_RAG_CHUNKS, (int) $max_chunks));
         }
-        $sql .= " LIMIT " . (int) $limit;
+        if ($strict_ente && $scope !== 'global' && $scope !== '') {
+            $sql = "SELECT content_chunk FROM {$table} WHERE project_id = %s AND ente_id = %s ORDER BY id DESC LIMIT " . (int) $limit;
+            $results = $wpdb->get_results($wpdb->prepare($sql, $project_id, $scope));
 
-        $results = $wpdb->get_results($wpdb->prepare($sql, $args));
-        return self::format_context_from_rows($results);
+            return self::format_context_from_rows($results);
+        }
+        if ($query === '') {
+            $sql = "SELECT content_chunk FROM {$table} WHERE project_id = %s ORDER BY id DESC LIMIT " . (int) $limit;
+            $results = $wpdb->get_results($wpdb->prepare($sql, $project_id));
+
+            return self::format_context_from_rows($results);
+        }
+
+        return self::format_context_from_rows(
+            self::search_knowledge_lexical_rows($project_id, $query, (string) $scope, $limit, false)
+        );
     }
 
     /**
-     * Búsqueda léxica rankeada (para RRF híbrido local).
+     * Búsqueda léxica rankeada (RRF híbrido local) mediante FULLTEXT + fallback.
      *
      * @return list<array{id: string, content: string, score: float}>
      */
     public static function search_knowledge_ranked($project_id, $query, $scope = 'global', $strict_ente = false, $max_chunks = null) {
         global $wpdb;
         $table = Xabia_DB::table('knowledge_vectors');
-
-        $sql = "SELECT id, content_chunk FROM $table WHERE project_id = %s";
-        $args = [$project_id];
-
-        if ($scope !== 'global' && !empty($scope)) {
-            $sql .= " AND ente_id = %s";
-            $args[] = $scope;
-        }
-
+        $project_id = sanitize_key($project_id);
         $query = trim((string) $query);
-        $terms = [];
-        if (!($strict_ente && $scope !== 'global' && !empty($scope))) {
-            $terms = self::normalize_search_like_terms($query);
-            $meta_col = self::knowledge_meta_column_for_search();
-            $like_parts = [];
-            foreach ($terms as $term) {
-                if ($term === '') {
-                    continue;
-                }
-                $pat = '%' . $wpdb->esc_like($term) . '%';
-                if ($meta_col !== null) {
-                    $col_sql = ($meta_col === 'meta_json') ? 'meta_json' : 'meta_data';
-                    $like_parts[] = "(content_chunk LIKE %s OR `{$col_sql}` LIKE %s)";
-                    $args[] = $pat;
-                    $args[] = $pat;
-                } else {
-                    $like_parts[] = 'content_chunk LIKE %s';
-                    $args[] = $pat;
-                }
-            }
-            if (!empty($like_parts)) {
-                $sql .= ' AND (' . implode(' OR ', $like_parts) . ')';
-            }
-            $order_hint = $terms[0] ?? $query;
-            $sql .= ' ORDER BY (CASE WHEN content_chunk LIKE %s THEN 1 ELSE 2 END) ASC, id DESC';
-            $args[] = '%' . $wpdb->esc_like($order_hint) . '%';
-        } else {
-            $sql .= ' ORDER BY id DESC';
-        }
-
         $limit = $max_chunks !== null ? max(1, min(self::MAX_RAG_CHUNKS, (int) $max_chunks)) : self::DEFAULT_MAX_CHUNKS;
         if ($max_chunks !== null && (int) $max_chunks > self::MAX_RAG_CHUNKS) {
             $limit = max(1, min(self::MAX_CATALOG_RAG_CHUNKS, (int) $max_chunks));
         }
         $fetch = min(self::MAX_CATALOG_RAG_CHUNKS, max($limit * 3, 24));
-        $sql .= ' LIMIT ' . (int) $fetch;
+        $terms = self::normalize_search_like_terms($query);
 
-        $results = $wpdb->get_results($wpdb->prepare($sql, $args));
+        if ($strict_ente && $scope !== 'global' && $scope !== '') {
+            $sql = "SELECT id, content_chunk FROM {$table} WHERE project_id = %s AND ente_id = %s ORDER BY id DESC LIMIT " . (int) $fetch;
+            $results = $wpdb->get_results($wpdb->prepare($sql, $project_id, $scope));
+        } elseif ($query === '') {
+            $results = [];
+        } else {
+            $results = self::search_knowledge_lexical_rows($project_id, $query, (string) $scope, $fetch, true);
+        }
+
         if (!is_array($results) || $results === []) {
-            // Soft-prefix rescue: fetch recent candidates and score in PHP when LIKE misses morphology.
             if ($query !== '' && class_exists('Xabia_Rag_Language_Bridge', false)) {
                 return self::search_knowledge_ranked_soft($project_id, $query, $scope, $limit);
             }
@@ -217,6 +316,9 @@ class Xabia_Brain {
             }
             ++$rank;
             $score = max(0.05, 1.0 - (($rank - 1) * 0.03));
+            if (isset($r->ft_score) && (float) $r->ft_score > 0) {
+                $score = min(0.99, $score + min(0.15, (float) $r->ft_score * 0.02));
+            }
             if (class_exists('Xabia_Rag_Language_Bridge', false)) {
                 foreach ($terms as $term) {
                     if ($term !== '' && Xabia_Rag_Language_Bridge::tokens_soft_match($term, $content)) {
@@ -683,11 +785,7 @@ class Xabia_Brain {
 
         if (class_exists('Xabia_Hub_Knowledge', false) && Xabia_Hub_Knowledge::is_hub_rag_enabled($project_id)) {
             $threshold = max(0, min(1, (float) $threshold));
-            $max_k = $max_chunks !== null ? max(1, min(self::MAX_RAG_CHUNKS, (int) $max_chunks)) : self::DEFAULT_MAX_CHUNKS;
-            if (!empty($hub_opts['catalog_list'])) {
-                $catalog_k = $max_chunks !== null ? (int) $max_chunks : self::MAX_CATALOG_RAG_CHUNKS;
-                $max_k = max($max_k, min(self::MAX_CATALOG_RAG_CHUNKS, max(1, $catalog_k)));
-            }
+            $max_k = self::resolve_vector_top_k($max_chunks, $hub_opts);
             $hubRes = Xabia_Hub_Knowledge::search_vector($project_id, $query_vector, $scope, $strict_ente, $max_k, $threshold, $query, $hub_opts);
             $hub_meta = isset($hubRes['_hub_meta']) && is_array($hubRes['_hub_meta']) ? $hubRes['_hub_meta'] : null;
             $hub_context = trim((string) ($hubRes['context'] ?? ''));
@@ -735,7 +833,7 @@ class Xabia_Brain {
         }
 
         $threshold = max(0, min(1, (float) $threshold));
-        $max_chunks = $max_chunks !== null ? max(1, min(self::MAX_RAG_CHUNKS, (int) $max_chunks)) : self::DEFAULT_MAX_CHUNKS;
+        $max_chunks = self::resolve_vector_top_k($max_chunks, $hub_opts);
 
         $scored = [];
         foreach ($rows as $r) {
@@ -894,8 +992,40 @@ class Xabia_Brain {
      * Densifica contexto RAG: mismas entidades/datos, menos tokens de etiquetas y whitespace.
      * Conserva líneas [Imagen disponible: …].
      */
+    /**
+     * Prepara contexto Hub/local para el prompt: UTF-8 válido, troceo por ficha y densificado.
+     * Debe ejecutarse ANTES del trim global; si no, substr byte-wise rompe UTF-8 y densify deja el contexto vacío.
+     */
+    public static function prepare_rag_context_for_prompt(string $context, int $per_chunk_chars = 900): string {
+        $context = self::ensure_valid_utf8(trim($context));
+        if ($context === '') {
+            return '';
+        }
+        $per_chunk_chars = max(120, (int) apply_filters('xabia_rag_context_per_chunk_chars', $per_chunk_chars, $context));
+        $parts = preg_split('/\n\n+/u', $context);
+        if (!is_array($parts) || $parts === []) {
+            $one = self::truncate_chunk_preserving_imagen($context, $per_chunk_chars);
+
+            return self::densify_rag_chunk($one);
+        }
+        $out = [];
+        foreach ($parts as $part) {
+            $part = trim((string) $part);
+            if ($part === '') {
+                continue;
+            }
+            $part = self::truncate_chunk_preserving_imagen($part, $per_chunk_chars);
+            $d = self::densify_rag_chunk($part);
+            if ($d !== '') {
+                $out[] = $d;
+            }
+        }
+
+        return implode("\n\n", $out);
+    }
+
     public static function densify_rag_context(string $context): string {
-        $context = trim($context);
+        $context = self::ensure_valid_utf8(trim($context));
         if ($context === '') {
             return '';
         }
@@ -922,7 +1052,7 @@ class Xabia_Brain {
      * Compacta un chunk individual sin perder hechos ni URLs de imagen.
      */
     public static function densify_rag_chunk(string $chunk): string {
-        $chunk = trim($chunk);
+        $chunk = self::ensure_valid_utf8(trim($chunk));
         if ($chunk === '') {
             return '';
         }
@@ -930,7 +1060,8 @@ class Xabia_Brain {
         $imagen_tail = '';
         if (preg_match_all('/\[Imagen disponible:\s*https?:\/\/[^\s\]]+\s*\]/iu', $chunk, $m)) {
             $imagen_tail = "\n" . implode("\n", array_unique($m[0]));
-            $chunk = trim((string) preg_replace('/\[Imagen disponible:\s*https?:\/\/[^\s\]]+\s*\]/iu', '', $chunk));
+            $stripped = preg_replace('/\[Imagen disponible:\s*https?:\/\/[^\s\]]+\s*\]/iu', '', $chunk);
+            $chunk = trim(is_string($stripped) ? $stripped : $chunk);
         }
 
         // Quitar etiquetas redundantes (EMPRESA:, CATEGORÍA:, …); conservar el valor.
@@ -942,17 +1073,37 @@ class Xabia_Brain {
             . 'DIRECCI[OÓ]N|ADDRESS|TEL[EÉ]FONO|PHONE|WEB|URL|EMAIL|CORREO|'
             . 'PRECIO|PRICE|SLUG|ID|ENTE_ID|SOURCE'
             . ')\s*:\s*/iu';
-        $chunk = preg_replace($label_re, '', $chunk);
-        $chunk = is_string($chunk) ? $chunk : '';
+        $replaced = preg_replace($label_re, '', $chunk);
+        // preg_* con /u devuelve null si el sujeto no es UTF-8 válido: no vaciar el chunk.
+        $chunk = is_string($replaced) ? $replaced : $chunk;
 
-        $chunk = preg_replace('/[ \t]+/u', ' ', $chunk);
-        $chunk = preg_replace('/\s*\|\s*/u', ' | ', $chunk);
-        $chunk = preg_replace('/(?:\s*\|\s*){2,}/u', ' | ', $chunk);
-        $chunk = preg_replace('/\n{3,}/u', "\n\n", $chunk);
-        $chunk = preg_replace('/^\s*\|\s*|\s*\|\s*$/u', '', (string) $chunk);
-        $chunk = trim((string) $chunk);
+        foreach (['/[ \t]+/u' => ' ', '/\s*\|\s*/u' => ' | ', '/(?:\s*\|\s*){2,}/u' => ' | ', '/\n{3,}/u' => "\n\n", '/^\s*\|\s*|\s*\|\s*$/u' => ''] as $re => $to) {
+            $next = preg_replace($re, $to, $chunk);
+            if (is_string($next)) {
+                $chunk = $next;
+            }
+        }
+        $chunk = trim($chunk);
 
         return rtrim($chunk) . $imagen_tail;
+    }
+
+    /**
+     * Repara secuencias UTF-8 rotas (p. ej. tras substr byte-wise) para que preg_* /u no fallen.
+     */
+    public static function ensure_valid_utf8(string $text): string {
+        if ($text === '' || mb_check_encoding($text, 'UTF-8')) {
+            return $text;
+        }
+        if (function_exists('iconv')) {
+            $fixed = @iconv('UTF-8', 'UTF-8//IGNORE', $text);
+            if (is_string($fixed) && $fixed !== '') {
+                return $fixed;
+            }
+        }
+        $converted = mb_convert_encoding($text, 'UTF-8', 'UTF-8');
+
+        return is_string($converted) ? $converted : '';
     }
 
     /**
@@ -984,18 +1135,20 @@ class Xabia_Brain {
      * Trunca el chunk pero conserva líneas [Imagen disponible: …] al final.
      */
     public static function truncate_chunk_preserving_imagen(string $chunk, int $max_chars = 900): string {
-        $chunk = trim($chunk);
-        if ($max_chars < 1 || strlen($chunk) <= $max_chars) {
+        $chunk = self::ensure_valid_utf8(trim($chunk));
+        if ($max_chars < 1 || mb_strlen($chunk, 'UTF-8') <= $max_chars) {
             return $chunk;
         }
         $imagen_tail = '';
         if (preg_match_all('/\[Imagen disponible:\s*https?:\/\/[^\s\]]+\s*\]/iu', $chunk, $m)) {
             $imagen_tail = "\n" . implode("\n", array_unique($m[0]));
-            $chunk = trim((string) preg_replace('/\[Imagen disponible:\s*https?:\/\/[^\s\]]+\s*\]/iu', '', $chunk));
+            $stripped = preg_replace('/\[Imagen disponible:\s*https?:\/\/[^\s\]]+\s*\]/iu', '', $chunk);
+            $chunk = trim(is_string($stripped) ? $stripped : $chunk);
         }
-        $budget = max(80, $max_chars - strlen($imagen_tail));
-        if (strlen($chunk) > $budget) {
-            $chunk = substr($chunk, 0, $budget) . '…';
+        $tail_len = mb_strlen($imagen_tail, 'UTF-8');
+        $budget = max(80, $max_chars - $tail_len);
+        if (mb_strlen($chunk, 'UTF-8') > $budget) {
+            $chunk = mb_substr($chunk, 0, $budget, 'UTF-8') . '…';
         }
 
         return rtrim($chunk) . $imagen_tail;

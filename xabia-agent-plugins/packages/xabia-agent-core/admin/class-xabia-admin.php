@@ -2408,7 +2408,8 @@ class Xabia_Admin {
                 'inserted'        => (int) ($result['inserted'] ?? 0),
                 'unchanged'       => (int) ($result['unchanged'] ?? 0),
             ], self::agent_pipeline_ajax_payload($pid)));
-        } catch (Exception $e) {
+        } catch (Throwable $e) {
+            error_log('[Xabia] sync_content fatal: ' . $e->getMessage() . ' @ ' . $e->getFile() . ':' . $e->getLine());
             wp_send_json_error(['message' => $e->getMessage()]);
         }
     }
@@ -4958,7 +4959,7 @@ class Xabia_Admin {
                     var href = String(url || '').replace(/[.,;)]+$/, '');
                     return href ? ('[ACTION:URL:' + href + ']') : m;
                 });
-                text = text.replace(/\[ACTION:IMG:(.*?)\]/g, '<img src="$1" alt="Imagen del evento">');
+                text = text.replace(/\[ACTION:IMG:(.*?)\]/g, '<img src="$1" alt="<?php echo esc_js(__('Imagen de la entidad', 'xabia-intelligence')); ?>" class="xabia-action-img" loading="lazy" decoding="async">');
                 text = text.replace(/\[ACTION:URL:(.*?)\]/g, '<a href="$1" target="_blank" rel="noopener" class="xabia-action xabia-action-url">🌐 Abrir enlace</a>');
                 text = text.replace(/\[ACTION:WEB:(.*?)\]/g, '<a href="$1" target="_blank" class="xabia-chat-link">🌐 Abrir en la Web</a>');
                 return text;

@@ -215,7 +215,7 @@ final class VectorizationWorker
         }
         $sourceId = $enteId;
         $chunk = (string) $record['content_chunk'];
-        $hash = substr((string) $record['content_hash'], 0, 32);
+        $hash = $this->normalizeContentHash((string) $record['content_hash']);
         $metaJson = $record['meta_json'] ?? null;
         $model = Env::str('XABIA_EMBEDDING_MODEL', 'text-embedding-004');
         $vectorJson = json_encode(array_values($embedding), JSON_UNESCAPED_UNICODE);
@@ -290,5 +290,21 @@ final class VectorizationWorker
         }
 
         return strlen($text) > $limit ? substr($text, 0, $limit) : $text;
+    }
+
+    /**
+     * SHA-256 (64 hex) o MD5 legado (32).
+     */
+    private function normalizeContentHash(string $hash): ?string
+    {
+        $hash = strtolower(trim($hash));
+        if ($hash === '') {
+            return null;
+        }
+        if (preg_match('/^[0-9a-f]{32}([0-9a-f]{32})?$/', $hash) !== 1) {
+            return substr($hash, 0, 64);
+        }
+
+        return $hash;
     }
 }
