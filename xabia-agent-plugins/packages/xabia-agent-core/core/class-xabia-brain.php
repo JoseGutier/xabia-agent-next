@@ -67,8 +67,62 @@ class Xabia_Brain {
     }
 
     /**
+     * Pliega diacríticos (bebé→bebe) para léxico/embeddings. Usa remove_accents de WP si existe.
+     */
+    public static function fold_diacritics(string $text): string {
+        $text = (string) $text;
+        if ($text === '') {
+            return '';
+        }
+        if (function_exists('remove_accents')) {
+            return (string) remove_accents($text);
+        }
+
+        return strtr($text, [
+            'Á' => 'A', 'À' => 'A', 'Ä' => 'A', 'Â' => 'A', 'á' => 'a', 'à' => 'a', 'ä' => 'a', 'â' => 'a',
+            'É' => 'E', 'È' => 'E', 'Ë' => 'E', 'Ê' => 'E', 'é' => 'e', 'è' => 'e', 'ë' => 'e', 'ê' => 'e',
+            'Í' => 'I', 'Ì' => 'I', 'Ï' => 'I', 'Î' => 'I', 'í' => 'i', 'ì' => 'i', 'ï' => 'i', 'î' => 'i',
+            'Ó' => 'O', 'Ò' => 'O', 'Ö' => 'O', 'Ô' => 'O', 'ó' => 'o', 'ò' => 'o', 'ö' => 'o', 'ô' => 'o',
+            'Ú' => 'U', 'Ù' => 'U', 'Ü' => 'U', 'Û' => 'U', 'ú' => 'u', 'ù' => 'u', 'ü' => 'u', 'û' => 'u',
+            'Ñ' => 'N', 'ñ' => 'n',
+        ]);
+    }
+
+    /**
+     * Stop-words léxicas (artículos + verbos conversacionales de agenda).
+     * Ampliable con `xabia_brain_lexical_stop_words`.
+     *
+     * @return list<string>
+     */
+    public static function lexical_stop_words(): array {
+        $words = [
+            'con', 'las', 'los', 'del', 'que', 'una', 'para', 'por', 'hay',
+            'esta', 'este', 'estos', 'estas', 'hoy',
+            'cuando', 'cuanto', 'donde', 'quien', 'cual', 'como',
+            // Verbos de evento/acción habituales en preguntas, raros en fichas.
+            'actua', 'canta', 'toca', 'estara', 'empieza', 'sale', 'juega',
+            'celebra', 'organiza', 'actuara', 'tocara', 'cantara', 'empiece',
+            'sera', 'habra', 'hay', 'pasa', 'pasan', 'ocurre',
+        ];
+        $out = apply_filters('xabia_brain_lexical_stop_words', $words);
+        if (!is_array($out)) {
+            $out = $words;
+        }
+        $norm = [];
+        foreach ($out as $w) {
+            $w = self::fold_diacritics(function_exists('mb_strtolower') ? mb_strtolower(trim((string) $w), 'UTF-8') : strtolower(trim((string) $w)));
+            if ($w !== '') {
+                $norm[$w] = $w;
+            }
+        }
+
+        return array_values($norm);
+    }
+
+    /**
      * Términos para LIKE: frase completa, sin signos finales típicos y palabras sin puntuación adherida
-     * (p. ej. "caballo?" → también "caballo"), UTF-8. Ampliable con `xabia_brain_search_like_terms`.
+     * (p. ej. "caballo?" → también "caballo"), UTF-8. Incluye variantes sin tilde (bebé/bebe).
+     * Ampliable con `xabia_brain_search_like_terms`.
      *
      * @return list<string>
      */
@@ -89,6 +143,16 @@ class Xabia_Brain {
                 $terms[] = $t;
             }
         }
+        // Variantes sin diacríticos (bebé → bebe) para LIKE/FULLTEXT tolerante.
+        $with_folds = [];
+        foreach ($terms as $t) {
+            $with_folds[] = $t;
+            $folded = self::fold_diacritics($t);
+            if ($folded !== '' && $folded !== $t) {
+                $with_folds[] = $folded;
+            }
+        }
+        $terms = $with_folds;
         $terms = apply_filters('xabia_brain_search_like_terms', array_values(array_unique($terms)), $query);
         if (!is_array($terms)) {
             $terms = [];
@@ -207,8 +271,8 @@ class Xabia_Brain {
      * @param list<string> $terms
      */
     public static function build_fulltext_boolean_query(string $raw_query, array $terms = []): string {
-        // 1. Unir la query original y los términos extra en un solo bloque de texto
-        $combined_text = $raw_query . ' ' . implode(' ', $terms);
+        // 1. Unir la query original y los términos extra; pliegue de tildes (bebé→bebe).
+        $combined_text = self::fold_diacritics($raw_query . ' ' . implode(' ', $terms));
 
         // 2. Limpiar caracteres especiales que rompan el FULLTEXT de MySQL
         $clean = preg_replace('/[+\-><\(\)~*"@%]+/u', ' ', $combined_text);
@@ -220,18 +284,19 @@ class Xabia_Brain {
         $unique_tokens = array_values(array_unique($tokens));
         $boolean_parts = [];
 
-        // 5. Lista de stop-words básicas a ignorar en léxico para no generar ruido
-        $stop_words = ['con', 'las', 'los', 'del', 'que', 'una', 'para', 'por', 'hay', 'esta', 'este', 'estos', 'estas', 'hoy'];
+        // 5. Stop-words (artículos + verbos conversacionales de agenda)
+        $stop_map = array_flip(self::lexical_stop_words());
 
         $kept = [];
         foreach ($unique_tokens as $t) {
             $t = trim((string) $t, "'-.,;");
+            $t = self::fold_diacritics($t);
             $t_lower = function_exists('mb_strtolower') ? mb_strtolower($t, 'UTF-8') : strtolower($t);
 
             // Requerir mínimo 3 letras y no ser stop-word
             $len = function_exists('mb_strlen') ? mb_strlen($t, 'UTF-8') : strlen($t);
-            if ($len >= 3 && !in_array($t_lower, $stop_words, true)) {
-                $kept[] = $t;
+            if ($len >= 3 && !isset($stop_map[$t_lower])) {
+                $kept[] = $t_lower;
             }
         }
 
@@ -1021,6 +1086,8 @@ class Xabia_Brain {
         } else {
             $text = trim(strip_tags((string) $text));
         }
+        // Unaccent antes del embedding: «bebé» ≈ «Bebe» (evita drift semántico a «baby»).
+        $text = self::fold_diacritics($text);
         if ($text === '') {
             return null;
         }

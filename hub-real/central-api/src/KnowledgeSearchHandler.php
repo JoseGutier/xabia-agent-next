@@ -30,7 +30,34 @@ final class KnowledgeSearchHandler
         'tan', 'muy', 'vez', 'bien', 'solo', 'sola', 'sólo', 'tras', 'cabe', 'favor', 'donde', 'dónde',
         'cuando', 'cuándo', 'como', 'cómo', 'cual', 'cuál', 'quien', 'quién', 'interesa', 'interesaría',
         'interesaria', 'gustaría', 'gustaria',
+        // Verbos de evento/acción en preguntas (raros en fichas de catálogo/agenda).
+        'actua', 'actúa', 'canta', 'toca', 'estara', 'estará', 'empieza', 'sale', 'juega',
+        'celebra', 'organiza', 'actuara', 'tocara', 'cantara', 'empiece', 'sera', 'será',
+        'habra', 'habrá', 'pasa', 'pasan', 'ocurre',
     ];
+
+    /**
+     * Pliega diacríticos (bebé→bebe) para matching léxico tolerante.
+     */
+    private static function foldDiacritics(string $text): string
+    {
+        if ($text === '') {
+            return '';
+        }
+        if (function_exists('remove_accents')) {
+            return (string) remove_accents($text);
+        }
+        $map = [
+            'Á' => 'A', 'À' => 'A', 'Ä' => 'A', 'Â' => 'A', 'á' => 'a', 'à' => 'a', 'ä' => 'a', 'â' => 'a',
+            'É' => 'E', 'È' => 'E', 'Ë' => 'E', 'Ê' => 'E', 'é' => 'e', 'è' => 'e', 'ë' => 'e', 'ê' => 'e',
+            'Í' => 'I', 'Ì' => 'I', 'Ï' => 'I', 'Î' => 'I', 'í' => 'i', 'ì' => 'i', 'ï' => 'i', 'î' => 'i',
+            'Ó' => 'O', 'Ò' => 'O', 'Ö' => 'O', 'Ô' => 'O', 'ó' => 'o', 'ò' => 'o', 'ö' => 'o', 'ô' => 'o',
+            'Ú' => 'U', 'Ù' => 'U', 'Ü' => 'U', 'Û' => 'U', 'ú' => 'u', 'ù' => 'u', 'ü' => 'u', 'û' => 'u',
+            'Ñ' => 'N', 'ñ' => 'n',
+        ];
+
+        return strtr($text, $map);
+    }
 
     /**
      * @var list<string>
@@ -441,8 +468,10 @@ final class KnowledgeSearchHandler
         if ($phraseLower === '') {
             return false;
         }
+        $hay = self::foldDiacritics($hayLower);
+        $phrase = self::foldDiacritics($phraseLower);
 
-        return mb_strpos($hayLower, $phraseLower) !== false;
+        return mb_strpos($hay, $phrase) !== false;
     }
 
     /**
@@ -465,8 +494,17 @@ final class KnowledgeSearchHandler
                 $terms[] = $t;
             }
         }
+        // Variantes sin tilde (bebé → bebe).
+        $withFolds = [];
+        foreach ($terms as $t) {
+            $withFolds[] = $t;
+            $folded = self::foldDiacritics($t);
+            if ($folded !== '' && $folded !== $t) {
+                $withFolds[] = $folded;
+            }
+        }
 
-        return array_values(array_unique($terms));
+        return array_values(array_unique($withFolds));
     }
 
     /**
@@ -476,17 +514,20 @@ final class KnowledgeSearchHandler
      */
     private static function meaningfulQueryTokens(array $terms): array
     {
-        $stop = array_flip(self::LEXICAL_STOPWORDS_ES);
+        $stop = [];
+        foreach (self::LEXICAL_STOPWORDS_ES as $sw) {
+            $stop[self::foldDiacritics(mb_strtolower($sw, 'UTF-8'))] = true;
+        }
         $out = [];
         foreach ($terms as $t) {
-            $tl = mb_strtolower(trim($t), 'UTF-8');
+            $tl = self::foldDiacritics(mb_strtolower(trim($t), 'UTF-8'));
             if ($tl === '' || mb_strlen($tl, 'UTF-8') < 3) {
                 continue;
             }
             if (isset($stop[$tl])) {
                 continue;
             }
-            $out[] = $t;
+            $out[] = $tl;
         }
 
         return array_values(array_unique($out));
@@ -863,8 +904,8 @@ final class KnowledgeSearchHandler
      */
     private static function tokenSoftMatch(string $needle, string $haystack): bool
     {
-        $needle = mb_strtolower(trim($needle), 'UTF-8');
-        $haystack = mb_strtolower($haystack, 'UTF-8');
+        $needle = self::foldDiacritics(mb_strtolower(trim($needle), 'UTF-8'));
+        $haystack = self::foldDiacritics(mb_strtolower($haystack, 'UTF-8'));
         if ($needle === '' || $haystack === '') {
             return false;
         }

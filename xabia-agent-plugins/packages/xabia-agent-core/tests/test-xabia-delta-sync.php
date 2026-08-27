@@ -47,4 +47,17 @@ assert(strpos($ops, '@') === false, 'against @ operator stripped');
 $empty = Xabia_Brain::build_fulltext_boolean_query('sí no', []);
 assert($empty === '', 'short tokens yield empty boolean query (LIKE fallback)');
 
+$bebe = Xabia_Brain::build_fulltext_boolean_query('cuando actúa bebé', []);
+assert(strpos($bebe, 'bebe') !== false, 'unaccent keeps bebe entity');
+assert(strpos($bebe, 'actua') === false, 'action verb actua is a stop-word');
+assert(strpos($bebe, 'cuando') === false, 'cuando is a stop-word');
+assert($bebe === '+bebe*' || strpos($bebe, '+bebe*') !== false, 'boolean query focuses on bebe');
+
+$refl = new ReflectionClass('Xabia_Brain');
+$like_m = $refl->getMethod('normalize_search_like_terms');
+$like_m->setAccessible(true);
+$like_terms = $like_m->invoke(null, 'cuando actúa bebé');
+assert(in_array('bebe', $like_terms, true), 'LIKE terms include unaccented bebe');
+assert(in_array('bebé', $like_terms, true), 'LIKE terms keep accented bebé variant');
+
 echo "OK test-xabia-delta-sync.php\n";
