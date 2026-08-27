@@ -2182,6 +2182,10 @@ if (!class_exists('Xabia_API')) {
             if ($keyword_expansions !== []) {
                 $hub_rag_opts['keyword_expansions'] = $keyword_expansions;
             }
+            $priority_venues = self::resolve_rag_priority_venues(is_array($config) ? $config : []);
+            if ($priority_venues !== []) {
+                $hub_rag_opts['priority_venues'] = $priority_venues;
+            }
             $rag_keyword_needles = self::extract_rag_keyword_needles(
                 $user_msg_clean !== '' ? $user_msg_clean : $search_term
             );
@@ -2317,6 +2321,17 @@ if (!class_exists('Xabia_API')) {
                     // Preferir chunks tipados: el context del Hub suele ser anónimo (solo CATEGORÍA…).
                     // Reformatear antepone EMPRESA/ente desde ente_id o parent_title.
                     if (!empty($out['chunks']) && is_array($out['chunks'])) {
+                        if (!empty($catalog_intent['hit'])
+                            && class_exists('Xabia_Rag_Hybrid_Ranker', false)
+                        ) {
+                            $out['chunks'] = Xabia_Rag_Hybrid_Ranker::apply_priority_boost(
+                                $out['chunks'],
+                                Xabia_Rag_Hybrid_Ranker::PRIORITY_SCORE_BOOST,
+                                $priority_venues
+                            );
+                            $out['chunks'] = array_slice($out['chunks'], 0, max(1, (int) $rag_fetch_limit));
+                            self::$last_rag_debug['priority_boost'] = 'hub';
+                        }
                         $formatted_chunks = self::format_hub_rag_chunks_for_prompt($out['chunks'], $config);
                         if (strlen(trim($formatted_chunks)) >= 10) {
                             $context = $formatted_chunks;
@@ -2374,12 +2389,23 @@ if (!class_exists('Xabia_API')) {
                                 1.0,
                                 0.4
                             );
+                            if (!empty($catalog_intent['hit'])) {
+                                $fused = Xabia_Rag_Hybrid_Ranker::apply_priority_boost(
+                                    $fused,
+                                    Xabia_Rag_Hybrid_Ranker::PRIORITY_SCORE_BOOST,
+                                    $priority_venues
+                                );
+                                $fused = array_slice($fused, 0, max(1, (int) $rag_fetch_limit));
+                            }
                             $fused_ctx = Xabia_Rag_Hybrid_Ranker::format_context($fused);
                             if (strlen(trim($fused_ctx)) >= 10) {
                                 $context = $fused_ctx;
                                 $chunk_count = count($fused);
                                 $out['chunks'] = $fused;
                                 self::$last_rag_debug['hybrid_rrf'] = 'local';
+                                if (!empty($catalog_intent['hit']) && $priority_venues !== []) {
+                                    self::$last_rag_debug['priority_venues'] = count($priority_venues);
+                                }
                             }
                         }
                     }
@@ -2589,6 +2615,19 @@ if (!class_exists('Xabia_API')) {
                 }
             }
 
+            $temporal_agenda_digest = '';
+            if (!empty($config['_xabia_temporal_catalog'])
+                && !empty($relative_day_labels)
+                && class_exists('Xabia_Brain', false)
+                && method_exists('Xabia_Brain', 'build_temporal_agenda_digest')
+            ) {
+                $temporal_agenda_digest = Xabia_Brain::build_temporal_agenda_digest(
+                    (string) $context,
+                    $relative_day_labels,
+                    $priority_venues
+                );
+            }
+
             if (class_exists('Xabia_Brain', false) && method_exists('Xabia_Brain', 'prepare_rag_context_for_prompt')) {
                 $context = Xabia_Brain::prepare_rag_context_for_prompt((string) $context);
             } elseif (class_exists('Xabia_Brain', false) && method_exists('Xabia_Brain', 'densify_rag_context')) {
@@ -2600,6 +2639,14 @@ if (!class_exists('Xabia_API')) {
             if (!empty($catalog_intent['hit'])) {
                 $context_trim_limit = (int) apply_filters('xabia_chat_rag_context_trim_limit_catalog', max($context_trim_limit, 18000), $project_id, $config ?? []);
             }
+            if (!empty($config['_xabia_temporal_catalog'])) {
+                $context_trim_limit = (int) apply_filters(
+                    'xabia_chat_rag_context_trim_limit_temporal',
+                    max($context_trim_limit, 22000),
+                    $project_id,
+                    $config ?? []
+                );
+            }
             if (strlen($context) > $context_trim_limit) {
                 $prefer = trim($named_entity !== '' ? $named_entity : ($entity_anchor !== '' ? $entity_anchor : $user_msg_clean));
                 if (!empty($relative_day_labels)) {
@@ -2607,6 +2654,13 @@ if (!class_exists('Xabia_API')) {
                 }
                 $prefer = self::expand_prefer_hint_with_keyword_expansions($prefer, is_array($config) ? $config : []);
                 $context = self::truncate_chat_rag_context($context, $context_trim_limit, $prefer);
+            }
+
+            // La agenda canónica se antepone DESPUÉS del densify/trim para no truncarla ni densificarla.
+            if ($temporal_agenda_digest !== '') {
+                $context = $temporal_agenda_digest . "\n\n" . trim((string) $context);
+                self::$last_rag_debug['temporal_agenda_digest'] = 'yes';
+                self::$last_rag_debug['temporal_agenda_len'] = strlen($temporal_agenda_digest);
             }
             $context = self::rewrite_remote_media_hosts_in_text((string) $context, $project_id);
             
@@ -2718,6 +2772,9 @@ if (!class_exists('Xabia_API')) {
             $temperature = isset($config['rules']['min_score']) ? floatval($config['rules']['min_score']) : 0.2;
             $ai_driver = $config['ai_driver'] ?? 'openai';
             $max_tokens = self::chat_max_tokens($config['rules']['max_output_tokens'] ?? 1200);
+            if (!empty($config['_xabia_temporal_catalog'])) {
+                $max_tokens = max($max_tokens, (int) apply_filters('xabia_temporal_catalog_max_output_tokens', 2500, $project_id, $config));
+            }
 
             $ente_display = '';
             if ($ente_scope !== 'global' && !empty($ente_scope)) {
@@ -3771,12 +3828,14 @@ if (!class_exists('Xabia_API')) {
             $format_instruction = "";
             $temporal_catalog = !empty($config['_xabia_temporal_catalog']);
             if ($temporal_catalog) {
-                $format_instruction = "FORMATO LISTADO TEMPORAL (TEMPORAL_CATALOG): Al listar eventos o actividades para la fecha solicitada, "
-                    . "presenta los resultados en una lista compacta y estructurada con el formato: "
-                    . "[Hora] - [Nombre del Evento/Artista] en [Lugar/Escenario]. "
-                    . "No añadas párrafos descriptivos largos por cada elemento para evitar el corte de respuesta. "
-                    . "Incluye TODOS los ítems del CONTEXTO cuya fecha coincida con la pedida; ordena por hora. "
-                    . "PROHIBIDO responder con un solo ejemplo si el CONTEXTO trae varios.\n";
+                $format_instruction = "FORMATO LISTADO TEMPORAL (TEMPORAL_CATALOG): Si el CONTEXTO incluye un bloque «### AGENDA TEMPORAL», "
+                    . "reproduce TODOS sus ítems sin omitir ninguno (es la lista canónica del día). "
+                    . "Formato por línea: [Hora] - [Nombre] en [Lugar]. "
+                    . "Incluye siempre prioritariamente los conciertos y eventos de los escenarios principales "
+                    . "(marcados [Prioridad: Alta] / [Tipo: Escenario Principal] o encabezando la agenda) "
+                    . "antes de listar actividades secundarias o de espacios menores. "
+                    . "No añadas párrafos descriptivos largos por cada elemento. Ordena por hora dentro de cada grupo si aún no lo está. "
+                    . "PROHIBIDO quedarte en un subconjunto o en un solo ejemplo cuando la agenda trae varios.\n";
             } elseif ($response_mode === 'list') {
                 $format_instruction = "FORMATO LISTA: Si el usuario pide comparar o listar opciones, genera viñetas concisas (•), una entidad por línea. "
                     . "Incluye solo el identificador/nombre y un detalle breve del CONTEXTO. "
@@ -6170,6 +6229,29 @@ if (!class_exists('Xabia_API')) {
             }
 
             return (array) apply_filters('xabia_rag_keyword_expansions', $out, $config);
+        }
+
+        /**
+         * Escenarios / sedes principales del proyecto (rules.priority_venues). Agnóstico de dominio.
+         *
+         * @param array<string, mixed> $config
+         * @return list<string>
+         */
+        private static function resolve_rag_priority_venues(array $config): array {
+            $raw = $config['rules']['priority_venues'] ?? null;
+            $out = [];
+            if (class_exists('Xabia_Rag_Hybrid_Ranker', false)) {
+                $out = Xabia_Rag_Hybrid_Ranker::normalize_priority_venues($raw);
+            } elseif (is_array($raw)) {
+                $out = array_values(array_filter(array_map(static function ($v) {
+                    return trim((string) $v);
+                }, $raw)));
+            } elseif (is_string($raw) && trim($raw) !== '') {
+                $parts = preg_split('/[\n,;|]+/u', $raw) ?: [];
+                $out = array_values(array_filter(array_map('trim', $parts)));
+            }
+
+            return array_values(array_filter(array_map('strval', (array) apply_filters('xabia_rag_priority_venues', $out, $config))));
         }
 
         /**

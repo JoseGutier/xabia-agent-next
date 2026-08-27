@@ -214,7 +214,88 @@ class Xabia_Rag_Chunk_Enricher {
             $parts[] = '[Atributos: ' . implode(' | ', array_slice($attributes, 0, 20)) . ']';
         }
 
+        $priority_bits = self::priority_marker_parts($row, $location, $classification, $options);
+        foreach ($priority_bits as $bit) {
+            $parts[] = $bit;
+        }
+
         return implode(' ', $parts);
+    }
+
+    /**
+     * Etiquetas canónicas de prioridad (agnósticas). Se activan si:
+     * - la fila/clasificación ya declara escenario principal / prioridad alta, o
+     * - el lugar coincide con rules.priority_venues del proyecto.
+     *
+     * @param list<string>             $location
+     * @param list<string>             $classification
+     * @param array<string, mixed>     $options
+     * @return list<string>
+     */
+    private static function priority_marker_parts(
+        array $row,
+        array $location,
+        array $classification,
+        array $options
+    ): array {
+        $config = self::resolve_config($options);
+        $venues = [];
+        if (class_exists('Xabia_Rag_Hybrid_Ranker', false)) {
+            $venues = Xabia_Rag_Hybrid_Ranker::normalize_priority_venues($config['rules']['priority_venues'] ?? null);
+        } else {
+            $raw = $config['rules']['priority_venues'] ?? null;
+            if (is_array($raw)) {
+                $venues = array_values(array_filter(array_map('strval', $raw)));
+            } elseif (is_string($raw) && trim($raw) !== '') {
+                $venues = preg_split('/[\n,;|]+/u', $raw) ?: [];
+                $venues = array_values(array_filter(array_map('trim', $venues)));
+            }
+        }
+        if (function_exists('apply_filters')) {
+            $filtered = apply_filters('xabia_rag_priority_venues', $venues, $config, $options);
+            if (is_array($filtered)) {
+                $venues = array_values(array_filter(array_map('strval', $filtered)));
+            }
+        }
+
+        $sample_vals = [];
+        foreach (['lugar', 'Lugar', 'escenario', 'Escenario', 'venue', 'tipo', 'Tipo', 'clasificacion', 'Clasificación', 'prioridad', 'Prioridad'] as $k) {
+            if (isset($row[$k]) && is_scalar($row[$k])) {
+                $sample_vals[] = (string) $row[$k];
+            }
+        }
+        $hay = mb_strtolower(
+            implode(' | ', array_merge($classification, $location, $sample_vals)),
+            'UTF-8'
+        );
+        $intrinsic = (bool) preg_match(
+            '/prioridad\s*:\s*alta|escenario\s+principal|main\s+stage|tipo\s*:\s*principal\b/u',
+            $hay
+        );
+
+        $venue_hit = false;
+        foreach ($venues as $venue) {
+            $venue = trim((string) $venue);
+            if ($venue === '' || mb_strlen($venue, 'UTF-8') < 3) {
+                continue;
+            }
+            foreach (array_merge($location, [self::first_row_value($row, [
+                'lugar', 'Lugar', 'escenario', 'Escenario', 'venue', 'Venue', 'site', 'Site',
+                'ubicacion', 'Ubicacion', 'localizacion', 'location',
+            ])]) as $loc) {
+                $loc = trim((string) $loc);
+                if ($loc !== '' && mb_stripos($loc, $venue, 0, 'UTF-8') !== false) {
+                    $venue_hit = true;
+                    break 2;
+                }
+            }
+        }
+
+        if (!$intrinsic && !$venue_hit) {
+            return [];
+        }
+
+        return ['[Prioridad: Alta]', '[Tipo: Escenario Principal]'];
     }
 
     /**
@@ -250,7 +331,7 @@ class Xabia_Rag_Chunk_Enricher {
         if (preg_match('/(categ|subcateg|tag|tipo|taxonom|clasific)/u', $blob)) {
             return 'taxonomy';
         }
-        if (preg_match('/(localiz|ubicaci|location|ciudad|city|address|direccion|municipio|provincia)/u', $blob)) {
+        if (preg_match('/(localiz|ubicaci|location|ciudad|city|address|direccion|municipio|provincia|lugar|venue|escenario|site|place)\b/u', $blob)) {
             return 'location';
         }
 

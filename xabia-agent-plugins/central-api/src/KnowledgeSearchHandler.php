@@ -210,6 +210,7 @@ final class KnowledgeSearchHandler
         $signalNeedles = $lexicalQueryText !== ''
             ? self::signalNeedlesForQuery($lexicalQueryText, $keywordExpansions)
             : [];
+        $priorityVenues = self::parsePriorityVenues($input['priority_venues'] ?? null);
 
         $vectorScored = [];
         foreach ($rows as $r) {
@@ -257,6 +258,14 @@ final class KnowledgeSearchHandler
             $fullRanked = self::mergeHybridVectorLexical($vectorScored, [], $bigPool);
         } else {
             $fullRanked = self::mergeHybridVectorLexical($vectorScored, $lexScored, $bigPool);
+        }
+
+        // Catalog/agenda: boost escenarios principales (metadato o lista del proyecto) antes del Top-K.
+        if ($catalogList || $priorityVenues !== []) {
+            $fullRanked = self::boostPriorityHits($fullRanked, $priorityVenues, 0.20);
+            if ($lexScored !== []) {
+                $lexScored = self::boostPriorityHits($lexScored, $priorityVenues, 0.20);
+            }
         }
 
         usort($fullRanked, static fn (array $a, array $b): int => (($b['score'] ?? 0) <=> ($a['score'] ?? 0)));
@@ -671,6 +680,102 @@ final class KnowledgeSearchHandler
         }
 
         return $hits;
+    }
+
+    /**
+     * @param list<array{content: string, score: float}> $hits
+     * @param list<string>                               $priorityVenues
+     *
+     * @return list<array{content: string, score: float}>
+     */
+    private static function boostPriorityHits(array $hits, array $priorityVenues, float $bonus): array
+    {
+        if ($hits === [] || $bonus <= 0) {
+            return $hits;
+        }
+        foreach ($hits as $i => $h) {
+            if (!isset($h['content'])) {
+                continue;
+            }
+            if (!self::chunkHasPrioritySignal((string) $h['content'], $priorityVenues)) {
+                continue;
+            }
+            $hits[$i]['score'] = (float) ($h['score'] ?? 0) + $bonus;
+        }
+        usort($hits, static fn (array $a, array $b): int => (($b['score'] ?? 0) <=> ($a['score'] ?? 0)));
+
+        return array_values($hits);
+    }
+
+    /**
+     * @param list<string> $priorityVenues
+     */
+    private static function chunkHasPrioritySignal(string $content, array $priorityVenues): bool
+    {
+        $content = trim($content);
+        if ($content === '') {
+            return false;
+        }
+        if (preg_match('/\[\s*Prioridad\s*:\s*Alta\s*\]/iu', $content)
+            || preg_match('/\[\s*Tipo\s*:\s*Escenario\s+Principal\s*\]/iu', $content)
+            || preg_match('/\bPrioridad\s*:\s*Alta\b/iu', $content)
+            || preg_match('/\b(?:Tipo|Clasificaci[oó]n)\s*:\s*[^\n\]]*Escenario\s+Principal/iu', $content)
+            || preg_match('/\bMain\s+Stage\b/iu', $content)
+        ) {
+            return true;
+        }
+        foreach ($priorityVenues as $venue) {
+            $venue = trim((string) $venue);
+            if ($venue === '' || mb_strlen($venue, 'UTF-8') < 4) {
+                continue;
+            }
+            if (preg_match(
+                '/\b(?:Lugar|Ubicaci[oó]n|Venue|Location|Site|Escenario)\s*:\s*[^\n\]]*?' . preg_quote($venue, '/') . '/iu',
+                $content
+            )) {
+                return true;
+            }
+            if (mb_stripos($content, $venue, 0, 'UTF-8') !== false) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * @param mixed $raw
+     *
+     * @return list<string>
+     */
+    private static function parsePriorityVenues($raw): array
+    {
+        if (\is_string($raw)) {
+            $raw = preg_split('/[\n,;|]+/u', $raw) ?: [];
+        }
+        if (!\is_array($raw)) {
+            return [];
+        }
+        $out = [];
+        foreach ($raw as $item) {
+            if (\is_array($item)) {
+                $item = (string) ($item['name'] ?? $item['venue'] ?? $item['label'] ?? '');
+            }
+            $v = trim(preg_replace('/\s+/u', ' ', (string) $item) ?? '');
+            if ($v === '' || mb_strlen($v, 'UTF-8') < 3) {
+                continue;
+            }
+            if (mb_strlen($v, 'UTF-8') > 120) {
+                $v = mb_substr($v, 0, 120);
+            }
+            $key = mb_strtolower($v, 'UTF-8');
+            $out[$key] = $v;
+            if (\count($out) >= 40) {
+                break;
+            }
+        }
+
+        return array_values($out);
     }
 
     /**

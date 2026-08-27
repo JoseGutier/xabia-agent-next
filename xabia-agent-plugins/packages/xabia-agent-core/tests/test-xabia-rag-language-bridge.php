@@ -94,7 +94,34 @@ $weighted = Xabia_Rag_Hybrid_Ranker::rrf_fuse_weighted(
 assert($weighted[0]['id'] === 'both' || $weighted[0]['id'] === 'vec', 'weighted RRF elevates vector channel');
 assert($weighted[0]['id'] !== 'lex', 'pure lexical rank-1 should not beat vector under 0.4 weight');
 
+$prio_hits = [
+    ['id' => 'txosna', 'content' => "Hora: 20:00\nLugar: Txosna menor\nActividad: DJ local", 'score' => 0.90, 'rrf' => 0.03],
+    ['id' => 'main', 'content' => "Hora: 23:30\nLugar: Auditorio Central\nIntérprete: Headliner\n[Prioridad: Alta]", 'score' => 0.50, 'rrf' => 0.02],
+];
+$boosted = Xabia_Rag_Hybrid_Ranker::apply_priority_boost($prio_hits, 0.20, ['Auditorio Central']);
+assert($boosted[0]['id'] === 'main', 'priority boost elevates main stage over secondary');
+assert(!empty($boosted[0]['priority_boost']), 'priority flag set');
+assert(Xabia_Rag_Hybrid_Ranker::chunk_has_priority_signal($prio_hits[1]['content'], []), 'marker alone is enough');
+assert(
+    Xabia_Rag_Hybrid_Ranker::chunk_has_priority_signal("Lugar: Plaza Mayor\nActividad: Orquesta", ['Plaza Mayor']),
+    'priority_venues match Lugar without ingest tag'
+);
+$norm = Xabia_Rag_Hybrid_Ranker::normalize_priority_venues("Plaza Mayor\nAuditorio\n");
+assert(count($norm) === 2, 'normalize priority venues from multiline');
+
 require_once dirname(__DIR__) . '/core/class-xabia-rag-chunk-enricher.php';
+$prio_enriched = Xabia_Rag_Chunk_Enricher::enrich(
+    "EMPRESA: Headliner\nLugar: Plaza Mayor\nHora: 22:00",
+    ['lugar' => 'Plaza Mayor', 'nombre' => 'Headliner'],
+    [['csv_col' => 'lugar', 'label' => 'Lugar'], ['csv_col' => 'nombre', 'label' => 'Nombre']],
+    ['project_config' => ['rules' => [
+        'rag_chunk_enrichment' => 'on',
+        'priority_venues' => ['Plaza Mayor'],
+    ]]]
+);
+assert(strpos($prio_enriched, '[Prioridad: Alta]') !== false, 'enricher tags priority venue');
+assert(strpos($prio_enriched, '[Tipo: Escenario Principal]') !== false, 'enricher tags main stage type');
+
 $enriched = Xabia_Rag_Chunk_Enricher::enrich(
     'EMPRESA: Demo | CATEGORÍA: Otro tipo',
     [

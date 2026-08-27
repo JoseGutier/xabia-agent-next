@@ -103,6 +103,28 @@ final class Xabia_Hub_Knowledge {
                 $body['keyword_expansions'] = $sanitized;
             }
         }
+        $priority_venues = isset($hub_opts['priority_venues']) && is_array($hub_opts['priority_venues'])
+            ? $hub_opts['priority_venues']
+            : [];
+        if ($priority_venues !== []) {
+            $pv = [];
+            foreach ($priority_venues as $venue) {
+                $venue = trim(sanitize_text_field((string) $venue));
+                if ($venue === '' || mb_strlen($venue, 'UTF-8') < 3) {
+                    continue;
+                }
+                if (mb_strlen($venue, 'UTF-8') > 120) {
+                    $venue = mb_substr($venue, 0, 120);
+                }
+                $pv[] = $venue;
+                if (count($pv) >= 40) {
+                    break;
+                }
+            }
+            if ($pv !== []) {
+                $body['priority_venues'] = $pv;
+            }
+        }
         $out = Xabia_Digixop_Client::hub_signed_json_post($url, $body, $project_id);
         $hub_meta = [
             'url'       => $url,

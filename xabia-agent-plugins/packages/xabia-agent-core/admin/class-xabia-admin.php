@@ -1755,6 +1755,29 @@ class Xabia_Admin {
             if ($keyword_expansions_parsed['value'] !== []) {
                 $rules['keyword_expansions'] = $keyword_expansions_parsed['value'];
             }
+            $priority_venues_raw = trim((string) ($post['priority_venues'] ?? ''));
+            if ($priority_venues_raw !== '') {
+                $pv = preg_split('/[\n,;|]+/u', $priority_venues_raw) ?: [];
+                $pv_out = [];
+                foreach ($pv as $venue) {
+                    $venue = sanitize_text_field(trim((string) $venue));
+                    if ($venue === '' || mb_strlen($venue, 'UTF-8') < 3) {
+                        continue;
+                    }
+                    if (mb_strlen($venue, 'UTF-8') > 120) {
+                        $venue = mb_substr($venue, 0, 120);
+                    }
+                    $pv_out[mb_strtolower($venue, 'UTF-8')] = $venue;
+                    if (count($pv_out) >= 40) {
+                        break;
+                    }
+                }
+                if ($pv_out !== []) {
+                    $rules['priority_venues'] = array_values($pv_out);
+                }
+            } else {
+                unset($rules['priority_venues']);
+            }
             if ($knowledge_relations_parsed['value'] !== []) {
                 $rules['knowledge_relations'] = $knowledge_relations_parsed['value'];
             }
@@ -4455,6 +4478,10 @@ class Xabia_Admin {
                                 $rag_custom = (string) ($data['rules']['rag_custom_behavior'] ?? '');
                                 $context_source_description = (string) ($data['rules']['context_source_description'] ?? '');
                                 $kw_expansions = is_array($data['rules']['keyword_expansions'] ?? null) ? $data['rules']['keyword_expansions'] : [];
+                                $priority_venues_list = is_array($data['rules']['priority_venues'] ?? null)
+                                    ? $data['rules']['priority_venues']
+                                    : [];
+                                $priority_venues_raw = implode("\n", array_map('strval', $priority_venues_list));
                                 $kr_rows = is_array($data['rules']['knowledge_relations'] ?? null) ? $data['rules']['knowledge_relations'] : [];
                                 $pt_extra = [];
                                 foreach ($kr_rows as $kr) {
@@ -4551,6 +4578,12 @@ class Xabia_Admin {
                                         <template id="xabia-kw-row-tpl">
                                             <?php self::render_keyword_expansion_row('', '', 9999); ?>
                                         </template>
+                                    </div>
+
+                                    <div class="xabia-visual-block" id="xabia-priority-venues-block" style="margin-top:18px;">
+                                        <label for="xabia-priority-venues"><strong><?php echo esc_html__('Escenarios / sedes principales', 'xabia-intelligence'); ?></strong></label>
+                                        <p class="description"><?php echo esc_html__('Uno por línea. En listados de agenda, estos lugares reciben prioridad alta en el ranking RAG (sin hardcodear nombres en el código).', 'xabia-intelligence'); ?></p>
+                                        <textarea name="priority_venues" id="xabia-priority-venues" class="widefat" rows="4" placeholder="<?php echo esc_attr__("Plaza Mayor\nAuditorio principal\nEscenario Norte", 'xabia-intelligence'); ?>"><?php echo esc_textarea($priority_venues_raw); ?></textarea>
                                     </div>
 
                                     <div class="xabia-visual-block" id="xabia-knowledge-relations-block" data-xabia-rel-source="<?php echo esc_attr($rel_source_label); ?>" style="margin-top:18px;">

@@ -1241,6 +1241,202 @@ class Xabia_Brain {
 
         return rtrim($chunk) . $imagen_tail;
     }
+
+    /**
+     * Digest compacto de agenda para listados TEMPORAL_CATALOG.
+     * Agnóstico de dominio: filtra chunks por etiquetas de día y extrae hora / título / lugar
+     * desde campos genéricos (Hora, Actividad, Nombre, Lugar, Intérprete, Clasificación…).
+     * Los ítems de escenario principal (metadato o rules.priority_venues) encabezan la lista.
+     *
+     * @param list<string> $day_labels p.ej. ["Jueves 27 de agosto"]
+     * @param list<string> $priority_venues
+     */
+    public static function build_temporal_agenda_digest(
+        string $context,
+        array $day_labels,
+        array $priority_venues = []
+    ): string {
+        $context = self::ensure_valid_utf8(trim($context));
+        $day_labels = array_values(array_filter(array_map('strval', $day_labels)));
+        if ($context === '' || $day_labels === []) {
+            return '';
+        }
+        if (class_exists('Xabia_Rag_Hybrid_Ranker', false)) {
+            $priority_venues = Xabia_Rag_Hybrid_Ranker::normalize_priority_venues($priority_venues);
+        } else {
+            $priority_venues = array_values(array_filter(array_map('strval', $priority_venues)));
+        }
+
+        $parts = preg_split('/\n\n+/u', $context);
+        if (!is_array($parts) || $parts === []) {
+            $parts = [$context];
+        }
+
+        $rows = [];
+        foreach ($parts as $part) {
+            $part = trim((string) $part);
+            if ($part === '') {
+                continue;
+            }
+            $matched_label = '';
+            foreach ($day_labels as $label) {
+                if ($label !== '' && mb_stripos($part, $label, 0, 'UTF-8') !== false) {
+                    $matched_label = $label;
+                    break;
+                }
+            }
+            if ($matched_label === '') {
+                continue;
+            }
+            $line = self::extract_temporal_agenda_line($part, $priority_venues);
+            if ($line === null) {
+                continue;
+            }
+            $key = mb_strtolower($line['sort'] . '|' . $line['text'], 'UTF-8');
+            if (isset($rows[$key])) {
+                continue;
+            }
+            $rows[$key] = $line;
+        }
+
+        if ($rows === []) {
+            return '';
+        }
+
+        uasort($rows, static function (array $a, array $b): int {
+            $pa = !empty($a['priority']) ? 0 : 1;
+            $pb = !empty($b['priority']) ? 0 : 1;
+            if ($pa !== $pb) {
+                return $pa <=> $pb;
+            }
+
+            return strcmp($a['sort'], $b['sort']);
+        });
+
+        $header_labels = implode(' | ', $day_labels);
+        $lines = [];
+        $main = [];
+        $secondary = [];
+        foreach ($rows as $row) {
+            $bullet = '- ' . $row['text'];
+            if (!empty($row['priority'])) {
+                $main[] = $bullet;
+            } else {
+                $secondary[] = $bullet;
+            }
+        }
+        if ($main !== []) {
+            $lines[] = '## Escenarios principales';
+            foreach ($main as $b) {
+                $lines[] = $b;
+            }
+        }
+        if ($secondary !== []) {
+            $lines[] = '## Otros espacios';
+            foreach ($secondary as $b) {
+                $lines[] = $b;
+            }
+        }
+        if ($lines === []) {
+            foreach ($rows as $row) {
+                $lines[] = '- ' . $row['text'];
+            }
+        }
+
+        $block = "### AGENDA TEMPORAL ({$header_labels}) — LISTA CANÓNICA ###\n"
+            . "Instrucción: enumera TODOS los ítems siguientes sin omitir ninguno; "
+            . "prioriza escenarios principales antes que espacios secundarios; "
+            . "formato [Hora] - [Nombre] en [Lugar].\n"
+            . implode("\n", $lines);
+
+        if (function_exists('apply_filters')) {
+            $filtered = apply_filters('xabia_brain_temporal_agenda_digest', $block, $context, $day_labels, $rows);
+            if (is_string($filtered) && trim($filtered) !== '') {
+                return trim($filtered);
+            }
+        }
+
+        return $block;
+    }
+
+    /**
+     * @param list<string> $priority_venues
+     * @return array{sort: string, text: string, priority?: bool}|null
+     */
+    private static function extract_temporal_agenda_line(string $chunk, array $priority_venues = []): ?array {
+        $time = '';
+        if (preg_match('/\bHora(?:\s*\([^)]*\))?\s*:\s*([0-9]{1,2}:[0-9]{2}(?:\s*(?:y|,|\/)\s*[0-9]{1,2}:[0-9]{2})?)/iu', $chunk, $m)) {
+            $time = trim($m[1]);
+        } elseif (preg_match('/\|\s*([0-9]{1,2}:[0-9]{2}(?:\s*(?:y|,|\/)\s*[0-9]{1,2}:[0-9]{2})?)\s*\|/u', $chunk, $m)) {
+            $time = trim($m[1]);
+        } elseif (preg_match('/\b([0-9]{1,2}:[0-9]{2})\b/u', $chunk, $m)) {
+            $time = trim($m[1]);
+        }
+
+        $place = '';
+        if (preg_match('/\bLugar(?:\s*\([^)]*\))?\s*:\s*([^|\n\]]+)/iu', $chunk, $m)) {
+            $place = trim($m[1]);
+        } elseif (preg_match('/\b(?:Venue|Location|Site)\s*:\s*([^|\n\]]+)/iu', $chunk, $m)) {
+            $place = trim($m[1]);
+        }
+
+        $title = '';
+        foreach ([
+            '/\bInt[eé]rprete(?:\s+o\s+Protagonista)?(?:\s*\([^)]*\))?\s*:\s*([^|\n\]]+)/iu',
+            '/\bActividad(?:\s*\([^)]*\))?\s*:\s*([^|\n\]]+)/iu',
+            '/\b(?:Nombre|Name|T[ií]tulo|Title|Empresa|Entidad|Entity)\s*:\s*([^|\n\]]+)/iu',
+            '/\[Clasificaci[oó]n:\s*([^\]]+)\]/iu',
+        ] as $re) {
+            if (preg_match($re, $chunk, $m)) {
+                $title = trim($m[1]);
+                if ($title !== '') {
+                    break;
+                }
+            }
+        }
+        if ($title === '' && preg_match('/\[KEYWORDS:\s*([^\]|]+)/iu', $chunk, $m)) {
+            $title = trim(explode('|', $m[1])[0]);
+        }
+
+        $title = trim(preg_replace('/\s+/u', ' ', $title) ?? $title);
+        $place = trim(preg_replace('/\s+/u', ' ', $place) ?? $place);
+        $time = trim(preg_replace('/\s+/u', ' ', $time) ?? $time);
+
+        if ($title === '' && $place === '') {
+            return null;
+        }
+        if ($title === '') {
+            $title = $place;
+            $place = '';
+        }
+
+        // Evitar títulos que son solo la etiqueta de día u hora.
+        if (preg_match('/^\d{1,2}:\d{2}/', $title)) {
+            return null;
+        }
+
+        $text = ($time !== '' ? $time . ' - ' : '') . $title;
+        if ($place !== '' && mb_stripos($title, $place, 0, 'UTF-8') === false) {
+            $text .= ' en ' . $place;
+        }
+
+        $sort = '99:99';
+        if (preg_match('/^(\d{1,2}):(\d{2})/', $time, $tm)) {
+            $sort = sprintf('%02d:%02d', (int) $tm[1], (int) $tm[2]);
+            // Madrugada temprana: tras la noche (00–05 → 24–29 para ordenar al final del día).
+            $h = (int) $tm[1];
+            if ($h >= 0 && $h < 6) {
+                $sort = sprintf('%02d:%02d', $h + 24, (int) $tm[2]);
+            }
+        }
+
+        $priority = false;
+        if (class_exists('Xabia_Rag_Hybrid_Ranker', false)) {
+            $priority = Xabia_Rag_Hybrid_Ranker::chunk_has_priority_signal($chunk, $priority_venues);
+        }
+
+        return ['sort' => $sort, 'text' => $text, 'priority' => $priority];
+    }
 }
 
 endif;
