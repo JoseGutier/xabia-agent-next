@@ -90,8 +90,96 @@ class Xabia_Brain {
             }
         }
         $terms = apply_filters('xabia_brain_search_like_terms', array_values(array_unique($terms)), $query);
+        if (!is_array($terms)) {
+            $terms = [];
+        }
+        foreach (self::relative_calendar_labels_for_query($query) as $label) {
+            $terms[] = $label;
+            // Fragmentos útiles: «27 de agosto», «Jueves»
+            if (preg_match('/^(\S+)\s+(\d{1,2}\s+de\s+\S+)$/u', $label, $m)) {
+                $terms[] = $m[1];
+                $terms[] = $m[2];
+            }
+        }
 
-        return is_array($terms) ? array_values(array_filter(array_map('strval', $terms))) : [];
+        return array_values(array_filter(array_map('strval', array_unique($terms))));
+    }
+
+    /**
+     * Etiquetas de calendario en lenguaje natural («Jueves 27 de agosto») para anclar
+     * consultas relativas (hoy / esta noche / mañana) en FULLTEXT/LIKE y RRF.
+     *
+     * @return list<string>
+     */
+    public static function relative_calendar_labels_for_query(string $user_msg): array {
+        $raw = trim(function_exists('wp_strip_all_tags') ? wp_strip_all_tags($user_msg) : strip_tags($user_msg));
+        if ($raw === '') {
+            return [];
+        }
+        $q = function_exists('mb_strtolower') ? mb_strtolower($raw, 'UTF-8') : strtolower($raw);
+        $q = strtr($q, [
+            'á' => 'a', 'é' => 'e', 'í' => 'i', 'ó' => 'o', 'ú' => 'u', 'ñ' => 'n',
+        ]);
+        $wants_today = (bool) preg_match('/\b(esta\s+noche|esta\s+tarde|hoy|ahora|today|tonight|gaur)\b/u', $q);
+        $wants_tomorrow = (bool) preg_match('/\b(manana|tomorrow|bihar)\b/u', $q);
+        $wants_weekend = (bool) preg_match('/\b(este\s+finde|este\s+fin\s+de\s+semana|this\s+weekend)\b/u', $q);
+        if (!$wants_today && !$wants_tomorrow && !$wants_weekend) {
+            return [];
+        }
+
+        $mk = static function (int $offset_days): string {
+            $base = function_exists('current_time') ? (int) current_time('timestamp') : time();
+            $ts = $base + ($offset_days * (defined('DAY_IN_SECONDS') ? DAY_IN_SECONDS : 86400));
+            $days = [
+                'Sunday' => 'Domingo', 'Monday' => 'Lunes', 'Tuesday' => 'Martes',
+                'Wednesday' => 'Miércoles', 'Thursday' => 'Jueves', 'Friday' => 'Viernes', 'Saturday' => 'Sábado',
+            ];
+            $months = [
+                'January' => 'enero', 'February' => 'febrero', 'March' => 'marzo', 'April' => 'abril',
+                'May' => 'mayo', 'June' => 'junio', 'July' => 'julio', 'August' => 'agosto',
+                'September' => 'septiembre', 'October' => 'octubre', 'November' => 'noviembre', 'December' => 'diciembre',
+            ];
+            $dow = $days[date('l', $ts)] ?? (function_exists('date_i18n') ? ucfirst((string) date_i18n('l', $ts)) : date('l', $ts));
+            $month = $months[date('F', $ts)] ?? (function_exists('mb_strtolower')
+                ? mb_strtolower((string) (function_exists('date_i18n') ? date_i18n('F', $ts) : date('F', $ts)), 'UTF-8')
+                : strtolower(date('F', $ts)));
+            $day = (int) date('j', $ts);
+
+            return $dow . ' ' . $day . ' de ' . $month;
+        };
+
+        $labels = [];
+        if ($wants_today) {
+            $labels[] = $mk(0);
+        }
+        if ($wants_tomorrow) {
+            $labels[] = $mk(1);
+        }
+        if ($wants_weekend) {
+            $base = function_exists('current_time') ? (int) current_time('timestamp') : time();
+            $w = (int) date('w', $base);
+            // Próximo sábado y domingo (incluye el actual si ya es finde).
+            $sat_off = (6 - $w + 7) % 7;
+            $sun_off = (0 - $w + 7) % 7;
+            if ($w === 6) {
+                $sat_off = 0;
+            }
+            if ($w === 0) {
+                $sun_off = 0;
+            }
+            $labels[] = $mk($sat_off);
+            $labels[] = $mk($sun_off === 0 && $w !== 0 ? 7 : $sun_off);
+        }
+
+        $labels = array_values(array_unique(array_filter($labels)));
+        if (function_exists('apply_filters')) {
+            $filtered = apply_filters('xabia_brain_relative_calendar_labels', $labels, $user_msg);
+            if (is_array($filtered)) {
+                $labels = array_values(array_filter(array_map('strval', $filtered)));
+            }
+        }
+
+        return $labels;
     }
 
     /**

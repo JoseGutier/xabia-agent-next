@@ -1763,48 +1763,11 @@ if (!class_exists('Xabia_API')) {
          * @return list<string>
          */
         private static function relative_day_labels_for_rag(string $user_msg): array {
-            $raw = trim(wp_strip_all_tags($user_msg));
-            if ($raw === '') {
-                return [];
-            }
-            $q = mb_strtolower($raw, 'UTF-8');
-            $q = strtr($q, [
-                'á' => 'a', 'é' => 'e', 'í' => 'i', 'ó' => 'o', 'ú' => 'u', 'ñ' => 'n',
-            ]);
-            $wants_today = (bool) preg_match('/\b(esta\s+noche|esta\s+tarde|hoy|ahora)\b/u', $q);
-            $wants_tomorrow = (bool) preg_match('/\bmanana\b/u', $q);
-            if (!$wants_today && !$wants_tomorrow) {
-                return [];
+            if (class_exists('Xabia_Brain', false) && method_exists('Xabia_Brain', 'relative_calendar_labels_for_query')) {
+                return Xabia_Brain::relative_calendar_labels_for_query($user_msg);
             }
 
-            $mk = static function (int $offset_days): string {
-                $base = function_exists('current_time') ? (int) current_time('timestamp') : time();
-                $ts = $base + ($offset_days * DAY_IN_SECONDS);
-                $days = [
-                    'Sunday' => 'Domingo', 'Monday' => 'Lunes', 'Tuesday' => 'Martes',
-                    'Wednesday' => 'Miércoles', 'Thursday' => 'Jueves', 'Friday' => 'Viernes', 'Saturday' => 'Sábado',
-                ];
-                $months = [
-                    'January' => 'enero', 'February' => 'febrero', 'March' => 'marzo', 'April' => 'abril',
-                    'May' => 'mayo', 'June' => 'junio', 'July' => 'julio', 'August' => 'agosto',
-                    'September' => 'septiembre', 'October' => 'octubre', 'November' => 'noviembre', 'December' => 'diciembre',
-                ];
-                $dow = $days[date('l', $ts)] ?? ucfirst((string) date_i18n('l', $ts));
-                $month = $months[date('F', $ts)] ?? mb_strtolower((string) date_i18n('F', $ts), 'UTF-8');
-                $day = (int) date('j', $ts);
-
-                return $dow . ' ' . $day . ' de ' . $month;
-            };
-
-            $labels = [];
-            if ($wants_today) {
-                $labels[] = $mk(0);
-            }
-            if ($wants_tomorrow) {
-                $labels[] = $mk(1);
-            }
-
-            return array_values(array_unique(array_filter($labels)));
+            return [];
         }
 
         /**
@@ -2234,8 +2197,14 @@ if (!class_exists('Xabia_API')) {
             );
             if (!empty($catalog_intent['hit'])) {
                 $hub_rag_opts['catalog_list'] = true;
+                $intent_source = (string) ($catalog_intent['source'] ?? 'regex');
+                $intent_kind = (string) ($catalog_intent['kind'] ?? '');
+                if ($intent_kind === 'temporal' || $intent_source === 'temporal') {
+                    $intent_source = 'temporal';
+                    $config['_xabia_temporal_catalog'] = true;
+                }
                 $rag_fetch_limit = class_exists('Xabia_Catalog_Intent', false)
-                    ? Xabia_Catalog_Intent::rag_chunk_limit((int) $rag_fetch_limit, (string) ($catalog_intent['source'] ?? 'regex'))
+                    ? Xabia_Catalog_Intent::rag_chunk_limit((int) $rag_fetch_limit, $intent_source)
                     : max((int) $rag_fetch_limit, 15);
             }
             $retrieval_search_term = self::rag_retrieval_search_term($search_term, $user_msg_clean);
@@ -2306,6 +2275,8 @@ if (!class_exists('Xabia_API')) {
                 'query_rewritten'        => self::$last_rag_debug['query_rewritten'] ?? 'n/a',
                 'catalog_intent_hit'     => !empty($catalog_intent['hit']) ? 'yes' : 'no',
                 'catalog_intent_source'  => (string) ($catalog_intent['source'] ?? 'none'),
+                'catalog_intent_kind'    => (string) ($catalog_intent['kind'] ?? ''),
+                'temporal_catalog'       => !empty($config['_xabia_temporal_catalog']) ? 'yes' : 'no',
             ];
 
             $context = "";
@@ -3739,11 +3710,17 @@ if (!class_exists('Xabia_API')) {
                 : '';
             $origin_lang = isset($config['_xabia_proxy_user_lang']) ? (string) $config['_xabia_proxy_user_lang'] : $lang_code;
             $language_rule = self::xabia_polyglot_language_rule($origin_lang);
-            $time_awareness = "REFERENCIA TEMPORAL OBLIGATORIA: Hoy es " . strtoupper($current_date) . ". "
-                . "Ancla todas las expresiones relativas («hoy», «esta noche», «esta tarde», «mañana», «esta semana», «este fin de semana», «próximos», «futuro», «qué hay») a la fecha de hoy. "
+            $current_server_time = function_exists('date_i18n')
+                ? date_i18n('l, j \d\e F \d\e Y (H:i T)')
+                : date('l, j F Y (H:i T)');
+            $system_time_context = '[ENTORNO DEL SISTEMA: La fecha y hora actual exacta del servidor es '
+                . $current_server_time . '].';
+            $time_awareness = $system_time_context . "\n"
+                . "REFERENCIA TEMPORAL OBLIGATORIA: Hoy es " . strtoupper($current_date) . ". "
+                . "Ancla todas las expresiones relativas («hoy», «esta noche», «esta tarde», «mañana», «esta semana», «este fin de semana», «próximos», «futuro», «qué hay») a la fecha y hora del ENTORNO DEL SISTEMA. "
                 . "En el CONTEXTO las fechas pueden venir como texto (ej. «Jueves 27 de agosto») o como AAAA-MM-DD: trata ambas como la misma fecha civil. "
                 . "«Esta noche» / «hoy por la noche» = eventos de HOY con hora desde ~18:00 en adelante, más madrugada 00:00–05:59 si el CONTEXTO las asocia a esa noche. "
-                . "Si el usuario pide un listado de lo que hay hoy/esta noche/mañana de un tipo (conciertos, música, planes…), lista TODOS los ítems del CONTEXTO cuya fecha coincida; PROHIBIDO quedarte en un solo ejemplo. Ordena por hora e incluye lugar. "
+                . "Si el usuario pide un listado de lo que hay hoy/esta noche/mañana de un tipo (conciertos, música, planes, actividades…), lista TODOS los ítems del CONTEXTO cuya fecha coincida; PROHIBIDO quedarte en un solo ejemplo. Ordena por hora e incluye lugar. "
                 . "Si el CONTEXTO incluye campos Fecha/fecha en AAAA-MM-DD, un ítem es FUTURO solo si Fecha >= la ISO de hoy; es PASADO si Fecha < hoy. "
                 . "PROHIBIDO decir que no hay eventos o actividades futuras si el CONTEXTO trae filas con Fecha >= hoy. "
                 . "PROHIBIDO presentar como disponibles eventos con Fecha < hoy, salvo que el usuario pida pasado o histórico.";
@@ -3792,7 +3769,15 @@ if (!class_exists('Xabia_API')) {
             }
 
             $format_instruction = "";
-            if ($response_mode === 'list') {
+            $temporal_catalog = !empty($config['_xabia_temporal_catalog']);
+            if ($temporal_catalog) {
+                $format_instruction = "FORMATO LISTADO TEMPORAL (TEMPORAL_CATALOG): Al listar eventos o actividades para la fecha solicitada, "
+                    . "presenta los resultados en una lista compacta y estructurada con el formato: "
+                    . "[Hora] - [Nombre del Evento/Artista] en [Lugar/Escenario]. "
+                    . "No añadas párrafos descriptivos largos por cada elemento para evitar el corte de respuesta. "
+                    . "Incluye TODOS los ítems del CONTEXTO cuya fecha coincida con la pedida; ordena por hora. "
+                    . "PROHIBIDO responder con un solo ejemplo si el CONTEXTO trae varios.\n";
+            } elseif ($response_mode === 'list') {
                 $format_instruction = "FORMATO LISTA: Si el usuario pide comparar o listar opciones, genera viñetas concisas (•), una entidad por línea. "
                     . "Incluye solo el identificador/nombre y un detalle breve del CONTEXTO. "
                     . "PROHIBIDO en el listado: volcar el anexo de detalle (bloque tras «---») ni atributos extendidos de ficha. "

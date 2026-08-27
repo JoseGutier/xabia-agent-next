@@ -21,12 +21,19 @@ class Xabia_Catalog_Intent {
     public const SEMANTIC_RAG_CHUNK_FLOOR = 15;
 
     /**
+     * Listados anclados a hoy/esta noche/mañana: caben los eventos de un día completo.
+     */
+    public const TEMPORAL_RAG_CHUNK_FLOOR = 25;
+
+    /**
      * Tope del floor configurable (filter); el cap duro sigue en Brain::MAX_CATALOG_RAG_CHUNKS.
      */
-    public const RAG_CHUNK_FLOOR_MAX = 24;
+    public const RAG_CHUNK_FLOOR_MAX = 25;
 
     public const LABEL_CATALOG = 'CATALOG';
     public const LABEL_GENERAL = 'GENERAL';
+    public const KIND_CATALOG = 'catalog';
+    public const KIND_TEMPORAL = 'temporal';
 
     /**
      * Capa 1 (fast-path): patrones estructurales. Sin llamada LLM.
@@ -40,7 +47,7 @@ class Xabia_Catalog_Intent {
             return false;
         }
 
-        $hit = self::matches_structural_listing($q);
+        $hit = self::matches_structural_listing($q) || self::is_temporal_query($text);
         if (function_exists('apply_filters')) {
             $filtered = apply_filters('xabia_catalog_listing_intent', $hit, $text, $q);
             if (is_bool($filtered)) {
@@ -52,47 +59,74 @@ class Xabia_Catalog_Intent {
     }
 
     /**
-     * Enrutador híbrido: regex → si no hay match, micro-LLM (CATALOG|GENERAL).
+     * Consulta con anclaje temporal relativo (hoy / esta noche / mañana / este finde).
+     * Agnóstica de dominio: no asume conciertos ni un vertical concreto.
+     */
+    public static function is_temporal_query(string $text): bool {
+        $q = self::normalize($text);
+        if ($q === '' || self::looks_like_utility_only($q)) {
+            return false;
+        }
+        $hit = self::matches_temporal_listing($q);
+        if (function_exists('apply_filters')) {
+            $filtered = apply_filters('xabia_catalog_temporal_intent', $hit, $text, $q);
+            if (is_bool($filtered)) {
+                return $filtered;
+            }
+        }
+
+        return $hit;
+    }
+
+    /**
+     * Enrutador híbrido: TEMPORAL → listado regex → micro-LLM (CATALOG|GENERAL).
      *
      * @param array{
      *   project_id?: string,
      *   config?: array<string, mixed>,
      *   llm_classify?: callable|null
      * } $ctx llm_classify: fn(string $user_msg): string
-     * @return array{hit: bool, source: string}
+     * @return array{hit: bool, source: string, kind: string}
      */
     public static function resolve(string $text, array $ctx = []): array {
         $text = trim(function_exists('wp_strip_all_tags') ? wp_strip_all_tags($text) : strip_tags($text));
         if ($text === '') {
-            return ['hit' => false, 'source' => 'none'];
+            return ['hit' => false, 'source' => 'none', 'kind' => ''];
+        }
+
+        if (self::is_temporal_query($text)) {
+            return ['hit' => true, 'source' => 'temporal', 'kind' => self::KIND_TEMPORAL];
         }
 
         if (self::is_listing_query($text)) {
-            return ['hit' => true, 'source' => 'regex'];
+            return ['hit' => true, 'source' => 'regex', 'kind' => self::KIND_CATALOG];
         }
 
         $q = self::normalize($text);
         if ($q === '' || self::looks_like_utility_only($q)) {
-            return ['hit' => false, 'source' => 'none'];
+            return ['hit' => false, 'source' => 'none', 'kind' => ''];
         }
 
         $config = isset($ctx['config']) && is_array($ctx['config']) ? $ctx['config'] : [];
         if (!self::micro_llm_enabled($config)) {
-            return ['hit' => false, 'source' => 'disabled'];
+            return ['hit' => false, 'source' => 'disabled', 'kind' => ''];
         }
 
         $classify = $ctx['llm_classify'] ?? null;
         if (!is_callable($classify)) {
-            return ['hit' => false, 'source' => 'no_classifier'];
+            return ['hit' => false, 'source' => 'no_classifier', 'kind' => ''];
         }
 
         $cache_key = 'xabia_cat_intent_' . md5(mb_strtolower($text, 'UTF-8'));
         if (function_exists('get_transient')) {
             $cached = get_transient($cache_key);
             if ($cached === self::LABEL_CATALOG || $cached === self::LABEL_GENERAL) {
+                $hit = $cached === self::LABEL_CATALOG;
+
                 return [
-                    'hit'    => $cached === self::LABEL_CATALOG,
+                    'hit'    => $hit,
                     'source' => 'llm_cache',
+                    'kind'   => $hit ? self::KIND_CATALOG : '',
                 ];
             }
         }
@@ -104,12 +138,12 @@ class Xabia_Catalog_Intent {
                 error_log('[Xabia] catalog intent micro-LLM: ' . $e->getMessage());
             }
 
-            return ['hit' => false, 'source' => 'llm_error'];
+            return ['hit' => false, 'source' => 'llm_error', 'kind' => ''];
         }
 
         $label = self::parse_router_label($raw);
         if ($label === null) {
-            return ['hit' => false, 'source' => 'llm_unparsed'];
+            return ['hit' => false, 'source' => 'llm_unparsed', 'kind' => ''];
         }
 
         if (function_exists('set_transient')) {
@@ -117,20 +151,25 @@ class Xabia_Catalog_Intent {
             set_transient($cache_key, $label, $ttl);
         }
 
+        $hit = $label === self::LABEL_CATALOG;
+
         return [
-            'hit'    => $label === self::LABEL_CATALOG,
+            'hit'    => $hit,
             'source' => 'llm',
+            'kind'   => $hit ? self::KIND_CATALOG : '',
         ];
     }
 
     /**
-     * Top-K a usar en recuperación cuando hay intención de catálogo.
+     * Top-K a usar en recuperación cuando hay intención de catálogo / temporal.
      *
-     * @param string $source regex|llm|llm_cache|…
+     * @param string $source regex|temporal|llm|llm_cache|…
      */
     public static function rag_chunk_limit(int $base, string $source = 'regex'): int {
         $floor = self::RAG_CHUNK_FLOOR;
-        if ($source === 'llm' || $source === 'llm_cache') {
+        if ($source === 'temporal') {
+            $floor = self::TEMPORAL_RAG_CHUNK_FLOOR;
+        } elseif ($source === 'llm' || $source === 'llm_cache') {
             $floor = self::SEMANTIC_RAG_CHUNK_FLOOR;
         }
         if (function_exists('apply_filters')) {
@@ -192,6 +231,48 @@ class Xabia_Catalog_Intent {
         return "Eres un enrutador semántico. Tu tarea es clasificar la intención del usuario. "
             . "¿Está el usuario buscando entidades, servicios, opciones o productos de un catálogo? "
             . "Responde ÚNICAMENTE con la palabra 'CATALOG' si es así, o 'GENERAL' si es una charla casual o saludo.";
+    }
+
+    /**
+     * @return list<string>
+     */
+    public static function temporal_patterns(): array {
+        return [
+            // «hoy / esta noche / mañana / este finde» con pedido de agenda o listado
+            '/\b(hoy|esta\s+noche|esta\s+tarde|ma[nñ]ana|ahora|este\s+finde|este\s+fin\s+de\s+semana|esta\s+semana)\b/u',
+            // EN/EU: today / tonight / tomorrow
+            '/\b(today|tonight|tomorrow|this\s+weekend)\b/u',
+            '/\b(gaur|gaur\s+gauean|bihar)\b/u',
+        ];
+    }
+
+    /**
+     * Requiere ancla temporal + señal de listado/agenda (evita «hoy estoy bien»).
+     */
+    private static function matches_temporal_listing(string $q): bool {
+        $has_temporal = false;
+        foreach (self::temporal_patterns() as $pattern) {
+            if (preg_match($pattern, $q)) {
+                $has_temporal = true;
+                break;
+            }
+        }
+        if (!$has_temporal) {
+            return false;
+        }
+        // Señal de catálogo/agenda/listado (agnóstica).
+        if (preg_match(
+            '/\b(hay|existen|teneis|tienen|qu[eé]|cu[aá]l|cu[aá]les|list|lista|conciertos?|eventos?|actuaciones?|verbenas?|planes?|actividades?|opciones?|experiencias?|empresas?|servicios?|m[uú]sica|programa|agenda|horario|cartelera)\b/u',
+            $q
+        )) {
+            return true;
+        }
+        // «qué hay hoy/esta noche»
+        if (preg_match('/\b(qu[eé]\s+hay|hay\s+algo|qu[eé]\s+se\s+puede\s+hacer)\b/u', $q)) {
+            return true;
+        }
+
+        return false;
     }
 
     /**

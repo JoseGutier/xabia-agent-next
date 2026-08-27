@@ -59,11 +59,27 @@ foreach ($not_listing as $q) {
 }
 
 $limit = Xabia_Catalog_Intent::rag_chunk_limit(4);
-assert($limit >= 15 && $limit <= 24, 'catalog intent floor is 15–24, got ' . $limit);
+assert($limit >= 15 && $limit <= 25, 'catalog intent floor is 15–25, got ' . $limit);
 assert($limit === 20, 'default regex floor is 20');
 
 $sem = Xabia_Catalog_Intent::rag_chunk_limit(4, 'llm');
 assert($sem === 15, 'semantic floor is 15, got ' . $sem);
+
+$temporal_qs = [
+    'que conciertos hay esta noche?',
+    'qué hay hoy',
+    'eventos mañana',
+    'qué planes hay este finde',
+];
+foreach ($temporal_qs as $q) {
+    assert(Xabia_Catalog_Intent::is_temporal_query($q), 'should detect temporal: ' . $q);
+    $r = Xabia_Catalog_Intent::resolve($q, []);
+    assert($r['hit'] === true && ($r['kind'] ?? '') === 'temporal', 'temporal resolve: ' . $q);
+}
+$tlimit = Xabia_Catalog_Intent::rag_chunk_limit(4, 'temporal');
+assert($tlimit === 25, 'temporal floor is 25, got ' . $tlimit);
+
+assert(!Xabia_Catalog_Intent::is_temporal_query('hoy estoy bien'), 'casual hoy should not be temporal');
 
 // Capa 2: micro-LLM fallback (mock) — frase que no pilla la regex.
 $paraphrase = 'quiero ir al trote por el monte';
