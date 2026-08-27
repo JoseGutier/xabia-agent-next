@@ -1574,7 +1574,10 @@
         }
         clearWaitingTimers($box);
 
-        var $dots = $box.find('.xabia-typing-dots');
+        var $dots = $box.find('.xabia-compose-area .xabia-typing-dots');
+        if (!$dots.length) {
+            $dots = $box.find('.xabia-typing-dots');
+        }
         var $msgEl = $dots.find('.xabia-waiting-message');
         if (!$msgEl.length) {
             $msgEl = $('<span class="xabia-waiting-message" aria-live="polite"></span>');
@@ -1582,7 +1585,8 @@
         }
 
         setWaitingMessageText($msgEl, getWaitingMessage(userPrompt));
-        $dots.show().attr('aria-hidden', 'false');
+        $box.addClass('xabia-is-waiting');
+        $dots.attr('aria-hidden', 'false').css('display', '');
         setAvatarThinking($box, true);
 
         var timers = [];
@@ -1600,8 +1604,12 @@
             return;
         }
         clearWaitingTimers($box);
-        var $dots = $box.find('.xabia-typing-dots');
-        $dots.hide().attr('aria-hidden', 'true');
+        var $dots = $box.find('.xabia-compose-area .xabia-typing-dots');
+        if (!$dots.length) {
+            $dots = $box.find('.xabia-typing-dots');
+        }
+        $box.removeClass('xabia-is-waiting');
+        $dots.attr('aria-hidden', 'true').css('display', 'none');
         $dots.find('.xabia-waiting-message').text('').removeClass('xabia-waiting-message--swap');
         setAvatarThinking($box, false);
     }
@@ -2367,7 +2375,7 @@
             e.stopPropagation();
             var $box = $(this).closest('.xabia-chatbox');
             var $btn = $(this);
-            if ($btn.prop('disabled') || $box.find('.xabia-typing-dots').is(':visible')) {
+            if ($btn.prop('disabled') || $box.hasClass('xabia-is-waiting')) {
                 return;
             }
             $btn.prop('disabled', true);

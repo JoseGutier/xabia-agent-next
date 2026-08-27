@@ -493,14 +493,13 @@ function shortcode_xabia_agent_renderer($atts) {
                 </div>
                 <div class="xabia-compose-area">
                     <textarea class="xabia-input-field" placeholder="<?php echo esc_attr(Xabia_I18n::t('Escribe aquí o pulsa el micro para hablar...')); ?>" autocomplete="off" rows="1"></textarea>
+                    <div class="xabia-typing-dots" style="display:none;" aria-hidden="true" role="status">
+                        <span class="xabia-typing-dot" aria-hidden="true"></span>
+                        <span class="xabia-typing-dot" aria-hidden="true"></span>
+                        <span class="xabia-typing-dot" aria-hidden="true"></span>
+                        <span class="xabia-waiting-message" aria-live="polite"></span>
+                    </div>
                 </div>
-            </div>
-
-            <div class="xabia-typing-dots" style="display:none;" aria-hidden="true" role="status">
-                <span class="xabia-typing-dot" aria-hidden="true"></span>
-                <span class="xabia-typing-dot" aria-hidden="true"></span>
-                <span class="xabia-typing-dot" aria-hidden="true"></span>
-                <span class="xabia-waiting-message" aria-live="polite"></span>
             </div>
         </div>
 
