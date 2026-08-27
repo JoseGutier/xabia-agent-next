@@ -204,8 +204,14 @@ class Xabia_Catalog_Intent {
             '/\b(hay|existen|teneis|ten[eé]is|ofrec[eé]is|busco|quiero|alguna|algunas|qu[eé])\b.{0,100}\b(en|de|tipo|categor[ií]a|entorno|ambiente)\b/u',
             // «actividades/empresas … en/de …»
             '/\b(actividades?|opciones?|experiencias?|empresas?|servicios?)\b.{0,80}\b(en|de|tipo|categor[ií]a|entorno|ambiente|para|con)\b/u',
-            // «alguna empresa», «qué empresas», «qué actividades»
-            '/\b(alguna|algunas|alg[uú]n|qu[eé]|cu[aá]l|cu[aá]les)\s+(empresa|empresas|actividad|actividades|experiencia|experiencias|opci[oó]n|opciones|servicio|servicios)\b/u',
+            // «alguna empresa», «qué empresas», «qué actividades», «qué conciertos»
+            '/\b(alguna|algunas|alg[uú]n|qu[eé]|cu[aá]l|cu[aá]les)\s+(empresa|empresas|actividad|actividades|experiencia|experiencias|opci[oó]n|opciones|servicio|servicios|conciertos?|eventos?|actuaciones?|verbenas?|planes?)\b/u',
+            // «conciertos/eventos hoy|esta noche|mañana»
+            '/\b(conciertos?|eventos?|actuaciones?|verbenas?|planes?)\b.{0,40}\b(hoy|esta\s+noche|esta\s+tarde|ma[nñ]ana|ahora)\b/u',
+            // «qué hay esta noche/hoy» (programa / agenda)
+            '/\b(qu[eé]\s+hay|hay\s+algo|qu[eé]\s+se\s+puede\s+hacer)\b.{0,40}\b(hoy|esta\s+noche|esta\s+tarde|ma[nñ]ana)\b/u',
+            // «hay conciertos…»
+            '/\bhay\s+(conciertos?|eventos?|actuaciones?|verbenas?|m[uú]sica)\b/u',
             // «dónde puedo», «donde hacer», «where can I»
             '/\b(d[oó]nde|where)\s+(puedo|podemos|hacer|encontrar|can|do)\b/u',
             // «busco hacer», «quiero hacer», «looking for a company»

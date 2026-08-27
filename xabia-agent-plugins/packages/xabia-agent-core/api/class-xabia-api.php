@@ -1758,6 +1758,67 @@ if (!class_exists('Xabia_API')) {
         }
 
         /**
+         * Etiquetas de día al estilo del CSV de agenda («Jueves 27 de agosto») para anclar RAG a hoy/mañana.
+         *
+         * @return list<string>
+         */
+        private static function relative_day_labels_for_rag(string $user_msg): array {
+            $raw = trim(wp_strip_all_tags($user_msg));
+            if ($raw === '') {
+                return [];
+            }
+            $q = mb_strtolower($raw, 'UTF-8');
+            $q = strtr($q, [
+                'á' => 'a', 'é' => 'e', 'í' => 'i', 'ó' => 'o', 'ú' => 'u', 'ñ' => 'n',
+            ]);
+            $wants_today = (bool) preg_match('/\b(esta\s+noche|esta\s+tarde|hoy|ahora)\b/u', $q);
+            $wants_tomorrow = (bool) preg_match('/\bmanana\b/u', $q);
+            if (!$wants_today && !$wants_tomorrow) {
+                return [];
+            }
+
+            $mk = static function (int $offset_days): string {
+                $base = function_exists('current_time') ? (int) current_time('timestamp') : time();
+                $ts = $base + ($offset_days * DAY_IN_SECONDS);
+                $days = [
+                    'Sunday' => 'Domingo', 'Monday' => 'Lunes', 'Tuesday' => 'Martes',
+                    'Wednesday' => 'Miércoles', 'Thursday' => 'Jueves', 'Friday' => 'Viernes', 'Saturday' => 'Sábado',
+                ];
+                $months = [
+                    'January' => 'enero', 'February' => 'febrero', 'March' => 'marzo', 'April' => 'abril',
+                    'May' => 'mayo', 'June' => 'junio', 'July' => 'julio', 'August' => 'agosto',
+                    'September' => 'septiembre', 'October' => 'octubre', 'November' => 'noviembre', 'December' => 'diciembre',
+                ];
+                $dow = $days[date('l', $ts)] ?? ucfirst((string) date_i18n('l', $ts));
+                $month = $months[date('F', $ts)] ?? mb_strtolower((string) date_i18n('F', $ts), 'UTF-8');
+                $day = (int) date('j', $ts);
+
+                return $dow . ' ' . $day . ' de ' . $month;
+            };
+
+            $labels = [];
+            if ($wants_today) {
+                $labels[] = $mk(0);
+            }
+            if ($wants_tomorrow) {
+                $labels[] = $mk(1);
+            }
+
+            return array_values(array_unique(array_filter($labels)));
+        }
+
+        /**
+         * Tema léxico corto (concierto/música…) para combinar con la etiqueta de día en rescate LIKE.
+         */
+        private static function relative_day_topic_for_rag(string $user_msg): string {
+            if (preg_match('/\b(conciertos?|m[uú]sica|eventos?|actuaciones?|verbenas?|planes?|txosnas?|txoznas?)\b/iu', $user_msg, $m)) {
+                return (string) $m[1];
+            }
+
+            return '';
+        }
+
+        /**
          * Término ampliado para embedding / vectorial (acrónimos y variantes morfológicas; sin APIs externas).
          */
         private static function rag_retrieval_search_term(string $search_term, string $user_msg_clean): string {
@@ -2223,6 +2284,14 @@ if (!class_exists('Xabia_API')) {
                 self::$last_rag_debug['query_rewritten'] = !empty($rewrite['rewritten']) ? 'yes' : 'no';
             }
 
+            $relative_day_labels = self::relative_day_labels_for_rag($user_msg_clean);
+            if ($relative_day_labels !== []) {
+                $date_anchor = implode(' ', $relative_day_labels);
+                $retrieval_search_term = trim($retrieval_search_term . ' ' . $date_anchor);
+                $rag_lexical_query = trim(($rag_lexical_query !== '' ? $rag_lexical_query : $user_msg_clean) . ' ' . $date_anchor);
+                $hub_rag_opts['lexical_query_text'] = $rag_lexical_query;
+            }
+
             self::$last_rag_debug = [
                 'chunk_count'            => 0,
                 'keyword_boost_status'   => 'not_evaluated',
@@ -2511,6 +2580,44 @@ if (!class_exists('Xabia_API')) {
 
             // Densificar/trocear ANTES del trim: Hub devuelve fichas ~10kB; substr byte-wise rompe UTF-8
             // y densify posterior deja contexto vacío → el LLM dice «no hay resultados».
+            if (!empty($relative_day_labels) && class_exists('Xabia_Brain', false)) {
+                $topic = self::relative_day_topic_for_rag($user_msg_clean);
+                $date_rescue_parts = [];
+                foreach ($relative_day_labels as $label) {
+                    $term = trim($label . ($topic !== '' ? ' ' . $topic : ''));
+                    $piece = self::local_knowledge_rescue_like_search(
+                        $project_id,
+                        $term,
+                        $ente_scope,
+                        $strict_ente,
+                        max((int) $rag_fetch_limit, 24)
+                    );
+                    if (strlen(trim($piece)) >= 10) {
+                        $date_rescue_parts[] = $piece;
+                    }
+                    // También sin tema, por si el CSV no repite «concierto» en todas las filas.
+                    if ($topic !== '') {
+                        $piece2 = self::local_knowledge_rescue_like_search(
+                            $project_id,
+                            $label,
+                            $ente_scope,
+                            $strict_ente,
+                            max((int) $rag_fetch_limit, 24)
+                        );
+                        if (strlen(trim($piece2)) >= 10) {
+                            $date_rescue_parts[] = $piece2;
+                        }
+                    }
+                }
+                if ($date_rescue_parts !== []) {
+                    $date_ctx = trim(implode("\n\n", array_unique($date_rescue_parts)));
+                    $context = $date_ctx . (strlen(trim((string) $context)) >= 10 ? ("\n\n" . trim((string) $context)) : '');
+                    $had_knowledge_rows = true;
+                    self::$last_rag_debug['date_anchor_rescue'] = implode('|', $relative_day_labels);
+                    self::$last_rag_debug['date_anchor_rescue_len'] = strlen($date_ctx);
+                }
+            }
+
             if (class_exists('Xabia_Brain', false) && method_exists('Xabia_Brain', 'prepare_rag_context_for_prompt')) {
                 $context = Xabia_Brain::prepare_rag_context_for_prompt((string) $context);
             } elseif (class_exists('Xabia_Brain', false) && method_exists('Xabia_Brain', 'densify_rag_context')) {
@@ -2524,6 +2631,9 @@ if (!class_exists('Xabia_API')) {
             }
             if (strlen($context) > $context_trim_limit) {
                 $prefer = trim($named_entity !== '' ? $named_entity : ($entity_anchor !== '' ? $entity_anchor : $user_msg_clean));
+                if (!empty($relative_day_labels)) {
+                    $prefer = trim($prefer . ' ' . implode(' ', $relative_day_labels));
+                }
                 $prefer = self::expand_prefer_hint_with_keyword_expansions($prefer, is_array($config) ? $config : []);
                 $context = self::truncate_chat_rag_context($context, $context_trim_limit, $prefer);
             }
@@ -3630,7 +3740,10 @@ if (!class_exists('Xabia_API')) {
             $origin_lang = isset($config['_xabia_proxy_user_lang']) ? (string) $config['_xabia_proxy_user_lang'] : $lang_code;
             $language_rule = self::xabia_polyglot_language_rule($origin_lang);
             $time_awareness = "REFERENCIA TEMPORAL OBLIGATORIA: Hoy es " . strtoupper($current_date) . ". "
-                . "Ancla todas las expresiones relativas («hoy», «mañana», «esta semana», «este fin de semana», «próximos», «futuro», «qué hay») a la fecha ISO de hoy. "
+                . "Ancla todas las expresiones relativas («hoy», «esta noche», «esta tarde», «mañana», «esta semana», «este fin de semana», «próximos», «futuro», «qué hay») a la fecha de hoy. "
+                . "En el CONTEXTO las fechas pueden venir como texto (ej. «Jueves 27 de agosto») o como AAAA-MM-DD: trata ambas como la misma fecha civil. "
+                . "«Esta noche» / «hoy por la noche» = eventos de HOY con hora desde ~18:00 en adelante, más madrugada 00:00–05:59 si el CONTEXTO las asocia a esa noche. "
+                . "Si el usuario pide un listado de lo que hay hoy/esta noche/mañana de un tipo (conciertos, música, planes…), lista TODOS los ítems del CONTEXTO cuya fecha coincida; PROHIBIDO quedarte en un solo ejemplo. Ordena por hora e incluye lugar. "
                 . "Si el CONTEXTO incluye campos Fecha/fecha en AAAA-MM-DD, un ítem es FUTURO solo si Fecha >= la ISO de hoy; es PASADO si Fecha < hoy. "
                 . "PROHIBIDO decir que no hay eventos o actividades futuras si el CONTEXTO trae filas con Fecha >= hoy. "
                 . "PROHIBIDO presentar como disponibles eventos con Fecha < hoy, salvo que el usuario pida pasado o histórico.";
