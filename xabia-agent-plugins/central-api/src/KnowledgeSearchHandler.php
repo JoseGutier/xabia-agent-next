@@ -207,10 +207,14 @@ final class KnowledgeSearchHandler
         }
 
         $keywordExpansions = self::parseKeywordExpansions($input['keyword_expansions'] ?? null);
+        $priorityVenues = self::parsePriorityVenues($input['priority_venues'] ?? null);
+        if ($catalogList && $lexicalQueryText !== '') {
+            $lexicalQueryText = self::expandLexicalQueryWithSemantics($lexicalQueryText);
+        }
+        $keywordExpansions = self::mergeUniversalSemanticExpansions($lexicalQueryText, $keywordExpansions);
         $signalNeedles = $lexicalQueryText !== ''
             ? self::signalNeedlesForQuery($lexicalQueryText, $keywordExpansions)
             : [];
-        $priorityVenues = self::parsePriorityVenues($input['priority_venues'] ?? null);
 
         $vectorScored = [];
         foreach ($rows as $r) {
@@ -255,26 +259,21 @@ final class KnowledgeSearchHandler
         if ($vectorScored === []) {
             $fullRanked = $lexScored;
         } elseif ($lexScored === []) {
-            $fullRanked = self::mergeHybridVectorLexical($vectorScored, [], $bigPool);
+            $fullRanked = self::mergeHybridVectorLexical($vectorScored, [], $bigPool, 0.7, 0.3);
         } else {
-            $fullRanked = self::mergeHybridVectorLexical($vectorScored, $lexScored, $bigPool);
+            $fullRanked = self::mergeHybridVectorLexical($vectorScored, $lexScored, $bigPool, 0.7, 0.3);
         }
 
         // Catalog/agenda: boost escenarios principales (metadato o lista del proyecto) antes del Top-K.
         if ($catalogList || $priorityVenues !== []) {
             $fullRanked = self::boostPriorityHits($fullRanked, $priorityVenues, 0.20);
-            if ($lexScored !== []) {
-                $lexScored = self::boostPriorityHits($lexScored, $priorityVenues, 0.20);
-            }
         }
 
         usort($fullRanked, static fn (array $a, array $b): int => (($b['score'] ?? 0) <=> ($a['score'] ?? 0)));
         if ($catalogList) {
-            if ($lexScored !== []) {
-                $scored = self::selectCatalogDiverseTopK($lexScored, $rows, $maxChunks);
-            } else {
-                $scored = self::selectCatalogDiverseTopK($fullRanked, $rows, $maxChunks);
-            }
+            // Siempre híbrido (vector 70% + léxico 30%). Nunca Top-K solo léxico:
+            // fichas con «actuación»/«música» sin la palabra literal «concierto» quedarían fuera.
+            $scored = self::selectCatalogDiverseTopK($fullRanked, $rows, $maxChunks, 2);
         } elseif ($queryText !== '') {
             $scored = self::ensureLiteralQueryPhraseInTopK($fullRanked, $lexScored, $maxChunks, $queryText, $rows);
         } else {
@@ -779,22 +778,33 @@ final class KnowledgeSearchHandler
     }
 
     /**
-     * Reciprocal Rank Fusion of vector + lexical ranked lists.
+     * Reciprocal Rank Fusion of vector + lexical ranked lists (pesos densos/léxicos).
      *
      * @param list<array{content: string, score: float}> $vectorHits
      * @param list<array{content: string, score: float}> $lexHits
      *
      * @return list<array{content: string, score: float}>
      */
-    private static function mergeHybridVectorLexical(array $vectorHits, array $lexHits, int $poolLimit): array
-    {
+    private static function mergeHybridVectorLexical(
+        array $vectorHits,
+        array $lexHits,
+        int $poolLimit,
+        float $vectorWeight = 0.7,
+        float $lexicalWeight = 0.3
+    ): array {
         $poolLimit = max(1, $poolLimit);
         $k = 60;
         $scores = [];
         $payloads = [];
 
-        $lists = [$vectorHits, $lexHits];
-        foreach ($lists as $list) {
+        $lists = [
+            [$vectorHits, max(0.0, $vectorWeight)],
+            [$lexHits, max(0.0, $lexicalWeight)],
+        ];
+        foreach ($lists as [$list, $weight]) {
+            if ($weight <= 0.0 || $list === []) {
+                continue;
+            }
             $rank = 0;
             foreach ($list as $h) {
                 if (!isset($h['content'])) {
@@ -806,7 +816,7 @@ final class KnowledgeSearchHandler
                 }
                 $key = self::chunkDedupeKey($content);
                 ++$rank;
-                $scores[$key] = ($scores[$key] ?? 0.0) + (1.0 / ($k + $rank));
+                $scores[$key] = ($scores[$key] ?? 0.0) + ($weight / ($k + $rank));
                 if (!isset($payloads[$key])) {
                     $payloads[$key] = [
                         'content' => $content,
@@ -899,34 +909,167 @@ final class KnowledgeSearchHandler
      *
      * @return list<array{content: string, score: float}>
      */
-    private static function selectCatalogDiverseTopK(array $fullRanked, array $rows, int $maxChunks): array
-    {
+    private static function selectCatalogDiverseTopK(
+        array $fullRanked,
+        array $rows,
+        int $maxChunks,
+        int $maxPerEntity = 2
+    ): array {
         $maxChunks = max(1, $maxChunks);
+        $maxPerEntity = max(1, $maxPerEntity);
         if ($fullRanked === []) {
             return [];
         }
         $enteByKey = self::buildContentEnteKeyMap($rows);
         $out = [];
         $seenEntes = [];
+        $seenExact = [];
+        $seenSoft = [];
         foreach ($fullRanked as $h) {
             if (!isset($h['content'], $h['score'])) {
                 continue;
             }
-            $key = self::chunkDedupeKey((string) $h['content']);
-            $enteId = $enteByKey[$key] ?? $key;
-            if ($enteId !== '' && isset($seenEntes[$enteId])) {
+            $content = (string) $h['content'];
+            $key = self::chunkDedupeKey($content);
+            if (isset($seenExact[$key])) {
                 continue;
             }
-            if ($enteId !== '') {
-                $seenEntes[$enteId] = true;
+            $enteId = $enteByKey[$key] ?? '';
+            if ($enteId === '') {
+                $enteId = self::softEntityFingerprint($content);
             }
-            $out[] = ['content' => (string) $h['content'], 'score' => (float) $h['score']];
+            $n = $seenEntes[$enteId] ?? 0;
+            if ($n >= $maxPerEntity) {
+                continue;
+            }
+            $soft = self::softEntityFingerprint($content);
+            $sn = $seenSoft[$soft] ?? 0;
+            if ($sn >= $maxPerEntity) {
+                continue;
+            }
+            $seenEntes[$enteId] = $n + 1;
+            $seenSoft[$soft] = $sn + 1;
+            $seenExact[$key] = true;
+            $out[] = ['content' => $content, 'score' => (float) $h['score']];
             if (\count($out) >= $maxChunks) {
                 break;
             }
         }
 
         return $out;
+    }
+
+    private static function softEntityFingerprint(string $content): string
+    {
+        $t = mb_strtolower(trim(preg_replace('/\s+/u', ' ', $content) ?? $content), 'UTF-8');
+        $t = preg_replace('/\[(?:imagen disponible|keywords|prioridad|tipo|clasificaci[oó]n|atributos|ubicaci[oó]n|entidad)[^\]]*\]/iu', ' ', $t) ?? $t;
+        $t = trim(preg_replace('/\s+/u', ' ', $t) ?? $t);
+
+        return hash('sha256', mb_substr($t, 0, 180, 'UTF-8'));
+    }
+
+    /**
+     * @return array<string, list<string>>
+     */
+    private static function universalSemanticExpansions(): array
+    {
+        return [
+            'concierto' => [
+                'concierto', 'conciertos', 'actuacion', 'actuación', 'directo',
+                'recital', 'musica', 'música', 'banda', 'live', 'concert', 'concerts',
+            ],
+            'teatro' => [
+                'teatro', 'obra', 'funcion', 'función', 'espectaculo', 'espectáculo',
+                'dramaturgia', 'theatre', 'theater', 'play',
+            ],
+            'restaurante' => [
+                'restaurante', 'restaurantes', 'gastronomia', 'gastronomía',
+                'comida', 'cenar', 'comer', 'menu', 'menú', 'restaurant', 'dining',
+            ],
+        ];
+    }
+
+    private static function expandLexicalQueryWithSemantics(string $query): string
+    {
+        $query = trim($query);
+        if ($query === '') {
+            return '';
+        }
+        $flat = mb_strtolower($query, 'UTF-8');
+        $flat = strtr($flat, [
+            'á' => 'a', 'é' => 'e', 'í' => 'i', 'ó' => 'o', 'ú' => 'u', 'ñ' => 'n',
+        ]);
+        $extra = [];
+        foreach (self::universalSemanticExpansions() as $key => $syns) {
+            $keyN = strtr(mb_strtolower((string) $key, 'UTF-8'), [
+                'á' => 'a', 'é' => 'e', 'í' => 'i', 'ó' => 'o', 'ú' => 'u', 'ñ' => 'n',
+            ]);
+            if ($keyN === '' || mb_strlen($keyN, 'UTF-8') < 4) {
+                continue;
+            }
+            if (!preg_match('/\b' . preg_quote($keyN, '/') . '\w*/u', $flat)
+                && mb_stripos($flat, $keyN, 0, 'UTF-8') === false
+            ) {
+                continue;
+            }
+            foreach ($syns as $syn) {
+                $syn = trim((string) $syn);
+                if ($syn === '' || mb_strlen($syn, 'UTF-8') < 3) {
+                    continue;
+                }
+                $extra[mb_strtolower($syn, 'UTF-8')] = $syn;
+            }
+        }
+        if ($extra === []) {
+            return $query;
+        }
+
+        return trim($query . ' ' . implode(' ', array_values($extra)));
+    }
+
+    /**
+     * @param array<string, string> $keywordExpansions
+     *
+     * @return array<string, string>
+     */
+    private static function mergeUniversalSemanticExpansions(string $query, array $keywordExpansions): array
+    {
+        $flat = mb_strtolower(trim($query), 'UTF-8');
+        if ($flat === '') {
+            return $keywordExpansions;
+        }
+        $flat = strtr($flat, [
+            'á' => 'a', 'é' => 'e', 'í' => 'i', 'ó' => 'o', 'ú' => 'u', 'ñ' => 'n',
+        ]);
+        foreach (self::universalSemanticExpansions() as $key => $syns) {
+            $keyN = strtr(mb_strtolower((string) $key, 'UTF-8'), [
+                'á' => 'a', 'é' => 'e', 'í' => 'i', 'ó' => 'o', 'ú' => 'u', 'ñ' => 'n',
+            ]);
+            if ($keyN === '' || mb_strlen($keyN, 'UTF-8') < 4) {
+                continue;
+            }
+            if (!preg_match('/\b' . preg_quote($keyN, '/') . '\w*/u', $flat)
+                && mb_stripos($flat, $keyN, 0, 'UTF-8') === false
+            ) {
+                continue;
+            }
+            if (isset($keywordExpansions[$keyN])) {
+                continue;
+            }
+            $parts = [];
+            foreach ($syns as $syn) {
+                $syn = trim((string) $syn);
+                if ($syn === '' || mb_strlen($syn, 'UTF-8') < 3) {
+                    continue;
+                }
+                $parts[] = preg_quote(mb_strtolower($syn, 'UTF-8'), '/');
+            }
+            if ($parts !== []) {
+                $keywordExpansions[$keyN] = implode('|', array_values(array_unique($parts)));
+            }
+        }
+
+        return $keywordExpansions;
     }
 
     /**

@@ -36,6 +36,137 @@ class Xabia_Catalog_Intent {
     public const KIND_TEMPORAL = 'temporal';
 
     /**
+     * Expansiones semánticas universales (agnósticas de vertical/festival).
+     * Evitan que el léxico literal («concierto») excluya fichas con «actuación» / «música».
+     *
+     * @return array<string, list<string>>
+     */
+    public static function universal_semantic_expansions(): array {
+        $maps = [
+            'concierto' => [
+                'concierto', 'conciertos', 'actuacion', 'actuación', 'directo',
+                'recital', 'musica', 'música', 'banda', 'live', 'concert', 'concerts',
+            ],
+            'teatro' => [
+                'teatro', 'obra', 'funcion', 'función', 'espectaculo', 'espectáculo',
+                'dramaturgia', 'theatre', 'theater', 'play',
+            ],
+            'restaurante' => [
+                'restaurante', 'restaurantes', 'gastronomia', 'gastronomía',
+                'comida', 'cenar', 'comer', 'menu', 'menú', 'restaurant', 'dining',
+            ],
+        ];
+        if (function_exists('apply_filters')) {
+            $filtered = apply_filters('xabia_catalog_semantic_expansions', $maps);
+            if (is_array($filtered)) {
+                $maps = $filtered;
+            }
+        }
+
+        return $maps;
+    }
+
+    /**
+     * Añade sinónimos del mapa universal a una consulta léxica (texto libre, OR implícito en LIKE/FT).
+     */
+    public static function expand_lexical_query_text(string $query): string {
+        $query = trim($query);
+        if ($query === '') {
+            return '';
+        }
+        $flat = self::normalize($query);
+        $extra = [];
+        foreach (self::universal_semantic_expansions() as $key => $syns) {
+            $key_n = self::normalize((string) $key);
+            if ($key_n === '' || mb_strlen($key_n, 'UTF-8') < 4) {
+                continue;
+            }
+            if (!preg_match('/\b' . preg_quote($key_n, '/') . '\w*/u', $flat)
+                && mb_stripos($flat, $key_n, 0, 'UTF-8') === false
+            ) {
+                continue;
+            }
+            foreach ($syns as $syn) {
+                $syn = trim((string) $syn);
+                if ($syn === '' || mb_strlen($syn, 'UTF-8') < 3) {
+                    continue;
+                }
+                $extra[self::normalize($syn)] = $syn;
+            }
+        }
+        if ($extra === []) {
+            return $query;
+        }
+
+        return trim($query . ' ' . implode(' ', array_values($extra)));
+    }
+
+    /**
+     * Agrupa tokens FULLTEXT: sinónimos del mismo campo semántico → OR group.
+     *
+     * @param list<string> $tokens
+     * @return list<list<string>>
+     */
+    public static function group_tokens_for_fulltext(array $tokens): array {
+        $maps = self::universal_semantic_expansions();
+        // Índice: forma normalizada → clave de grupo
+        $token_to_group = [];
+        $group_syns = [];
+        foreach ($maps as $key => $syns) {
+            $gkey = self::normalize((string) $key);
+            $group_syns[$gkey] = [];
+            foreach ($syns as $syn) {
+                $sn = self::normalize((string) $syn);
+                if ($sn === '') {
+                    continue;
+                }
+                $token_to_group[$sn] = $gkey;
+                $group_syns[$gkey][$sn] = (string) $syn;
+            }
+        }
+
+        $used_groups = [];
+        $out = [];
+        foreach ($tokens as $tok) {
+            $tok = trim((string) $tok);
+            if ($tok === '') {
+                continue;
+            }
+            $tn = self::normalize($tok);
+            $gkey = $token_to_group[$tn] ?? null;
+            // Prefijo: «conciertos» → grupo concierto
+            if ($gkey === null) {
+                foreach ($token_to_group as $sn => $gk) {
+                    if (mb_strpos($tn, $sn, 0, 'UTF-8') === 0 || mb_strpos($sn, $tn, 0, 'UTF-8') === 0) {
+                        if (mb_strlen($tn, 'UTF-8') >= 4 || mb_strlen($sn, 'UTF-8') >= 4) {
+                            $gkey = $gk;
+                            break;
+                        }
+                    }
+                }
+            }
+            if ($gkey !== null) {
+                if (isset($used_groups[$gkey])) {
+                    continue;
+                }
+                $used_groups[$gkey] = true;
+                $members = array_values($group_syns[$gkey] ?? [$tok]);
+                $out[] = $members;
+
+                continue;
+            }
+            $out[] = [$tok];
+        }
+
+        return $out;
+    }
+
+    /**
+     * Máximo de chunks por ente / huella blanda en listados de catálogo.
+     */
+    public const CATALOG_MAX_CHUNKS_PER_ENTITY = 2;
+
+    /**
      * Capa 1 (fast-path): patrones estructurales. Sin llamada LLM.
      */
     public static function is_listing_query(string $text): bool {

@@ -109,6 +109,24 @@ assert(
 $norm = Xabia_Rag_Hybrid_Ranker::normalize_priority_venues("Plaza Mayor\nAuditorio\n");
 assert(count($norm) === 2, 'normalize priority venues from multiline');
 
+assert(Xabia_Rag_Hybrid_Ranker::VECTOR_WEIGHT === 0.7, 'vector weight 70%');
+assert(Xabia_Rag_Hybrid_Ranker::LEXICAL_WEIGHT === 0.3, 'lexical weight 30%');
+
+$div = Xabia_Rag_Hybrid_Ranker::diversify_catalog_top_k([
+    ['id' => 'a1', 'ente_id' => 'venue-a', 'content' => 'chunk A1 about concert', 'score' => 0.9],
+    ['id' => 'a2', 'ente_id' => 'venue-a', 'content' => 'chunk A2 variant concert', 'score' => 0.8],
+    ['id' => 'a3', 'ente_id' => 'venue-a', 'content' => 'chunk A3 should drop', 'score' => 0.7],
+    ['id' => 'b1', 'ente_id' => 'venue-b', 'content' => 'chunk B1 main stage', 'score' => 0.6],
+], 10, 2);
+assert(count($div) === 3, 'diversify keeps max 2 per ente + others');
+$venue_a = 0;
+foreach ($div as $row) {
+    if (($row['ente_id'] ?? '') === 'venue-a') {
+        ++$venue_a;
+    }
+}
+assert($venue_a === 2, 'venue-a capped at 2');
+
 require_once dirname(__DIR__) . '/core/class-xabia-rag-chunk-enricher.php';
 $prio_enriched = Xabia_Rag_Chunk_Enricher::enrich(
     "EMPRESA: Headliner\nLugar: Plaza Mayor\nHora: 22:00",

@@ -11,6 +11,12 @@ class Xabia_Rag_Hybrid_Ranker {
 
     public const DEFAULT_K = 60;
 
+    /** Peso RRF canal vectorial (dense) en fusión híbrida. */
+    public const VECTOR_WEIGHT = 0.7;
+
+    /** Peso RRF canal léxico (FULLTEXT/LIKE) en fusión híbrida. */
+    public const LEXICAL_WEIGHT = 0.3;
+
     /** Bonus de score post-RRF para chunks de escenario/prioridad alta (catalog/agenda). */
     public const PRIORITY_SCORE_BOOST = 0.20;
 
@@ -88,8 +94,8 @@ class Xabia_Rag_Hybrid_Ranker {
         array $lexical_list,
         int $k = self::DEFAULT_K,
         int $limit = 20,
-        float $vector_weight = 1.0,
-        float $lexical_weight = 0.4
+        float $vector_weight = self::VECTOR_WEIGHT,
+        float $lexical_weight = self::LEXICAL_WEIGHT
     ): array {
         return self::rrf_fuse(
             [$vector_list, $lexical_list],
@@ -97,6 +103,60 @@ class Xabia_Rag_Hybrid_Ranker {
             $limit,
             [$vector_weight, $lexical_weight]
         );
+    }
+
+    /**
+     * Diversidad en Top-K de catálogo: como máximo N slots por ente / huella blanda.
+     *
+     * @param list<array{id?: string, content?: string, score?: float, rrf?: float, ente_id?: string}> $hits
+     * @return list<array{id?: string, content?: string, score?: float, rrf?: float, ente_id?: string}>
+     */
+    public static function diversify_catalog_top_k(array $hits, int $limit, int $max_per_entity = 2): array {
+        $limit = max(1, $limit);
+        $max_per_entity = max(1, $max_per_entity);
+        $out = [];
+        $counts = [];
+        $seen_exact = [];
+        foreach ($hits as $h) {
+            if (!is_array($h)) {
+                continue;
+            }
+            $content = trim((string) ($h['content'] ?? $h['chunk'] ?? ''));
+            if ($content === '') {
+                continue;
+            }
+            $exact = self::content_key($content);
+            if (isset($seen_exact[$exact])) {
+                continue;
+            }
+            $ente = trim((string) ($h['ente_id'] ?? $h['id'] ?? ''));
+            if ($ente === '') {
+                $ente = self::soft_entity_fingerprint($content);
+            }
+            $n = $counts[$ente] ?? 0;
+            if ($n >= $max_per_entity) {
+                continue;
+            }
+            $counts[$ente] = $n + 1;
+            $seen_exact[$exact] = true;
+            $out[] = $h;
+            if (count($out) >= $limit) {
+                break;
+            }
+        }
+
+        return $out;
+    }
+
+    /**
+     * Huella blanda para variantes casi idénticas del mismo texto.
+     */
+    public static function soft_entity_fingerprint(string $content): string {
+        $t = mb_strtolower(trim(preg_replace('/\s+/u', ' ', $content) ?? $content), 'UTF-8');
+        $t = preg_replace('/\[(?:imagen disponible|keywords|prioridad|tipo|clasificaci[oó]n|atributos|ubicaci[oó]n|entidad)[^\]]*\]/iu', ' ', $t) ?? $t;
+        $t = trim(preg_replace('/\s+/u', ' ', $t) ?? $t);
+
+        return hash('sha256', mb_substr($t, 0, 180, 'UTF-8'));
     }
 
     /**

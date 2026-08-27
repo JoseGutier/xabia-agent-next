@@ -221,8 +221,9 @@ class Xabia_Brain {
         $boolean_parts = [];
 
         // 5. Lista de stop-words básicas a ignorar en léxico para no generar ruido
-        $stop_words = ['con', 'las', 'los', 'del', 'que', 'una', 'para', 'por'];
+        $stop_words = ['con', 'las', 'los', 'del', 'que', 'una', 'para', 'por', 'hay', 'esta', 'este', 'estos', 'estas', 'hoy'];
 
+        $kept = [];
         foreach ($unique_tokens as $t) {
             $t = trim((string) $t, "'-.,;");
             $t_lower = function_exists('mb_strtolower') ? mb_strtolower($t, 'UTF-8') : strtolower($t);
@@ -230,11 +231,41 @@ class Xabia_Brain {
             // Requerir mínimo 3 letras y no ser stop-word
             $len = function_exists('mb_strlen') ? mb_strlen($t, 'UTF-8') : strlen($t);
             if ($len >= 3 && !in_array($t_lower, $stop_words, true)) {
-                $boolean_parts[] = '+' . $t . '*';
+                $kept[] = $t;
             }
         }
 
-        // Limitar a un máximo de palabras clave para no saturar el índice
+        // 6. Expansión semántica universal: sinónimos del mismo campo → grupo OR
+        $groups = class_exists('Xabia_Catalog_Intent', false)
+            ? Xabia_Catalog_Intent::group_tokens_for_fulltext($kept)
+            : array_map(static fn ($t) => [$t], $kept);
+
+        foreach ($groups as $group) {
+            if (!is_array($group) || $group === []) {
+                continue;
+            }
+            $safe = [];
+            foreach ($group as $member) {
+                $member = trim((string) $member, "'-.,;");
+                $member = preg_replace('/[+\-><\(\)~*"@%]+/u', '', $member) ?? $member;
+                if ($member === '' || mb_strlen($member, 'UTF-8') < 3) {
+                    continue;
+                }
+                $safe[] = $member . '*';
+            }
+            $safe = array_values(array_unique($safe));
+            if ($safe === []) {
+                continue;
+            }
+            if (count($safe) === 1) {
+                $boolean_parts[] = '+' . $safe[0];
+            } else {
+                // Al menos uno del campo semántico (concierto|actuación|…), no todos.
+                $boolean_parts[] = '+(' . implode(' ', $safe) . ')';
+            }
+        }
+
+        // Limitar a un máximo de grupos para no saturar el índice
         return implode(' ', array_slice($boolean_parts, 0, 12));
     }
 
@@ -304,6 +335,18 @@ class Xabia_Brain {
         global $wpdb;
         $table = Xabia_DB::table('knowledge_vectors');
         $terms = self::normalize_search_like_terms($query);
+        if (class_exists('Xabia_Catalog_Intent', false)
+            && method_exists('Xabia_Catalog_Intent', 'expand_lexical_query_text')
+        ) {
+            $expanded_q = Xabia_Catalog_Intent::expand_lexical_query_text($query);
+            if ($expanded_q !== '' && $expanded_q !== $query) {
+                $terms = array_values(array_unique(array_merge(
+                    $terms,
+                    self::normalize_search_like_terms($expanded_q)
+                )));
+                $query = $expanded_q;
+            }
+        }
         $ft_query = self::build_fulltext_boolean_query($query, $terms);
         $results = [];
         $use_ft = $ft_query !== ''

@@ -19,6 +19,7 @@ if (!function_exists('wp_strip_all_tags')) {
 
 require_once dirname(__DIR__) . '/core/class-xabia-catalog-intent.php';
 require_once dirname(__DIR__) . '/core/class-xabia-rag-chunk-enricher.php';
+require_once dirname(__DIR__) . '/core/class-xabia-brain.php';
 
 $listing = [
     'alguna empresa con la que hacer excursiones a caballo',
@@ -80,6 +81,13 @@ $tlimit = Xabia_Catalog_Intent::rag_chunk_limit(4, 'temporal');
 assert($tlimit === 25, 'temporal floor is 25, got ' . $tlimit);
 
 assert(!Xabia_Catalog_Intent::is_temporal_query('hoy estoy bien'), 'casual hoy should not be temporal');
+
+$exp = Xabia_Catalog_Intent::expand_lexical_query_text('que conciertos hay esta noche');
+assert(stripos($exp, 'actuacion') !== false || stripos($exp, 'actuación') !== false, 'expand concierto → actuación');
+assert(stripos($exp, 'musica') !== false || stripos($exp, 'música') !== false, 'expand concierto → música');
+$ft_concierto = Xabia_Brain::build_fulltext_boolean_query('conciertos esta noche', []);
+assert(strpos($ft_concierto, '+(') !== false, 'FT uses OR group for semantic field');
+assert(stripos($ft_concierto, 'actuacion') !== false || stripos($ft_concierto, 'recital') !== false, 'FT group includes synonyms');
 
 // Capa 2: micro-LLM fallback (mock) — frase que no pilla la regex.
 $paraphrase = 'quiero ir al trote por el monte';

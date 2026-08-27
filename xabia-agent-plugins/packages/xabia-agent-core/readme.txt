@@ -5,7 +5,7 @@ Tags: chatbot, ai, gemini, virtual assistant, rag, wordpress
 Requires at least: 6.0
 Tested up to: 6.9
 Requires PHP: 7.4
-Stable tag: 1.0.286
+Stable tag: 1.0.287
 License: GPLv2 or later
 License URI: http://www.gnu.org/licenses/gpl-2.0.html
 
@@ -25,6 +25,9 @@ Documentación: https://xabia.ai/documentacion/
 4. Cree un agente, sincronice datos y publique con shortcode o modo nativo.
 
 == Changelog ==
+
+= 1.0.287 =
+* RAG catálogo: Top-K híbrido vector 70%/léxico 30% (ya no solo FULLTEXT); expansión semántica universal; diversidad máx. 2 chunks/ente.
 
 = 1.0.286 =
 * RAG agenda: boost agnóstico de escenarios principales (`rules.priority_venues` + tags `[Prioridad: Alta]` / `[Tipo: Escenario Principal]`) en ranking híbrido/Hub; digest temporal prioriza sedes principales.

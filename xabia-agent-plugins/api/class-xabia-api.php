@@ -2210,6 +2210,13 @@ if (!class_exists('Xabia_API')) {
                 $rag_fetch_limit = class_exists('Xabia_Catalog_Intent', false)
                     ? Xabia_Catalog_Intent::rag_chunk_limit((int) $rag_fetch_limit, $intent_source)
                     : max((int) $rag_fetch_limit, 15);
+                if (class_exists('Xabia_Catalog_Intent', false)
+                    && method_exists('Xabia_Catalog_Intent', 'expand_lexical_query_text')
+                    && $rag_lexical_query !== ''
+                ) {
+                    $rag_lexical_query = Xabia_Catalog_Intent::expand_lexical_query_text($rag_lexical_query);
+                    $hub_rag_opts['lexical_query_text'] = $rag_lexical_query;
+                }
             }
             $retrieval_search_term = self::rag_retrieval_search_term($search_term, $user_msg_clean);
 
@@ -2329,7 +2336,14 @@ if (!class_exists('Xabia_API')) {
                                 Xabia_Rag_Hybrid_Ranker::PRIORITY_SCORE_BOOST,
                                 $priority_venues
                             );
-                            $out['chunks'] = array_slice($out['chunks'], 0, max(1, (int) $rag_fetch_limit));
+                            $max_per = class_exists('Xabia_Catalog_Intent', false)
+                                ? (int) Xabia_Catalog_Intent::CATALOG_MAX_CHUNKS_PER_ENTITY
+                                : 2;
+                            $out['chunks'] = Xabia_Rag_Hybrid_Ranker::diversify_catalog_top_k(
+                                $out['chunks'],
+                                max(1, (int) $rag_fetch_limit),
+                                $max_per
+                            );
                             self::$last_rag_debug['priority_boost'] = 'hub';
                         }
                         $formatted_chunks = self::format_hub_rag_chunks_for_prompt($out['chunks'], $config);
@@ -2385,9 +2399,9 @@ if (!class_exists('Xabia_API')) {
                                 $vec_ranked,
                                 $lex_ranked,
                                 Xabia_Rag_Hybrid_Ranker::DEFAULT_K,
-                                max(1, (int) $rag_fetch_limit),
-                                1.0,
-                                0.4
+                                max(1, (int) $rag_fetch_limit * 3),
+                                Xabia_Rag_Hybrid_Ranker::VECTOR_WEIGHT,
+                                Xabia_Rag_Hybrid_Ranker::LEXICAL_WEIGHT
                             );
                             if (!empty($catalog_intent['hit'])) {
                                 $fused = Xabia_Rag_Hybrid_Ranker::apply_priority_boost(
@@ -2395,6 +2409,15 @@ if (!class_exists('Xabia_API')) {
                                     Xabia_Rag_Hybrid_Ranker::PRIORITY_SCORE_BOOST,
                                     $priority_venues
                                 );
+                                $max_per = class_exists('Xabia_Catalog_Intent', false)
+                                    ? (int) Xabia_Catalog_Intent::CATALOG_MAX_CHUNKS_PER_ENTITY
+                                    : 2;
+                                $fused = Xabia_Rag_Hybrid_Ranker::diversify_catalog_top_k(
+                                    $fused,
+                                    max(1, (int) $rag_fetch_limit),
+                                    $max_per
+                                );
+                            } else {
                                 $fused = array_slice($fused, 0, max(1, (int) $rag_fetch_limit));
                             }
                             $fused_ctx = Xabia_Rag_Hybrid_Ranker::format_context($fused);
