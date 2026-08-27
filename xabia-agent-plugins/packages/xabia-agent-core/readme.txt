@@ -5,7 +5,7 @@ Tags: chatbot, ai, gemini, virtual assistant, rag, wordpress
 Requires at least: 6.0
 Tested up to: 6.9
 Requires PHP: 7.4
-Stable tag: 1.0.288
+Stable tag: 1.0.289
 License: GPLv2 or later
 License URI: http://www.gnu.org/licenses/gpl-2.0.html
 
@@ -25,6 +25,9 @@ Documentación: https://xabia.ai/documentacion/
 4. Cree un agente, sincronice datos y publique con shortcode o modo nativo.
 
 == Changelog ==
+
+= 1.0.289 =
+* Chat UI: ocultar el avatar inmersivo por defecto (CSS crítico inline) para evitar FOUC en Elementor y al cargar la página.
 
 = 1.0.288 =
 * Chat UI: indicador «pensando» (puntitos + mensaje) en línea, en el hueco del input.

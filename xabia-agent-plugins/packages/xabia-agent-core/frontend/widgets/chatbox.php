@@ -444,6 +444,13 @@ function shortcode_xabia_agent_renderer($atts) {
             --xabia-dots-color: <?php echo esc_attr($avatar_colors['dots']); ?>;
             font-size: <?php echo esc_attr($font_size_em); ?>em;
         }
+        /* FOUC / Elementor: el stage del avatar solo en modo inmersivo (kiosk o focus). */
+        #<?php echo esc_attr($container_id); ?> .xabia-immersive-avatar-stage {
+            display: none !important;
+        }
+        #<?php echo esc_attr($container_id); ?>.xabia-immersive-mode .xabia-immersive-avatar-stage {
+            display: flex !important;
+        }
     </style>
 
     <div id="<?php echo esc_attr($container_id); ?>" class="<?php echo esc_attr($chatbox_classes); ?>" data-project="<?php echo esc_attr($project_id); ?>" data-presentation-mode="<?php echo esc_attr($presentation_mode); ?>" data-endpoint="<?php echo esc_url($ajax_url); ?>" data-scope="<?php echo esc_attr($current_scope); ?>" data-strict-mode="<?php echo $is_strict_mode ? '1' : '0'; ?>" data-ente-id-raw="<?php echo esc_attr($shortcode_tunnel); ?>" data-ente-id="<?php echo esc_attr($data_ente_attr); ?>" data-qr-auto="<?php echo esc_attr($qr_auto_json); ?>" data-starter-questions="<?php echo esc_attr($starter_questions_json); ?>" data-totem-minutes="<?php echo (int) $totem_minutes; ?>" data-totem-reset="<?php echo esc_attr($totem_reset_json); ?>" data-images-base="<?php echo esc_url($images_base_url); ?>" data-lang="<?php echo esc_attr($current_lang); ?>" data-voice="1" data-tts="<?php echo esc_attr($tts_config_json); ?>" data-avatar-name="<?php echo esc_attr($avatar_name); ?>" data-speaking-avatar="<?php echo (int) $speaking_avatar; ?>">
