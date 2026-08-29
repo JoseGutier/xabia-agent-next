@@ -1,13 +1,13 @@
 # Manual de usuario — Xabia Agent Core
 
-> **Versión del producto:** Xabia Agent Core **v1.0.290** (agosto 2026)  
+> **Versión del producto:** Xabia Agent Core **v1.0.291** (agosto 2026)  
 > **Índice de manuales:** [https://xabia.ai/docs/](https://xabia.ai/docs/)  
 > **PDF en línea:** [https://xabia.ai/docs/manual-usuario-xabia-core.pdf](https://xabia.ai/docs/manual-usuario-xabia-core.pdf)  
 > **HTML en línea:** [https://xabia.ai/docs/manual-usuario-xabia-core.html](https://xabia.ai/docs/manual-usuario-xabia-core.html)
 
 ## Guía rápida de instalación
 
-1. Descargue el ZIP de **Xabia Agent Core** (`xabia-agent-core-1.0.290.zip` o paquete retail equivalente).
+1. Descargue el ZIP de **Xabia Agent Core** (`xabia-agent-core-1.0.291.zip` o paquete retail equivalente).
 2. En WordPress, vaya a **Plugins → Añadir nuevo → Subir plugin**, seleccione el ZIP y pulse **Instalar ahora → Activar**.
 3. Abra **Xabia Agent** y configure **Conexión a la IA**: pegue la licencia `XABIA--…`, elija **Xabia Cloud** (recomendado) o **Infraestructura propia**, y guarde.
 4. Cree un agente desde **Nuevo agente**, escriba nombre, saludo e instrucciones básicas.
@@ -28,8 +28,9 @@ Use esta tabla como **hoja de ruta**. Cada fila indica la pantalla exacta y el o
 |---------|-----------|---------------------|
 | **Instalar Xabia por primera vez** | Plugins → Subir plugin | ZIP Core → Activar → **Conexión a la IA** (licencia + Cloud) → **Nuevo agente** → fuente de datos → **Sincronizar** → shortcode o modo nativo |
 | **Actualizar a una versión nueva** | Plugins → Subir plugin | Subir ZIP (sustituye) → **Enlaces permanentes → Guardar** → vaciar caché del sitio → probar chat en incógnito |
-| **Publicar el chat en una página concreta** | Editar agente → General | Copiar shortcode → pegar en la página → **desactivar** «Mostrar en el sitio sin shortcode» si no quiere avatar flotante |
-| **Avatar flotante en todo el sitio** | Editar agente → Apariencia | **Activar** «Mostrar en el sitio sin shortcode» → elegir páginas incluidas/excluidas → **Guardar agente** |
+| **Publicar el chat en una página concreta** | Editar agente → General | Copiar `[xabia_agent id="…"]` → pegar en la página → **desactivar** «Mostrar en el sitio sin shortcode» si no quiere avatar flotante. Esquema: [§2.5](#mapa-shortcodes) |
+| **Avatar flotante en todo el sitio** | Editar agente → Apariencia | **Activar** «Mostrar en el sitio sin shortcode» → elegir páginas incluidas/excluidas → **Guardar agente**. Esquema: [§2.5](#mapa-shortcodes) |
+| **Avatar clicable en un hero o columna** | Página / Elementor | Pegar `[xabia_launcher id="…"]` (o `[xabia_avatar]`). Esquema: [§2.5](#mapa-shortcodes) |
 | **Ocultar el chat sin borrarlo** | Listado de agentes | **Pausar** (vuelve con **Activar**) |
 | **Multilingüe con WPML (ES + EU + EN…)** | Ver §10.12 | Saludo en español → guardar agente → comprobar WPML String Translation → vaciar caché |
 | **Saludo distinto por idioma (automático)** | Comportamiento IA + licencia Core activa | Escribir saludo en idioma base → **Guardar agente** (Core llama al Hub si hay WPML; DTP incluido en Core) |
@@ -109,17 +110,126 @@ Desde la **v1.0.28**, la interfaz se configura **por agente**. En las versiones 
 
 En **Apariencia**, el bloque principal es **«¿Dónde se verá el agente?»**: una **cuadrícula de tarjetas visuales** (con mini‑esquema) para elegir el perfil de presentación sin tener que interpretar nombres técnicos.
 
-Desde la **v1.0.57** hay modos claramente separados; desde la **v1.0.192+** existe además el **lanzador incrustable**:
+Desde la **v1.0.57** hay modos claramente separados; desde la **v1.0.192+** existe además el **lanzador incrustable**. El mapa siguiente resume **qué pegar** y **qué verá el visitante**.
 
-| Perfil en la cuadrícula | Qué se muestra | Cuándo usarlo |
-|------|----------------|---------------|
-| **Web adaptable** | Burbuja flotante automática (si la activa) + chat embebido por shortcode. | Sitio web normal (desktop + móvil). |
-| **Tótem transparente (vertical / horizontal)** | Pantalla completa sin fondo opaco; avatar y chat en dos zonas (arriba/abajo o izquierda/derecha). | Cristal, escaparate o soporte transparente. |
-| **Pantalla (vertical / horizontal)** | Pantalla completa con fondo sólido; avatar y chat en dos zonas. | Kiosko o pantalla dedicada no transparente. |
-| **Shortcode chat** (`[xabia_agent id="…"]`) | Solo el chat embebido donde pegue el shortcode. | Landing o página concreta sin burbuja global. |
-| **Lanzador** (`[xabia_launcher id="…"]` o `[xabia_avatar id="…"]`) | Solo el botón/avatar incrustado; al hacer clic abre el panel. | Hero, columnas Elementor, CTAs. |
+#### Mapa visual: shortcodes y resultado
 
-Las reglas **Mostrar solo en estas páginas** y **Excluir estas páginas o entradas** pertenecen a la burbuja de **Web adaptable**. En modo shortcode/lanzador el chat o botón aparece únicamente donde esté pegado el shortcode.
+<div class="xabia-sc-guide" id="mapa-shortcodes">
+<p class="xabia-sc-callout"><strong>Regla de oro:</strong> el shortcode <code>[xabia_agent]</code> es el enchufe. La pestaña <strong>Apariencia</strong> es el molde. El mismo shortcode produce un chat embebido, un tótem o una pantalla dedicada según la tarjeta que elija. El lanzador <code>[xabia_launcher]</code> es otra pieza: solo el avatar/botón; el panel se abre al hacer clic.</p>
+<div class="xabia-sc-path">
+<div class="xabia-sc-step"><h4><span class="n">1</span> Burbuja en todo el sitio</h4><p>Sin shortcode. Apariencia → <strong>Web adaptable</strong> → activar «Mostrar en el sitio sin shortcode».</p></div>
+<div class="xabia-sc-step"><h4><span class="n">2</span> Chat en una página</h4><p>Pegue <code>[xabia_agent id="…"]</code> en el editor (o un widget Shortcode de Elementor).</p></div>
+<div class="xabia-sc-step"><h4><span class="n">3</span> Avatar en el hero</h4><p>Pegue <code>[xabia_launcher id="…"]</code> (alias: <code>[xabia_avatar]</code>). Al clic, abre el panel.</p></div>
+<div class="xabia-sc-step"><h4><span class="n">4</span> Tótem / quiosco</h4><p>Elija tótem o pantalla en Apariencia y use el mismo <code>[xabia_agent]</code> o la URL <code>/xabia-box/</code>.</p></div>
+</div>
+<div class="xabia-sc-grid">
+<article class="xabia-sc-card">
+<header><h4>Burbuja nativa</h4><span>Sin shortcode</span></header>
+<svg class="xabia-sc-mock" viewBox="0 0 320 168" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Página web con avatar flotante en la esquina y panel de chat abierto">
+<rect x="8" y="8" width="304" height="152" rx="8" fill="#fff" stroke="#c5dae8"/>
+<rect x="8" y="8" width="304" height="18" rx="8" fill="#e8f0fe"/>
+<circle cx="20" cy="17" r="3" fill="#ff9966"/><circle cx="30" cy="17" r="3" fill="#99ccff"/><circle cx="40" cy="17" r="3" fill="#c5dae8"/>
+<rect x="24" y="38" width="160" height="8" rx="2" fill="#e8eaed"/>
+<rect x="24" y="52" width="120" height="6" rx="2" fill="#f1f3f4"/>
+<rect x="24" y="64" width="140" height="6" rx="2" fill="#f1f3f4"/>
+<rect x="188" y="36" width="110" height="112" rx="6" fill="#f4f9fc" stroke="#2170b0" stroke-width="1.5"/>
+<text x="243" y="52" text-anchor="middle" font-size="8" fill="#144a78" font-family="system-ui,sans-serif">Panel de chat</text>
+<rect x="198" y="60" width="90" height="5" rx="1.5" fill="#c5dae8"/>
+<rect x="198" y="70" width="70" height="5" rx="1.5" fill="#e3f0fa"/>
+<rect x="198" y="128" width="90" height="12" rx="3" fill="#fff" stroke="#c5dae8"/>
+<circle cx="286" cy="140" r="16" fill="#99ccff" stroke="#2170b0"/>
+<circle cx="281" cy="136" r="3.2" fill="#fff"/><circle cx="291" cy="136" r="3.2" fill="#fff"/>
+<circle cx="281.5" cy="136.5" r="1.4" fill="#ff9966"/><circle cx="291.5" cy="136.5" r="1.4" fill="#ff9966"/>
+</svg>
+<div class="xabia-sc-body">
+<p><strong>Apariencia:</strong> Web adaptable + «Mostrar en el sitio sin shortcode».</p>
+<p class="xabia-sc-result">Resultado: avatar fijo en una esquina. Al clic, se abre el panel (flotante, modal o pantalla completa, según el ajuste del panel).</p>
+</div>
+</article>
+<article class="xabia-sc-card">
+<header><h4>Chat embebido</h4><span>Shortcode chat</span></header>
+<svg class="xabia-sc-mock" viewBox="0 0 320 168" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Chat embebido en el hueco de la página">
+<rect x="8" y="8" width="304" height="152" rx="8" fill="#fff" stroke="#c5dae8"/>
+<rect x="8" y="8" width="304" height="18" rx="8" fill="#e8f0fe"/>
+<rect x="24" y="36" width="180" height="7" rx="2" fill="#e8eaed"/>
+<rect x="48" y="52" width="224" height="96" rx="8" fill="#f4f9fc" stroke="#2170b0" stroke-width="1.8"/>
+<circle cx="68" cy="70" r="10" fill="#99ccff"/><circle cx="65" cy="68" r="2" fill="#fff"/><circle cx="71" cy="68" r="2" fill="#fff"/>
+<rect x="84" y="64" width="120" height="6" rx="2" fill="#c5dae8"/>
+<rect x="84" y="74" width="90" height="5" rx="2" fill="#e3f0fa"/>
+<rect x="60" y="124" width="160" height="14" rx="4" fill="#fff" stroke="#c5dae8"/>
+<text x="160" y="118" text-anchor="middle" font-size="8" fill="#144a78" font-family="system-ui,sans-serif">El chat ocupa el hueco del shortcode</text>
+</svg>
+<div class="xabia-sc-body">
+<code class="xabia-sc-code">[xabia_agent id="mi-agente"]</code>
+<p class="xabia-sc-result">Resultado: una caja de chat <strong>dentro de la página</strong> (columna, landing, ficha). El visitante escribe ahí; no aparece avatar flotante por este shortcode.</p>
+</div>
+</article>
+<article class="xabia-sc-card">
+<header><h4>Lanzador / avatar</h4><span>Botón incrustado</span></header>
+<svg class="xabia-sc-mock" viewBox="0 0 320 168" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Avatar incrustado en el contenido que abre el panel al hacer clic">
+<rect x="8" y="8" width="304" height="152" rx="8" fill="#fff" stroke="#c5dae8"/>
+<rect x="8" y="8" width="304" height="18" rx="8" fill="#e8f0fe"/>
+<rect x="24" y="36" width="140" height="8" rx="2" fill="#e8eaed"/>
+<rect x="24" y="50" width="100" height="6" rx="2" fill="#f1f3f4"/>
+<circle cx="96" cy="108" r="28" fill="#99ccff" stroke="#2170b0" stroke-width="1.5"/>
+<circle cx="88" cy="102" r="5" fill="#fff"/><circle cx="104" cy="102" r="5" fill="#fff"/>
+<circle cx="89" cy="103" r="2.2" fill="#ff9966"/><circle cx="105" cy="103" r="2.2" fill="#ff9966"/>
+<text x="96" y="148" text-anchor="middle" font-size="8" fill="#144a78" font-family="system-ui,sans-serif">Avatar en el hero</text>
+<path d="M128 100 C160 80, 188 72, 210 72" fill="none" stroke="#2170b0" stroke-width="1.4" stroke-dasharray="3 2"/>
+<polygon points="208,66 218,72 208,78" fill="#2170b0"/>
+<rect x="210" y="40" width="94" height="100" rx="6" fill="#f4f9fc" stroke="#2170b0"/>
+<text x="257" y="56" text-anchor="middle" font-size="8" fill="#144a78" font-family="system-ui,sans-serif">Panel al clic</text>
+<rect x="220" y="66" width="74" height="5" rx="1.5" fill="#c5dae8"/>
+<rect x="220" y="76" width="58" height="5" rx="1.5" fill="#e3f0fa"/>
+</svg>
+<div class="xabia-sc-body">
+<code class="xabia-sc-code">[xabia_launcher id="mi-agente" size="lg"]</code>
+<p>Alias: <code>[xabia_avatar id="mi-agente"]</code>. Tamaño: <code>sm</code> <code>md</code> <code>lg</code> <code>xl</code>, píxeles (<code>280</code>) o porcentaje (<code>42%</code>). Alineación: <code>align="center|left|right"</code>.</p>
+<p class="xabia-sc-result">Resultado: solo el avatar/botón en ese punto. Al clic, se abre el panel del agente (no inserta el chat en el flujo de la página).</p>
+</div>
+</article>
+<article class="xabia-sc-card">
+<header><h4>Tótem o pantalla</h4><span>Mismo shortcode</span></header>
+<svg class="xabia-sc-mock" viewBox="0 0 320 168" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Tótem vertical con avatar arriba y chat abajo, y pantalla horizontal con avatar a la izquierda">
+<rect x="18" y="10" width="88" height="148" rx="8" fill="#fff" stroke="#2170b0"/>
+<rect x="26" y="18" width="72" height="54" rx="4" fill="#e8f4fc"/>
+<circle cx="62" cy="45" r="16" fill="#99ccff"/><circle cx="57" cy="42" r="3" fill="#fff"/><circle cx="67" cy="42" r="3" fill="#fff"/>
+<rect x="26" y="78" width="72" height="70" rx="4" fill="#f4f9fc" stroke="#c5dae8"/>
+<text x="62" y="92" text-anchor="middle" font-size="7" fill="#144a78" font-family="system-ui,sans-serif">Vertical</text>
+<text x="62" y="160" text-anchor="middle" font-size="7" fill="#5a636c" font-family="system-ui,sans-serif">avatar / chat</text>
+<rect x="128" y="42" width="174" height="90" rx="8" fill="#fff" stroke="#2170b0"/>
+<rect x="136" y="50" width="52" height="74" rx="4" fill="#e8f4fc"/>
+<circle cx="162" cy="80" r="14" fill="#99ccff"/>
+<rect x="196" y="50" width="96" height="74" rx="4" fill="#f4f9fc" stroke="#c5dae8"/>
+<text x="215" y="88" font-size="7" fill="#144a78" font-family="system-ui,sans-serif">Horizontal</text>
+<text x="215" y="148" font-size="7" fill="#5a636c" font-family="system-ui,sans-serif">avatar | chat</text>
+</svg>
+<div class="xabia-sc-body">
+<p><strong>Apariencia:</strong> Tótem transparente o Pantalla (vertical / horizontal). Fondo transparente = cristal/escaparate; fondo sólido = kiosko.</p>
+<code class="xabia-sc-code">[xabia_agent id="mi-agente"]</code>
+<p class="xabia-sc-result">Resultado: pantalla completa, avatar parlante + chat en dos zonas. El shortcode no cambia; cambia el molde de Apariencia.</p>
+</div>
+</article>
+<article class="xabia-sc-card wide">
+<header><h4>Ruta /xabia-box/ (Smart QR y quiosco)</h4><span>Sin pegar shortcode en una página</span></header>
+<div class="xabia-sc-body">
+<code class="xabia-sc-code">https://su-dominio.com/xabia-box/?x_project=mi-agente</code>
+<p>Opcional, anclado a un ente (túnel): <code>?x_project=mi-agente&amp;ente_id=sala-2</code></p>
+<p class="xabia-sc-result">Resultado: la misma experiencia de tótem/pantalla a pantalla completa, <strong>sin</strong> menú de WordPress ni avatar flotante de sitio. Ideal para tablet de recepción, QR o monitor dedicado. Tras instalar o actualizar, visite <strong>Ajustes → Enlaces permanentes → Guardar</strong>.</p>
+</div>
+</article>
+</div>
+</div>
+
+
+Las reglas **Mostrar solo en estas páginas** y **Excluir estas páginas o entradas** pertenecen a la burbuja de **Web adaptable**. En modo shortcode o lanzador el chat o botón aparece **únicamente** donde esté pegado el shortcode.
+
+| Perfil en la cuadrícula Apariencia | Shortcode o URL | Qué ve el visitante |
+|------|-----------------|---------------------|
+| **Web adaptable** | Burbuja nativa (sin shortcode) y/o `[xabia_agent]` | Avatar esquina y/o chat embebido en una página. |
+| **Tótem transparente (V / H)** | `[xabia_agent]` o `/xabia-box/` | Pantalla completa sin fondo opaco; avatar y chat en dos zonas. |
+| **Pantalla (V / H)** | `[xabia_agent]` o `/xabia-box/` | Igual, con fondo sólido (kiosko). |
+| **Lanzador** | `[xabia_launcher]` / `[xabia_avatar]` | Solo el avatar/botón; el panel se abre al clic. |
 
 #### Avatar cinético oficial (v1.0.47)
 
@@ -297,18 +407,43 @@ Pulse **Guardar agente** al final para aplicar cambios; hasta entonces solo hay 
 
 ### 5.2 Shortcode
 
-Tras guardar un agente existente se muestra:
+El esquema visual de **qué pegar y qué se ve** está en [§2.5](#mapa-shortcodes). Aquí, la referencia de atributos.
+
+Tras guardar un agente se muestra:
 
 ```text
 [xabia_agent id="ID_DEL_PROYECTO"]
 ```
 
-Al pegarlo en una página de WordPress **publica el chat de ese agente** (si el agente no está **Pausado**).
+Alias: `[xabia_chat id="ID_DEL_PROYECTO"]` (mismo resultado).
 
-- Si **Mostrar en el sitio sin shortcode** está activado, el shortcode puede convivir con la interfaz nativa, pero el avatar flotante lo controla la configuración de **Apariencia**.
-- Si **Mostrar en el sitio sin shortcode** está desactivado, el shortcode muestra **solo el chatbot embebido** en esa página, sin avatar flotante ni reglas de visibilidad nativa.
+Al pegarlo en una página **publica ese agente** (si no está **Pausado**). El **aspecto** lo decide Apariencia: chat embebido (web) o pantalla completa (tótem/pantalla).
 
-Algunos complementos admiten opciones extra en el mismo shortcode (idioma, modo tótem, nombre visible del asistente en los mensajes, etc.): revíselas en el manual de cada addon que use. El atributo `lang`, cuando se use, sirve como idioma de interfaz y respaldo; no bloquea el idioma en el que la IA redacta la respuesta (§10.11).
+- Si **Mostrar en el sitio sin shortcode** está activado, el shortcode puede convivir con la burbuja nativa; el avatar flotante lo controla **Apariencia**.
+- Si está desactivado, `[xabia_agent]` muestra **solo** el chat (o el tótem) en esa página, sin burbuja global.
+
+**Atributos de `[xabia_agent]` / `[xabia_chat]`**
+
+| Atributo | Ejemplo | Efecto |
+|----------|---------|--------|
+| `id` | `id="mi-agente"` | **Obligatorio.** Identificador del agente. |
+| `lang` | `lang="eu"` | Idioma de la **interfaz** (placeholder, botones, voz). No bloquea el idioma de la respuesta de la IA (§10.11). |
+| `ente_id` | `ente_id="sala-2"` | Túnel Smart QR: el chat queda anclado a ese ente. |
+| `totem` | `totem="10"` | Minutos de inactividad para resetear el chat en quiosco (0 = no forzar). |
+| `avatar_name` | `avatar_name="Ella"` | Nombre que aparece junto a los mensajes del bot. |
+| `scope` | `scope="global"` | Alcance por defecto si no hay `ente_id`. |
+
+**Atributos de `[xabia_launcher]` / `[xabia_avatar]`**
+
+| Atributo | Ejemplo | Efecto |
+|----------|---------|--------|
+| `id` | `id="mi-agente"` | **Obligatorio.** |
+| `size` | `size="lg"` · `size="280"` · `size="42%"` | Tamaño del avatar (`sm` `md` `lg` `xl`, px o %). |
+| `size_mobile` / `size_tablet` | `size_mobile="120"` | Tamaño en móvil / tablet. |
+| `align` | `align="center"` | `left` · `center` · `right`. |
+| `class` | `class="mi-cta"` | Clase CSS extra en el contenedor. |
+
+No combine en la misma página una **burbuja nativa** y un **lanzador** del mismo agente si no quiere dos avatares. Para un hero: desactive «Mostrar en el sitio sin shortcode» y use solo `[xabia_launcher]`.
 
 ### 5.3 Bloque Xabia Cloud (cuando el UI está en modo Cloud)
 
@@ -826,6 +961,12 @@ Depende de **condiciones contractuales**: dos direcciones públicas distintas a 
 Mire en **Comportamiento IA** el **tope diario de tokens por agente**. La barra lateral **Tokens hoy** muestra si ya alcanzó ese techo para el día técnico en curso; al día siguiente ese contador vuelve a cero para el agente, aunque su **cartera global** siga teniendo saldo disponible para otros agentes u otros días.
 
 ## Notas de versión (Core)
+
+### Core v1.0.291 (agosto 2026)
+- Publicación de manuales: mapa visual de shortcodes en Apariencia (PDF/HTML) e índices ES/EN/EU.
+
+### Core v1.0.290 (agosto 2026)
+- Manual de usuario: **mapa visual de shortcodes** en Apariencia (burbuja nativa, chat embebido, launcher/avatar, tótem/pantalla y `/xabia-box/`) y tabla de atributos.
 
 ### Core v1.0.283 (agosto 2026)
 - Playground: alt de imágenes `[ACTION:IMG:…]` → **«Imagen de la entidad»** (agnóstico; sustituye «Imagen del evento»).

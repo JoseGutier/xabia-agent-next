@@ -73,4 +73,4 @@ Tras subir una versión nueva, invalidar caché de `/docs/`, `/docs/index.html`,
 
 ---
 
-*Core v1.0.283 — agosto 2026*
+*Core v1.0.291 — agosto 2026*

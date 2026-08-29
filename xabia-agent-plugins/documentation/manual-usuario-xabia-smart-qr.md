@@ -1,6 +1,6 @@
 # Manual de usuario — Smart QR y tótems (Xabia Agent Core)
 
-> **Versión del producto:** Xabia Agent Core **v1.0.59** (mayo 2026)  
+> **Versión del producto:** Xabia Agent Core **v1.0.291** (agosto 2026)  
 > **Incluido en la licencia Core** — no requiere plugin ni addon de pago aparte.  
 > **PDF en línea:** [https://xabia.ai/docs/manual-usuario-xabia-smart-qr.pdf](https://xabia.ai/docs/manual-usuario-xabia-smart-qr.pdf)  
 > **HTML en línea:** [https://xabia.ai/docs/manual-usuario-xabia-smart-qr.html](https://xabia.ai/docs/manual-usuario-xabia-smart-qr.html)  

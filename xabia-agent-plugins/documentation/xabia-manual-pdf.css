@@ -216,3 +216,159 @@ img[alt="Xabia"] {
   border-left-color: #2170b0;
   background: linear-gradient(90deg, #e3f0fa 0%, transparent 100%);
 }
+
+/* Mapa visual de shortcodes / Apariencia */
+.xabia-sc-guide {
+  margin: 1.1rem 0 1.6rem;
+}
+
+.xabia-sc-callout {
+  margin: 0 0 1rem;
+  padding: 0.7rem 0.9rem;
+  border: 1px solid #c5dae8;
+  border-left: 4px solid #2170b0;
+  border-radius: 6px;
+  background: #e8f4fc;
+  font-size: 0.95rem;
+}
+
+.xabia-sc-callout strong {
+  color: #144a78;
+}
+
+.xabia-sc-path {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 0.45rem;
+  margin: 0 0 1rem;
+}
+
+.xabia-sc-step {
+  border: 1px solid #c5dae8;
+  border-radius: 8px;
+  background: #f4f9fc;
+  padding: 0.55rem 0.6rem 0.6rem;
+  page-break-inside: avoid;
+}
+
+.xabia-sc-step .n {
+  display: inline-block;
+  width: 1.25rem;
+  height: 1.25rem;
+  line-height: 1.25rem;
+  text-align: center;
+  border-radius: 50%;
+  background: #2170b0;
+  color: #fff;
+  font-size: 0.72rem;
+  font-weight: 700;
+  margin-right: 0.2rem;
+}
+
+.xabia-sc-step h4 {
+  margin: 0 0 0.25rem;
+  font-size: 0.82rem;
+  color: #144a78;
+}
+
+.xabia-sc-step p {
+  margin: 0;
+  font-size: 0.78rem;
+  color: #3c4043;
+  line-height: 1.35;
+}
+
+.xabia-sc-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.7rem;
+  margin: 0.35rem 0 1rem;
+}
+
+.xabia-sc-card {
+  border: 1px solid #dadce0;
+  border-radius: 8px;
+  background: #fff;
+  overflow: hidden;
+  page-break-inside: avoid;
+}
+
+.xabia-sc-card.wide {
+  grid-column: 1 / -1;
+}
+
+.xabia-sc-card header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.5rem 0.7rem;
+  background: #e3f0fa;
+  border-bottom: 1px solid #c5dae8;
+}
+
+.xabia-sc-card header h4 {
+  margin: 0;
+  font-size: 0.92rem;
+  color: #144a78;
+}
+
+.xabia-sc-card header span {
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: #2170b0;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.xabia-sc-mock {
+  display: block;
+  width: 100%;
+  height: auto;
+  background: #f7f9fb;
+  border-bottom: 1px solid #e8eaed;
+}
+
+.xabia-sc-body {
+  padding: 0.55rem 0.7rem 0.7rem;
+}
+
+.xabia-sc-body p {
+  margin: 0 0 0.4rem;
+  font-size: 0.86rem;
+}
+
+.xabia-sc-body p:last-child {
+  margin-bottom: 0;
+}
+
+.xabia-sc-code {
+  display: block;
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 0.78rem;
+  background: #e8f4fc;
+  border: 1px solid #c5dae8;
+  border-radius: 4px;
+  padding: 0.35rem 0.5rem;
+  color: #144a78;
+  margin: 0.2rem 0 0.45rem;
+  word-break: break-word;
+}
+
+.xabia-sc-result {
+  color: #185a94;
+  font-weight: 600;
+}
+
+@media print {
+  .xabia-sc-path {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+@media (max-width: 720px) {
+  .xabia-sc-path,
+  .xabia-sc-grid {
+    grid-template-columns: 1fr;
+  }
+}
