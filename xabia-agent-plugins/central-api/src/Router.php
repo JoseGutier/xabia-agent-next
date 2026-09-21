@@ -58,6 +58,22 @@ final class Router
 
                 return;
             }
+            if (
+                $path === '/xabia/v1/tts/synthesize'
+                || $path === '/v1/tts/synthesize'
+            ) {
+                TtsHandler::handle();
+
+                return;
+            }
+            if (
+                $path === '/xabia/v1/tts/health'
+                || $path === '/v1/tts/health'
+            ) {
+                TtsHealthHandler::handle();
+
+                return;
+            }
 
             Json::respond(404, ['error' => ['message' => 'Not Found', 'path' => $path]]);
         } catch (\Throwable $e) {

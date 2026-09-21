@@ -112,6 +112,16 @@ class Xabia_Knowledge_Sync {
                             $src_cfg
                         );
                     }
+                } elseif ($type === 'web_remote' && class_exists('Xabia_Web_Pages_Source', false)) {
+                    $urls = Xabia_Web_Pages_Source::parse_remote_urls($src['web_remote_urls'] ?? []);
+                    if ($urls !== []) {
+                        $total += Xabia_Web_Pages_Source::sync_remote_urls(
+                            $project_id,
+                            $urls,
+                            is_array($attrs) && $attrs !== [] ? $attrs : null,
+                            is_array($sync_opts) ? $sync_opts : []
+                        );
+                    }
                 } elseif ($type === 'sql' || $type === 'local_sql') {
                     $sql_config = $src['sql_config'] ?? [];
                     if (!empty($sql_config['query'])) {
@@ -221,6 +231,9 @@ class Xabia_Knowledge_Sync {
         } elseif (($config['source_type'] ?? '') === 'web_pages' && class_exists('Xabia_Web_Pages_Source', false)) {
             $page_ids = Xabia_Web_Pages_Source::parse_page_ids($config['web_page_ids'] ?? []);
             $count = Xabia_Web_Pages_Source::sync($project_id, $page_ids, null, is_array($sync_opts) ? $sync_opts : [], $config);
+        } elseif (($config['source_type'] ?? '') === 'web_remote' && class_exists('Xabia_Web_Pages_Source', false)) {
+            $urls = Xabia_Web_Pages_Source::parse_remote_urls($config['web_remote_urls'] ?? []);
+            $count = Xabia_Web_Pages_Source::sync_remote_urls($project_id, $urls, null, is_array($sync_opts) ? $sync_opts : []);
         } elseif (($config['source_type'] ?? '') === 'local_sql' || ($config['source_type'] ?? '') === 'sql') {
             if (($config['source_type'] ?? '') === 'local_sql') {
                 $local_sql = $config['sql_config'] ?? [];
@@ -305,11 +318,15 @@ class Xabia_Knowledge_Sync {
                     );
                 }
             } elseif ($incremental && $count === 0) {
-                $message = __('Sincronización incremental: 0 registros nuevos o modificados desde la última sync. Si esperabas importación completa, pulsa «Borrar memoria vectorial» y vuelve a sincronizar.', 'xabia-intelligence');
+                $message = __('Sincronización incremental: 0 filas leídas. No se ha borrado la memoria. Si el catálogo está en este WordPress y esperabas ver empresas, revisa el SQL; no hace falta borrar vectores.', 'xabia-intelligence');
             } elseif ($incremental) {
                 $message = sprintf(
-                    __('Sincronización incremental: %d registros procesados (sin borrar memoria).', 'xabia-intelligence'),
-                    $count
+                    /* translators: 1: total read, 2: new inserts, 3: content updates, 4: unchanged */
+                    __('Catálogo re-leído (%1$d) sin borrar memoria: %2$d nuevos, %3$d con texto cambiado (pendientes de entrenar), %4$d iguales (sin gastar tokens de embedding).', 'xabia-intelligence'),
+                    $count,
+                    $inserted,
+                    $content_updated,
+                    $unchanged
                 );
             } elseif ($count === 0 && $is_mec) {
                 $message = __('Conexión OK, pero no hay eventos MEC con fecha de inicio ≥ hoy en la base remota. El catálogo de próximos eventos está vacío.', 'xabia-intelligence');
@@ -361,14 +378,26 @@ class Xabia_Knowledge_Sync {
         }
         if (class_exists('Xabia_Knowledge_Orphans', false)) {
             $reconcile = Xabia_Knowledge_Orphans::get_last_reconcile_stats();
+            $unpublished = (int) ($reconcile['unpublished'] ?? 0);
             $removed = (int) ($reconcile['deleted'] ?? 0) + (int) ($reconcile['purged_ghosts'] ?? 0);
             $normalized = (int) ($reconcile['migrated'] ?? 0) + (int) ($reconcile['fixed'] ?? 0);
+            if ($unpublished > 0) {
+                $parts[] = sprintf(
+                    _n(
+                        '%d ficha dada de baja o no publicada (pendiente/borrador) se ha quitado de la memoria. No hace falta reentrenar el resto.',
+                        '%d fichas dadas de baja o no publicadas (pendiente/borrador) se han quitado de la memoria. No hace falta reentrenar el resto.',
+                        $unpublished,
+                        'xabia-intelligence'
+                    ),
+                    $unpublished
+                );
+            }
             if ($removed > 0) {
                 $parts[] = sprintf(
-                    __('Duplicados o registros obsoletos eliminados: %d.', 'xabia-intelligence'),
+                    __('Duplicados de identificador eliminados: %d.', 'xabia-intelligence'),
                     $removed
                 );
-            } elseif ($normalized > 0 && $inserted > 0 && $normalized >= $inserted) {
+            } elseif ($unpublished === 0 && $normalized > 0 && $inserted > 0 && $normalized >= $inserted) {
                 $parts[] = __('Identificadores normalizados a slug (listo para entrenar).', 'xabia-intelligence');
             }
         }

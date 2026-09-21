@@ -3,7 +3,7 @@
  * Plugin Name: Xabia Agent Core
  * Plugin URI: https://xabia.ai
  * Description: Agente de Inteligencia Artificial de última generación con voz, texto y acciones en la web. Perfecciona la UX mediante interacciones conversacionales inteligentes, hiperpersonalizadas y políglotas. Smart QRs integrados, addons para Woo, MEC, Amelia, etc.
- * Version: 1.0.291
+ * Version: 1.0.318
  * Author: Digixop
  * Author URI: https://digixop.com
  */
@@ -83,6 +83,7 @@ if (!function_exists('xabia_api_dir')) {
 require_once XABIA_PATH . 'core/class-xabia-agent-core.php';
 require_once XABIA_PATH . 'core/class-xabia-i18n-bridge.php';
 require_once XABIA_PATH . 'core/class-xabia-i18n.php';
+require_once XABIA_PATH . 'core/class-xabia-voice.php';
 require_once XABIA_PATH . 'core/class-xabia-chat-input.php';
 Xabia_I18n::init();
 
@@ -106,6 +107,7 @@ require_once XABIA_PATH . 'core/class-xabia-brain.php';
 require_once XABIA_PATH . 'core/class-xabia-router.php';
 require_once XABIA_PATH . 'core/class-xabia-knowledge-text.php';
 require_once XABIA_PATH . 'core/class-xabia-starter-questions.php';
+require_once XABIA_PATH . 'core/class-xabia-action-card.php';
 require_once XABIA_PATH . 'core/class-xabia-knowledge-ingest.php';
 require_once XABIA_PATH . 'core/class-xabia-knowledge-language-driver.php';
 require_once XABIA_PATH . 'core/class-xabia-rag-language-bridge.php';
@@ -133,6 +135,7 @@ if (Xabia_Features::is_pro()) {
 
 if (Xabia_Features::is_pro()) {
     require_once XABIA_PATH . 'core/class-xabia-digixop-client.php';
+    require_once XABIA_PATH . 'core/class-xabia-hub-client.php';
     require_once XABIA_PATH . 'core/class-xabia-hub-knowledge.php';
 } else {
     require_once XABIA_PATH . 'core/class-xabia-lite-secrets.php';

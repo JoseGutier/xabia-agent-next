@@ -14,8 +14,11 @@ final class Xabia_Analytics {
     public const OUTCOME_ERROR = 'error';
     public const OUTCOME_PARTIAL = 'partial';
 
-    /** Historial amplio de «sin información» por agente. */
-    public const NO_INFO_HISTORY_LIMIT = 200;
+    /** Historial «sin información» retenido por agente (excerpt; filas ligeras). */
+    public const NO_INFO_HISTORY_LIMIT = 500;
+
+    /** Filas mostradas en la tabla admin del historial «sin información». */
+    public const NO_INFO_HISTORY_UI_LIMIT = 300;
 
     public static function init(): void {
         add_action('admin_enqueue_scripts', [self::class, 'enqueue_chart_assets'], 25);
@@ -234,7 +237,7 @@ final class Xabia_Analytics {
         global $wpdb;
         $table = Xabia_DB::table('analytics_events');
         $limit = (int) apply_filters('xabia_analytics_no_info_history_limit', self::NO_INFO_HISTORY_LIMIT, $project_id);
-        $limit = max(50, min(2000, $limit));
+        $limit = max(100, min(5000, $limit));
         $keep_ids = $wpdb->get_col($wpdb->prepare(
             "SELECT id FROM $table WHERE project_id = %s AND outcome = %s ORDER BY id DESC LIMIT %d",
             $project_id,
@@ -408,14 +411,17 @@ final class Xabia_Analytics {
             ARRAY_A
         );
 
+        $ui_limit = (int) apply_filters('xabia_analytics_no_info_history_ui_limit', self::NO_INFO_HISTORY_UI_LIMIT, $project_id);
+        $ui_limit = max(50, min(2000, $ui_limit));
         $no_info_history = $wpdb->get_results(
             $wpdb->prepare(
                 "SELECT created_at, lang, source, qr_id, query_excerpt
                  FROM $table
                  WHERE project_id = %s AND outcome = %s AND query_excerpt != ''
-                 ORDER BY id DESC LIMIT 80",
+                 ORDER BY id DESC LIMIT %d",
                 $project_id,
-                self::OUTCOME_NO_INFO
+                self::OUTCOME_NO_INFO,
+                $ui_limit
             ),
             ARRAY_A
         );
@@ -511,6 +517,7 @@ final class Xabia_Analytics {
                 <div id="xabia-top-qr" class="description" style="margin:16px 0;"></div>
                 <div style="margin:24px 0;">
                     <h4 style="margin:0 0 8px;"><?php echo esc_html__('Historial «sin información»', 'xabia-intelligence'); ?></h4>
+                    <p class="description" style="margin:0 0 8px;"><?php echo esc_html__('Consultas en las que el agente no encontró datos. Se conservan cientos de entradas por agente (texto corto).', 'xabia-intelligence'); ?></p>
                     <p class="description" style="margin:0 0 10px;"><?php echo esc_html__('Consultas en las que el agente indicó no disponer de datos (se conservan de forma amplia y anónima para mejorar el catálogo).', 'xabia-intelligence'); ?></p>
                     <div style="max-height:360px;overflow:auto;border:1px solid #c3c4c7;border-radius:8px;">
                         <table class="widefat striped" id="xabia-noinfo-table" style="margin:0;">

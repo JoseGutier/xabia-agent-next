@@ -3117,3 +3117,36 @@ body.wp-admin .xabia-curate-empty {
 	}
 }
 
+.xabia-wrapper.xabia-admin-app .xabia-sql-steps {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 10px;
+	align-items: center;
+	margin: 0 0 8px;
+}
+
+.xabia-wrapper.xabia-admin-app .xabia-sql-preset-actions {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 8px;
+	margin: 0 0 8px;
+}
+
+.xabia-wrapper.xabia-admin-app .xabia-sql-advanced {
+	margin: 12px 0 0;
+	padding: 10px 12px;
+	border: 1px solid var(--xabia-border-subtle);
+	border-radius: var(--xabia-radius-sm);
+	background: #f8fafc;
+}
+
+.xabia-wrapper.xabia-admin-app .xabia-sql-advanced summary {
+	cursor: pointer;
+	font-weight: 600;
+	color: var(--xabia-text-secondary);
+}
+
+.xabia-wrapper.xabia-admin-app .xabia-sql-advanced .sql-box {
+	margin-top: 10px;
+}
+

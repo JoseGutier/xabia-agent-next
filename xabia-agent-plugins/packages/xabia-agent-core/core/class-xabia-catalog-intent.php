@@ -450,9 +450,11 @@ class Xabia_Catalog_Intent {
             // «me recomiendas…», «recomendación de…»
             '/\b(me\s+)?recomienda(s|n)?\b/u',
             '/\brecomendacion(es)?\s+(de|para)\b/u',
-            // EU (intención, no dominio): «non egin», «nork eskaintzen»
+            // EU (intención, no dominio): «non egin», «nork eskaintzen», «zer ekitaldi daude»
             '/\b(non)\s+(egin|aurkitu)\b/u',
             '/\b(nork)\s+(eskaintzen|antolatzen)\b/u',
+            '/\bzer\b.{0,50}\b(ekitaldi|ekitaldiak|evento|eventos|jardunaldi)\b/u',
+            '/\b(ekitaldi|ekitaldiak)\b.{0,40}\b(non|nongon|zein)\b/u',
         ];
     }
 

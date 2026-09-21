@@ -3,7 +3,7 @@
  * Plugin Name: Xabia MEC
  * Plugin URI: https://xabia.ai
  * Description: Addon de especialización que dota a Xabia AI con inteligencia avanzada para la gestión de eventos, plazas y reservas de Modern Events Calendar, ofreciendo interacciones asistidas en tiempo real.
- * Version: 1.0.3
+ * Version: 1.1.5
  * Author: Digixop
  * Author URI: https://digixop.com
  * Text Domain: xabia-intelligence
@@ -30,6 +30,10 @@ if (!file_exists($core_bootstrap) || !is_plugin_active('xabia-agent-core/xabia-i
     return;
 }
 
+require_once XABIA_MEC_PATH . 'includes/class-xabia-mec-rag-mapper.php';
+require_once XABIA_MEC_PATH . 'admin/class-xabia-mec-admin.php';
+require_once XABIA_MEC_PATH . 'includes/class-xabia-mec-builder.php';
+require_once XABIA_MEC_PATH . 'includes/class-xabia-mec-rag-settings.php';
 require_once XABIA_MEC_PATH . 'includes/xabia-mec-integration.php';
 
 add_filter('xabia_agent_native_connectors', static function ($plugins) {
@@ -103,6 +107,9 @@ add_action('xabia_agent_admin_extra_tabs_content', static function ($edit_id, $d
         </div>
         <?php endif; ?>
         <div id="xabia-mec-connect-landing" class="xabia-panel-muted" style="padding:12px;border-radius:8px;margin:14px 0;"></div>
+        <?php if (function_exists('xabia_mec_rag_render_settings_panel')) : ?>
+            <?php xabia_mec_rag_render_settings_panel($edit_id, $data); ?>
+        <?php endif; ?>
         <div id="xabia-mapping-slot-mec"></div>
         <?php if (function_exists('xabia_federation_mec_render_feed_panel')) : ?>
             <details class="xabia-mec-dev-advanced" style="margin-top:22px;border:1px solid #c3c4c7;border-radius:8px;padding:10px 14px;background:#fcfcfc;">

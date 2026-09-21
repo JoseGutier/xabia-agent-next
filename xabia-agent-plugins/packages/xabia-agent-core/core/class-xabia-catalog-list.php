@@ -269,16 +269,25 @@ class Xabia_Catalog_List {
         string $search_term
     ): array {
         $ids = [];
-        $parent_labels = array_merge(
-            array_map('strval', $activity_profile['match_category'] ?? []),
-            self::parent_terms_for_canonical($canonical)
-        );
-        foreach (array_unique(array_filter($parent_labels)) as $label) {
-            $ids = array_merge($ids, self::term_ids_for_parent_label($taxonomy, $label));
+
+        // 1) Hojas / subcategorías del perfil o del criterio destilado (sin expandir padres).
+        foreach ($activity_profile['match_subcategory'] ?? [] as $sub) {
+            $ids = array_merge($ids, self::term_ids_for_label($taxonomy, (string) $sub, false));
+        }
+        if ($canonical !== '') {
+            $ids = array_merge($ids, self::term_ids_for_label($taxonomy, $canonical, false));
+            foreach (self::parent_terms_for_canonical($canonical) as $label) {
+                // Alias del mismo criterio (filtro vertical); siguen siendo hojas, no expansión de padre.
+                $ids = array_merge($ids, self::term_ids_for_label($taxonomy, $label, false));
+            }
+        }
+        if ($ids !== []) {
+            return array_values(array_unique(array_filter(array_map('intval', $ids))));
         }
 
-        foreach ($activity_profile['match_subcategory'] ?? [] as $sub) {
-            $ids = array_merge($ids, self::term_ids_for_label($taxonomy, (string) $sub));
+        // 2) Categorías amplias solo si el perfil las declara (match_category → término + hijos).
+        foreach (array_unique(array_filter(array_map('strval', $activity_profile['match_category'] ?? []))) as $label) {
+            $ids = array_merge($ids, self::term_ids_for_parent_label($taxonomy, $label));
         }
 
         foreach ($activity_profile['match_in_header'] ?? [] as $needle) {
@@ -286,21 +295,18 @@ class Xabia_Catalog_List {
             if ($needle === '' || mb_strlen($needle, 'UTF-8') < 3 || strpos($needle, ':') !== false) {
                 continue;
             }
-            $ids = array_merge($ids, self::term_ids_for_label($taxonomy, $needle));
-        }
-
-        if ($ids === [] && $canonical !== '') {
-            $ids = array_merge($ids, self::term_ids_for_label($taxonomy, $canonical));
+            $ids = array_merge($ids, self::term_ids_for_label($taxonomy, $needle, false));
         }
 
         if ($ids === []) {
             foreach (self::keyword_needles($user_msg, $search_term, $activity_profile) as $kw) {
-                $ids = array_merge($ids, self::term_ids_for_label($taxonomy, $kw));
+                $ids = array_merge($ids, self::term_ids_for_label($taxonomy, $kw, false));
             }
         }
 
-        if ($ids === [] && $canonical === 'náutica') {
-            $regexp = trim((string) ($activity_profile['match_regexp'] ?? 'nautic|surf|kayak|vela|agua|paddle|piragua|buceo'));
+        // 3) Regexp opcional del perfil (vertical vía filtro).
+        $regexp = trim((string) ($activity_profile['match_regexp'] ?? ''));
+        if ($ids === [] && $regexp !== '') {
             $terms = get_terms(['taxonomy' => $taxonomy, 'hide_empty' => false]);
             if (!is_wp_error($terms) && is_array($terms)) {
                 foreach ($terms as $term) {
@@ -308,11 +314,8 @@ class Xabia_Catalog_List {
                         continue;
                     }
                     $blob = mb_strtolower($term->slug . ' ' . $term->name, 'UTF-8');
-                    if (@preg_match('/' . $regexp . '/iu', $blob) === 1 || mb_strpos($blob, 'agua') !== false) {
+                    if (@preg_match('/' . $regexp . '/iu', $blob) === 1) {
                         $ids[] = (int) $term->term_id;
-                        if ((int) $term->parent > 0) {
-                            $ids[] = (int) $term->parent;
-                        }
                     }
                 }
             }
@@ -343,13 +346,20 @@ class Xabia_Catalog_List {
     /**
      * @return list<int>
      */
-    private static function term_ids_for_label(string $taxonomy, string $label): array {
+    /**
+     * @param bool $include_parent Si true, incluye el padre (útil solo en expansiones amplias).
+     *                             En listados por hoja/subcategoría debe ser false: si no,
+     *                             términos padre o hermanos pueden entrar en el IN.
+     *
+     * @return list<int>
+     */
+    private static function term_ids_for_label(string $taxonomy, string $label, bool $include_parent = false): array {
         $term = self::find_term($taxonomy, $label);
         if ($term === null) {
             return [];
         }
         $ids = [(int) $term->term_id];
-        if ((int) $term->parent > 0) {
+        if ($include_parent && (int) $term->parent > 0) {
             $ids[] = (int) $term->parent;
         }
         $children = get_term_children((int) $term->term_id, $taxonomy);
@@ -394,51 +404,88 @@ class Xabia_Catalog_List {
     }
 
     /**
+     * Aliases del criterio canónico → etiquetas de taxonomía a probar.
+     * Vacío por defecto; el vertical puede aportar mapa con `xabia_catalog_parent_terms_for_canonical`.
+     *
      * @return list<string>
      */
     private static function parent_terms_for_canonical(string $canonical): array {
-        $map = [
-            'náutica'        => ['agua'],
-            'surf'           => ['agua', 'surf'],
-            'kayak'          => ['agua', 'kayak'],
-            'paddle surf'    => ['agua', 'paddle'],
-            'vela'           => ['agua', 'vela'],
-            'velero'         => ['agua', 'vela'],
-            'hípica'         => ['hípica', 'hipica', 'equitación', 'equitacion'],
-            'equitación'     => ['hípica', 'hipica', 'equitación', 'equitacion'],
-            'caballo'        => ['hípica', 'hipica', 'caballo'],
-            'montaña'        => ['montaña', 'montana', 'tierra'],
-            'senderismo'     => ['senderismo', 'tierra'],
-            'barranco'       => ['barranco', 'tierra'],
-            'btt'            => ['btt', 'bicicleta', 'tierra'],
-            'nordic walking' => ['nordic', 'marcha nórdica', 'marcha nordica'],
-            'globo'          => ['globo', 'aire'],
-        ];
+        $canonical = trim($canonical);
+        if ($canonical === '') {
+            return [];
+        }
+        $map = apply_filters('xabia_catalog_parent_terms_for_canonical', [], $canonical);
+        if (!is_array($map)) {
+            return [$canonical];
+        }
+        if (isset($map[$canonical]) && is_array($map[$canonical])) {
+            return array_values(array_filter(array_map('strval', $map[$canonical])));
+        }
 
-        return $map[$canonical] ?? [];
+        return [$canonical];
     }
 
-    private static function distill_canonical_activity(string $user_msg, string $search_term): string {
+    /**
+     * Destila un criterio de actividad desde la pregunta.
+     * Agnóstico: mapa de aliases vacío (filtro `xabia_catalog_activity_alias_map`);
+     * si no hay alias, usa la primera palabra significativa de la pregunta.
+     */
+    public static function distill_canonical_activity(string $user_msg, string $search_term = ''): string {
         $blob = mb_strtolower(trim(wp_strip_all_tags($user_msg !== '' ? $user_msg : $search_term)), 'UTF-8');
         if ($blob === '') {
             return '';
         }
-        if (preg_match('/\bn[aá]utic/iu', $blob)) {
-            return 'náutica';
+        $map = apply_filters('xabia_catalog_activity_alias_map', [], $user_msg, $search_term);
+        if (!is_array($map)) {
+            $map = [];
         }
-        $map = [
-            'hípica' => 'hípica', 'hipica' => 'hípica', 'equitación' => 'equitación', 'equitacion' => 'equitación',
-            'caballo' => 'caballo', 'náutica' => 'náutica', 'nautica' => 'náutica', 'surf' => 'surf', 'kayak' => 'kayak',
-            'montaña' => 'montaña', 'montana' => 'montaña', 'senderismo' => 'senderismo', 'barranco' => 'barranco',
-            'btt' => 'btt', 'globo' => 'globo', 'nordic' => 'nordic walking', 'vela' => 'vela', 'velero' => 'velero',
-        ];
         foreach ($map as $needle => $canonical) {
+            $needle = trim((string) $needle);
+            $canonical = trim((string) $canonical);
+            if ($needle === '' || $canonical === '') {
+                continue;
+            }
             if (mb_strpos($blob, $needle) !== false) {
                 return $canonical;
             }
         }
 
-        return '';
+        $stop = [
+            'hola', 'hello', 'hi', 'hey', 'kaixo', 'aupa', 'buenas', 'gracias', 'thanks',
+            'empresas', 'empresa', 'compañía', 'compania', 'company', 'companies',
+            'qué', 'que', 'cuales', 'cuáles', 'which', 'what',
+            'hacen', 'hace', 'hacéis', 'haceis', 'do', 'does',
+            'ofrecen', 'ofrece', 'offer', 'offers',
+            'teneis', 'tenéis', 'hay', 'alguna', 'alguno', 'algunas', 'algunos', 'any',
+            'más', 'mas', 'otras', 'otros', 'todas', 'todos', 'listado', 'lista', 'list',
+            'opciones', 'option', 'options', 'actividades', 'actividad', 'activity', 'activities',
+            'experiencias', 'experiencia', 'experience', 'experiences',
+            'para', 'con', 'sin', 'del', 'las', 'los', 'the', 'tipo', 'categoria', 'categoría',
+            'category', 'en', 'de', 'por', 'una', 'uno', 'un',
+        ];
+        $stop = apply_filters('xabia_catalog_query_stop_words', $stop, $user_msg, $search_term);
+        if (!is_array($stop)) {
+            $stop = [];
+        }
+        $stop_flip = [];
+        foreach ($stop as $w) {
+            $w = trim((string) $w);
+            if ($w !== '') {
+                $stop_flip[$w] = true;
+            }
+        }
+        $best = '';
+        foreach (preg_split('/\s+/u', $blob, -1, PREG_SPLIT_NO_EMPTY) as $tok) {
+            $tok = trim((string) preg_replace('/^[\p{P}\p{Z}]+|[\p{P}\p{Z}]+$/u', '', $tok));
+            if ($tok === '' || mb_strlen($tok, 'UTF-8') < 4 || isset($stop_flip[$tok])) {
+                continue;
+            }
+            if ($best === '' || mb_strlen($tok, 'UTF-8') > mb_strlen($best, 'UTF-8')) {
+                $best = $tok;
+            }
+        }
+
+        return $best;
     }
 
     /**

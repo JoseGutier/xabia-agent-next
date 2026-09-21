@@ -136,8 +136,9 @@ class Xabia_MEC_Connector {
         $cfg = isset($projects[$project_id]) && is_array($projects[$project_id]) ? $projects[$project_id] : [];
         $extra = "\n - REGLA MEC — CALENDARIO: Cada fila es un evento raíz MEC (una sola fila por serie; 'Fecha' refleja la próxima fecha en meta, no cada repetición). Para «este fin de semana»: calcula sábado y domingo en la semana que contiene HOY (" . $ymd . " según referencia del intérprete) y filtra eventos cuya Fecha cae en esos días."
             . "\n - REGLA MEC — PLAZAS: Si existe la columna 'mec_available_slots' en contexto, úsala como plazas libres (número entero). Si está vacía o ausente, no afirmes cupo; indica disponibilidad cualitativa y el enlace al evento si aplica."
-            . "\n - REGLA MEC — TAXONOMÍA: Público, idioma, municipio y etiquetas suelen aparecer en 'Categorias_Tags'."
-            . "\n - REGLA MEC — LUGAR: El campo 'Lugar' (mec_location) complementa el título para preguntas de dónde se celebra.";
+            . "\n - REGLA MEC — TAXONOMÍA: Público, idioma, municipio y etiquetas pueden aparecer en 'Categorias_Tags', 'Municipio' o la cabecera semántica [Municipio: …]."
+            . "\n - REGLA MEC — MUNICIPIO: Usa la columna 'Municipio' o [Municipio: …] para preguntas del tipo «¿Qué hay en Balmaseda / Balmasedan?». No confundas municipio con el recinto (Lugar/Recinto)."
+            . "\n - REGLA MEC — LUGAR: El campo 'Lugar' o 'Recinto' (mec_location) es el edificio o sede concreta; complementa el municipio.";
         if (xabia_mec_is_remote_catalog($cfg)) {
             $extra .= "\n - REGLA DE RESERVAS MEC REMOTAS: Si un evento procede de un catálogo/nodo SQL remoto (no local), está ESTRICTAMENTE PROHIBIDO emitir [ACTION:BOOK:ID]. Debes utilizar siempre [ACTION:URL:Link] usando la propiedad 'Link' del evento.";
         } else {
@@ -200,20 +201,23 @@ class Xabia_MEC_Connector {
      * @return list<array{csv_col:string,label:string,visual_role:string,is_ente:int,instruction:string}>
      */
     public static function default_mapping_fields(): array {
-        return [
+        $base = [
             [
                 'csv_col'     => 'ID',
                 'label'       => __('ID del evento (MEC)', 'xabia-intelligence'),
                 'visual_role' => 'none',
-                'is_ente'     => 1,
-                'instruction' => __('Identificador del post mec-events (reservas, deduplicación).', 'xabia-intelligence'),
+                'is_ente'     => 0,
+                'instruction' => __('Identificador técnico del post mec-events (reservas ACTION:BOOK, deduplicación). No usar como nombre visible del ente.', 'xabia-intelligence'),
+                'import_rag'  => 0,
             ],
             [
-                'csv_col'     => 'Evento',
-                'label'       => __('Título del evento', 'xabia-intelligence'),
-                'visual_role' => 'title',
-                'is_ente'     => 0,
-                'instruction' => __('Nombre comercial del evento para listados y búsqueda.', 'xabia-intelligence'),
+                'csv_col'         => 'Evento',
+                'label'           => __('Título del evento', 'xabia-intelligence'),
+                'visual_role'     => 'title',
+                'is_ente'         => 1,
+                'ente_label_col'  => 'Evento',
+                'instruction'     => __('Nombre del evento: úsalo como ente en listados RAG y búsqueda semántica.', 'xabia-intelligence'),
+                'import_rag'      => 1,
             ],
             [
                 'csv_col'     => 'Fecha',
@@ -231,10 +235,31 @@ class Xabia_MEC_Connector {
             ],
             [
                 'csv_col'     => 'Lugar',
-                'label'       => __('Ubicación', 'xabia-intelligence'),
+                'label'       => __('Ubicación / recinto', 'xabia-intelligence'),
                 'visual_role' => 'none',
                 'is_ente'     => 0,
-                'instruction' => __('Lugar o sede desde MEC (mec_location).', 'xabia-intelligence'),
+                'instruction' => __('Recinto físico según mapeo RAG (mec_location u origen configurado).', 'xabia-intelligence'),
+            ],
+            [
+                'csv_col'     => 'Municipio',
+                'label'       => __('Municipio', 'xabia-intelligence'),
+                'visual_role' => 'none',
+                'is_ente'     => 0,
+                'instruction' => __('Udalerria / municipio según mapeo RAG (post_tag, ACF, etc.). Incluye variantes locativas.', 'xabia-intelligence'),
+            ],
+            [
+                'csv_col'     => 'Municipio_Variantes',
+                'label'       => __('Variantes locativas municipio', 'xabia-intelligence'),
+                'visual_role' => 'none',
+                'is_ente'     => 0,
+                'instruction' => __('Formas de búsqueda (p. ej. Balmaseda, Balmasedan).', 'xabia-intelligence'),
+            ],
+            [
+                'csv_col'     => 'Recinto',
+                'label'       => __('Recinto (alias)', 'xabia-intelligence'),
+                'visual_role' => 'none',
+                'is_ente'     => 0,
+                'instruction' => __('Mismo valor que Lugar cuando el mapeo de recinto está activo.', 'xabia-intelligence'),
             ],
             [
                 'csv_col'     => 'mec_available_slots',
@@ -277,8 +302,15 @@ class Xabia_MEC_Connector {
                 'visual_role' => 'image',
                 'is_ente'     => 0,
                 'instruction' => '',
+                'import_rag'  => 0,
             ],
         ];
+
+        if (class_exists('Xabia_MEC_Admin', false)) {
+            $base = array_merge($base, Xabia_MEC_Admin::mapping_attribute_fields());
+        }
+
+        return $base;
     }
 }
 
@@ -405,6 +437,59 @@ function xabia_mec_compute_available_slots(int $event_post_id): string {
 }
 
 add_filter(
+    'xabia_deep_schema_for_post_type',
+    static function ($result, $post_type, $project_id) {
+        unset($project_id);
+        if ($post_type !== 'mec-events' || !class_exists('Xabia_MEC_Admin', false)) {
+            return $result;
+        }
+
+        $virtual = [
+            [
+                'id'          => 'mec_available_slots',
+                'label'       => __('Plazas libres (calculado)', 'xabia-intelligence'),
+                'description' => __('Capacidad menos reservas confirmadas.', 'xabia-intelligence'),
+            ],
+        ];
+
+        foreach (Xabia_MEC_Admin::get_mec_custom_field_definitions() as $field_id => $definition) {
+            $col = Xabia_MEC_Admin::mec_field_column_name($field_id);
+            if ($col === '') {
+                continue;
+            }
+            $virtual[] = [
+                'id'          => $col,
+                'label'       => (string) ($definition['label'] ?? $col),
+                'description' => sprintf(
+                    /* translators: %s: MEC field id */
+                    __('Campo nativo MEC #%s (meta mec_fields).', 'xabia-intelligence'),
+                    $field_id
+                ),
+            ];
+        }
+
+        $hints = ['ID', 'Evento', 'Fecha', 'Lugar', 'Descripcion', 'Categorias_Tags', 'mec_available_slots'];
+        foreach (Xabia_MEC_Admin::get_mec_custom_field_definitions() as $field_id => $definition) {
+            unset($definition);
+            $col = Xabia_MEC_Admin::mec_field_column_name($field_id);
+            if ($col !== '') {
+                $hints[] = $col;
+            }
+        }
+
+        return [
+            'core'          => ['ID', 'Evento', 'Descripcion'],
+            'meta'          => [],
+            'taxonomies'    => [],
+            'virtual'       => $virtual,
+            'mapping_hints' => array_values(array_unique($hints)),
+        ];
+    },
+    15,
+    3
+);
+
+add_filter(
     'xabia_knowledge_sync_enrich_row',
     static function ($row, $project_id, $mapping) {
         if (!is_array($row) || !is_array($mapping)) {
@@ -434,6 +519,24 @@ add_filter(
         }
         if ($wants_slots) {
             $row['mec_available_slots'] = xabia_mec_compute_available_slots($pid);
+        }
+
+        if (class_exists('Xabia_MEC_Builder', false) && class_exists('Xabia_MEC_Admin', false)) {
+            foreach ($mapping as $m) {
+                if (!is_array($m)) {
+                    continue;
+                }
+                $col = (string) ($m['csv_col'] ?? '');
+                if (!preg_match('/^mec_field_(\d+)$/', $col, $mm)) {
+                    continue;
+                }
+                $values = Xabia_MEC_Builder::extract_source_values($pid, 'mec_field:' . $mm[1]);
+                $row[$col] = $values !== [] ? $values[0] : '';
+            }
+        }
+
+        if (function_exists('xabia_mec_rag_enrich_sync_row')) {
+            $row = xabia_mec_rag_enrich_sync_row($row);
         }
 
         return $row;
@@ -481,4 +584,35 @@ add_filter(
     },
     5,
     2
+);
+
+add_filter(
+    'xabia_rag_enrich_content_chunk',
+    static function ($enriched, $blob, $row, $mapping, $options) {
+        if (!is_string($enriched) || !is_array($row)) {
+            return $enriched;
+        }
+        $pid = 0;
+        if (!empty($row['ID'])) {
+            $pid = absint($row['ID']);
+        } elseif (!empty($row['id'])) {
+            $pid = absint($row['id']);
+        }
+        if ($pid < 1 || get_post_type($pid) !== 'mec-events') {
+            return $enriched;
+        }
+        if (!empty($row['rag_chunk']) && is_string($row['rag_chunk'])) {
+            return trim($row['rag_chunk']);
+        }
+        if (!empty($row['semantic_header']) && is_string($row['semantic_header'])) {
+            $header = trim($row['semantic_header']);
+            if ($header !== '' && strpos($enriched, $header) !== 0) {
+                return $header . "\n" . $enriched;
+            }
+        }
+
+        return $enriched;
+    },
+    20,
+    5
 );

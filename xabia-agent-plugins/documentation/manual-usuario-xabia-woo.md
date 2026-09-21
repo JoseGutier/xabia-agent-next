@@ -26,7 +26,7 @@
 - **Sincronizar** productos publicados hacia la **base de conocimiento** del agente (texto y, si lo configura, vectores para búsqueda semántica).
 - Responder con **títulos, precios, ofertas, stock, SKU, categorías** y enlaces de ficha tomados de WooCommerce.
 - Gestionar **productos variables** (atributos y variaciones con precio/stock en el campo **Resumen** enriquecido).
-- Mostrar botones **«Añadir al carrito»** a partir del tag **`[ACTION:CART:ID]`**, donde **ID** es el identificador numérico de la fila del producto (columna **ID** del conector).
+- Mostrar **fichas de producto** en el chat (imagen, título, meta, precio y CTA) cuando el Core emite **`[ACTION:CARD:…]`**, normalmente a partir de **`[ACTION:CART:ID]`** (ID = columna **ID** del conector). El visitante ve «Añadir al carrito» / «Comprar ahora» dentro de la ficha, no un botón suelto en medio del texto.
 - **Sugerir cupones** publicados y vigentes cuando la IA lo considere oportuno (solo códigos reales obtenidos de la tienda; la IA no debe inventarlos).
 - Registrar **conversiones** ligadas al chat (cuando el visitante compra tras una recomendación en la misma sesión) en la tabla de conversiones del Core.
 
@@ -179,7 +179,7 @@ Tras cambiar precios o stock en masa, **vuelva a sincronizar** (y entrene si usa
 ## Parte 7 — Experiencia del visitante en el chat
 
 - La IA recibe **reglas de ventas** y un resumen de productos recientes cuando el proyecto usa **Woo**.  
-- Si recomienda un producto con acción de carrito, el frontend muestra un **botón para añadir al carrito** (requiere WooCommerce activo en la página del chat).  
+- Si recomienda un producto, el frontend muestra una **ficha** con botón de compra (**`[ACTION:CARD]`** / carrito; requiere WooCommerce activo en la página del chat, o enlace remoto si el catálogo es externo).  
 - **Productos variables:** a veces hace falta elegir variación en la **ficha**; el **Resumen** puede incluir líneas que oriente al visitante.  
 - Tras añadir al carrito, el visitante puede completar el pedido en WooCommerce; si la compra sigue a una recomendación en sesión, puede registrarse una conversión interna (véase la siguiente parte).
 - Si el catálogo está en una tienda remota, las fichas, carrito y cupones se resuelven en el dominio configurado como **URL pública de la tienda Woo (remoto)**.

@@ -1,6 +1,6 @@
 # Despliegue completo en producción — Xabia Agent Core + Hub
 
-Checklist operativo para publicar **Xabia Agent Core v1.0.208+** (actualizaciones automáticas WP, activación PRO retail, Polar checkout, acciones IMG/Amelia/MEC remoto, chat UI stream + Markdown, avatar parlante / launcher, starter questions, latencia chat, Document-to-RAG, pasaporte remoto, listados, WPML/DTP) y el **Hub central** en `xabia.ai`.
+Checklist operativo para publicar **Xabia Agent Core v1.0.318+** (fichas [ACTION:CARD], postproceso Woo, catálogo nativo, URLs RAG, actualizaciones WP, Polar checkout, UI chat, RAG Hub, WPML/DTP) y el **Hub central** en `xabia.ai`.
 
 Use este documento como **lista de verificación** antes de dar por cerrado un despliegue.
 
@@ -11,7 +11,7 @@ Use este documento como **lista de verificación** antes de dar por cerrado un d
 | Componente | Dónde vive | Quién lo toca |
 |------------|------------|---------------|
 | **Core ZIP** | WordPress del cliente (`/wp-content/plugins/xabia-agent-core/`) | Instalador / admin WP |
-| **Addons** | MEC **1.0.3**, Woo **1.0.4** (ZIPs en `dist/`) | Admin WP |
+| **Addons** | MEC (ZIP en `dist/`), Woo **1.0.7** | Admin WP |
 | **Hub PHP** (`central-api/src/`) | Servidor privado `central-api/` (búnker) | DevOps / hosting Xabia |
 | **Gateway** (`public_html/api/index.php`) | Solo si cambia el front controller | DevOps |
 | **Base de datos Hub** | MySQL del hub (`xabia_licenses`, addons, wallets…) | SQL / phpMyAdmin |
@@ -30,14 +30,16 @@ ONLY_SLUG=xabia-mec ./scripts/build-plugin-zip.sh
 ONLY_SLUG=xabia-woo ./scripts/build-plugin-zip.sh
 ```
 
-**Salida:** `xabia-agent-plugins/dist/xabia-agent-core-1.0.208.zip` (versión leída de `xabia-intelligence.php`), más ZIPs MEC/Woo.
+**Salida:** `xabia-agent-plugins/dist/xabia-agent-core-1.0.318.zip` (versión leída de `xabia-intelligence.php`), más ZIPs MEC/Woo.
 
 **Atajo (build + producción + docs + Git):**
 
 ```bash
-./xabia-build.sh 1.0.208
+./xabia-build.sh 1.0.318
+./xabia-build-addons.sh woo 1.0.7
 ./scripts/build-retail-plugin-zips.sh
-./xabia-deploy.sh 1.0.208
+./xabia-deploy.sh 1.0.318
+./xabia-deploy-addons.sh
 ./scripts/wp-create-manual-pages.sh   # xabia.ai/documentacion/
 ```
 
@@ -110,12 +112,12 @@ Con licencia y firma HMAC válidas → `{"ok":true,"dtp":true,"translations":{..
 En `.env` del hub, alinear con la versión publicada:
 
 ```env
-XABIA_CORE_LATEST_VERSION=1.0.168
-XABIA_CORE_UPDATE_PACKAGE=https://xabia.ai/downloads/xabia-agent-core-1.0.208.zip
+XABIA_CORE_LATEST_VERSION=1.0.318
+XABIA_CORE_UPDATE_PACKAGE=https://xabia.ai/downloads/xabia-agent-core-1.0.318.zip
 XABIA_MEC_LATEST_VERSION=1.0.3
 XABIA_MEC_UPDATE_PACKAGE=https://xabia.ai/downloads/xabia-mec-1.0.3.zip
-XABIA_WOO_LATEST_VERSION=1.0.4
-XABIA_WOO_UPDATE_PACKAGE=https://xabia.ai/downloads/xabia-woo-1.0.4.zip
+XABIA_WOO_LATEST_VERSION=1.0.7
+XABIA_WOO_UPDATE_PACKAGE=https://xabia.ai/downloads/xabia-woo-1.0.7.zip
 ```
 
 Subir el ZIP al path público indicado.
@@ -156,7 +158,7 @@ Opcional en `.env`: `XABIA_EMBEDDING_MODEL=text-embedding-004`.
 
 #### B.6.4 Core en cada WordPress
 
-Instalar **Core ≥ 1.0.168** (latencia chat, Document-to-RAG, CPT por fuente, pasaporte remoto con anexo, listados breves, sync Hub). Sitios con addon MEC: **MEC ≥ 1.0.3**; Woo: **Woo ≥ 1.0.4**. Tras SQL remoto: **Sincronizar** para regenerar chunks.
+Instalar **Core ≥ 1.0.168** (latencia chat, Document-to-RAG, CPT por fuente, pasaporte remoto con anexo, listados breves, sync Hub). Sitios con addon MEC: **MEC ≥ 1.0.3**; Woo: **Woo ≥ 1.0.7**. Tras SQL remoto: **Sincronizar** para regenerar chunks.
 
 > **Catálogo nativo:** listados masivos y contacto/imagen por ente **no requieren** Hub ni re-sync para funcionar. Configure mapeo **ENTE** + roles `tel`/`img`/`logotipo` en el agente. Re-sync + vectorización Hub siguen siendo necesarios para RAG semántico profundo.
 
@@ -242,7 +244,7 @@ Marque cada ítem:
 **Conocimiento vectorial (si aplica)**
 
 - [ ] Core **≥ 1.0.168** en el sitio cliente
-- [ ] MEC **≥ 1.0.3** / Woo **≥ 1.0.4** si aplica
+- [ ] MEC **≥ 1.0.3** / Woo **≥ 1.0.7** si aplica
 - [ ] SQL remoto: sync + push Hub tras upgrade 1.0.164+
 - [ ] Listado breve sin contacto; seguimiento «teléfono de …» con dato correcto
 - [ ] Asistente CPT con SQL remoto no muestra CPT del WP local
@@ -285,7 +287,7 @@ El pipeline `./xabia-deploy.sh` publica el ZIP en **xabia.ai/downloads/** (actua
 
 ```bash
 ./scripts/build-retail-plugin-zips.sh
-# → xabia-agent-plugins/dist/retail/xabia-agent-core-1.0.208-retail.zip
+# → xabia-agent-plugins/dist/retail/xabia-agent-core-1.0.318-retail.zip
 ```
 
 Suba ese ZIP en el panel de Polar (producto Core / packs) sustituyendo el archivo descargable anterior. No hay CLI Polar en el Release Engine: la subida es manual o vía API de Polar con token de organización.
@@ -308,7 +310,7 @@ Las opciones `xabia_*` en `wp_options` se conservan entre versiones del Core sal
 
 ---
 
-## Orden recomendado de despliegue (Hub conocimiento + Core 1.0.208)
+## Orden recomendado de despliegue (Hub conocimiento + Core 1.0.318)
 
 ```
 1. Hub: migraciones 016 + 017 en MySQL
@@ -316,7 +318,7 @@ Las opciones `xabia_*` en `wp_options` se conservan entre versiones del Core sal
 3. Hub: activar cron vectorizer (cada 5 min)
 4. Hub: subir handlers DTP si aún no están (Router, DtpEntitlement, …)
 5. curl smoke test DTP → 401/403 (no 404)
-6. Build ZIP Core 1.0.208 (+ MEC 1.0.3 / Woo 1.0.4) y subir a xabia.ai/downloads/
+6. Build ZIP Core 1.0.318 (+ MEC 1.0.3 / Woo 1.0.7) y subir a xabia.ai/downloads/
 7. `./scripts/wp-create-manual-pages.sh` → páginas en https://xabia.ai/documentacion/
 7. WordPress: actualizar Core (Plugins → Actualizar o ZIP manual)
 8. Verificar catálogo nativo en Playground (listado + «contacto de la última»)
@@ -327,4 +329,4 @@ Las opciones `xabia_*` en `wp_options` se conservan entre versiones del Core sal
 
 ---
 
-*Core v1.0.208 — agosto 2026 — actualizaciones WP, activación PRO retail, Polar checkout; acciones IMG/Amelia/MEC remoto; UI chat stream + Markdown; MEC 1.0.3 / Woo 1.0.4; sync Hub, WPML + DTP.*
+*Core v1.0.318 — septiembre 2026 — fichas [ACTION:CARD] + Woo 1.0.7; catálogo nativo; URLs RAG; Polar checkout; UI chat; sync Hub, WPML + DTP.*

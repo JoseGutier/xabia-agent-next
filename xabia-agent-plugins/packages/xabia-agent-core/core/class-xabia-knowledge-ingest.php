@@ -1592,6 +1592,243 @@ class Xabia_Knowledge_Ingest {
     }
 
     /**
+     * Columnas nativas de wp_posts (mismo conjunto que el asistente CPT en admin).
+     *
+     * @return array<string, true>
+     */
+    public static function wp_posts_core_column_map(): array {
+        static $map = null;
+        if ($map === null) {
+            $cols = [
+                'ID', 'post_author', 'post_date', 'post_date_gmt', 'post_content', 'post_title',
+                'post_excerpt', 'post_status', 'comment_status', 'ping_status', 'post_password',
+                'post_name', 'to_ping', 'pinged', 'post_modified', 'post_modified_gmt',
+                'post_content_filtered', 'post_parent', 'guid', 'menu_order', 'post_type',
+                'post_mime_type', 'comment_count',
+            ];
+            $map = array_fill_keys($cols, true);
+        }
+
+        return $map;
+    }
+
+    /**
+     * @param array<int, array<string, mixed>|string> $mapping
+     * @return list<string>
+     */
+    public static function mapping_csv_columns(array $mapping): array {
+        $cols = [];
+        $seen = [];
+        foreach ($mapping as $attr) {
+            $col = is_array($attr) ? trim((string) ($attr['csv_col'] ?? '')) : trim((string) $attr);
+            if ($col === '' || $col === 'mec_available_slots' || isset($seen[$col])) {
+                continue;
+            }
+            $seen[$col] = true;
+            $cols[] = $col;
+        }
+
+        return $cols;
+    }
+
+    /**
+     * SQL de catálogo generado por el asistente CPT (FROM {prefix}posts p).
+     * Vacío cuenta como regenerable. Amelia / presets con otras tablas no.
+     */
+    public static function is_wp_posts_catalog_sql(string $sql): bool {
+        $sql = trim($sql);
+        if ($sql === '') {
+            return true;
+        }
+        if (stripos($sql, 'amelia_') !== false) {
+            return false;
+        }
+
+        return (bool) preg_match('/\bFROM\s+(?:\{prefix\}|[`\'"]?[A-Za-z0-9_]*)posts[`\'"]?\s+p\b/i', $sql);
+    }
+
+    /**
+     * SELECT alineado con el mapeo: columnas de posts, postmeta (ACF) y taxonomías.
+     *
+     * @param list<string> $columns
+     */
+    public static function build_wp_posts_select_sql(string $post_type, array $columns): string {
+        $post_type = preg_replace('/[^a-z0-9_-]/i', '', $post_type);
+        if (!is_string($post_type) || $post_type === '') {
+            return '';
+        }
+        $core = self::wp_posts_core_column_map();
+        $lines = [];
+        $has_id = false;
+        foreach ($columns as $f) {
+            $f = trim((string) $f);
+            if ($f === '' || $f === 'mec_available_slots') {
+                continue;
+            }
+            if (strpos($f, 'tax_') === 0) {
+                $tax = substr($f, 4);
+                if (!preg_match('/^[A-Za-z0-9_-]+$/', $tax)) {
+                    continue;
+                }
+                $tax_sql = str_replace(["\\", "'"], ["\\\\", "\\'"], $tax);
+                $alias = '`' . str_replace('`', '', $f) . '`';
+                $lines[] = "    (SELECT GROUP_CONCAT(t.name ORDER BY t.name SEPARATOR ', ')\n"
+                    . "      FROM {prefix}term_relationships tr\n"
+                    . "      INNER JOIN {prefix}term_taxonomy tt ON tr.term_taxonomy_id = tt.term_taxonomy_id AND tt.taxonomy = '{$tax_sql}'\n"
+                    . "      INNER JOIN {prefix}terms t ON tt.term_id = t.term_id\n"
+                    . "      WHERE tr.object_id = p.ID) AS {$alias}";
+                continue;
+            }
+            if (!preg_match('/^[\w\-.]+$/', $f)) {
+                continue;
+            }
+            if (strcasecmp($f, 'ID') === 0) {
+                $has_id = true;
+            }
+            $ident = '`' . str_replace('`', '', $f) . '`';
+            if (isset($core[$f])) {
+                $lines[] = '    p.' . $ident;
+            } else {
+                $key_sql = str_replace(["\\", "'"], ["\\\\", "\\'"], $f);
+                $lines[] = "    (SELECT meta_value FROM {prefix}postmeta WHERE post_id = p.ID AND meta_key = '{$key_sql}' LIMIT 1) AS {$ident}";
+            }
+        }
+        if ($lines === []) {
+            $lines[] = '    p.`ID`';
+            $has_id = true;
+        } elseif (!$has_id) {
+            array_unshift($lines, '    p.`ID`');
+        }
+        $pt_sql = str_replace(["\\", "'"], ["\\\\", "\\'"], $post_type);
+
+        return "SELECT\n" . implode(",\n", $lines) . "\nFROM {prefix}posts p\nWHERE p.post_type = '{$pt_sql}'\n  AND p.post_status = 'publish'";
+    }
+
+    /**
+     * Si el mapeo tiene campos y la consulta es un catálogo wp_posts, regenera el SQL.
+     * El mapeo manda qué entra en RAG; el SQL es la proyección de esos csv_col.
+     *
+     * @param array<string, mixed> $config
+     * @return array<string, mixed>
+     */
+    public static function maybe_rebuild_wp_catalog_sql(array $config): array {
+        $preset = function_exists('sanitize_key')
+            ? sanitize_key((string) ($config['sql_preset'] ?? ''))
+            : strtolower((string) ($config['sql_preset'] ?? ''));
+        if ($preset !== '') {
+            return $config;
+        }
+        $source = (string) ($config['source_type'] ?? $config['type'] ?? '');
+        if ($source !== '' && !in_array($source, ['local_sql', 'sql'], true)) {
+            return $config;
+        }
+        $sql_cfg = is_array($config['sql_config'] ?? null) ? $config['sql_config'] : [];
+        $sql = (string) ($sql_cfg['query'] ?? '');
+        if (!self::is_wp_posts_catalog_sql($sql)) {
+            return $config;
+        }
+        $cols = self::mapping_csv_columns(is_array($config['attributes'] ?? null) ? $config['attributes'] : []);
+        if ($cols === []) {
+            return $config;
+        }
+        $pt = self::resolve_catalog_post_type($config);
+        if ($pt === '') {
+            return $config;
+        }
+        $built = self::build_wp_posts_select_sql($pt, $cols);
+        if ($built === '') {
+            return $config;
+        }
+        $sql_cfg['query'] = $built;
+        $config['sql_config'] = $sql_cfg;
+
+        return $config;
+    }
+
+    /**
+     * Completa columnas del mapeo que no vinieron en el SELECT usando postmeta / taxonomías del post local.
+     * Solo para catálogo en este WordPress (no SQL remoto).
+     *
+     * @param array<string, mixed>             $row
+     * @param array<int, array<string, mixed>> $mapping
+     * @return array<string, mixed>
+     */
+    public static function hydrate_mapped_wp_fields(array $row, array $mapping): array {
+        if ($mapping === [] || !function_exists('get_post') || !function_exists('get_post_meta')) {
+            return $row;
+        }
+
+        $post_id = 0;
+        foreach (['ID', 'id', 'post_id'] as $key) {
+            if (!empty($row[$key]) && is_numeric($row[$key])) {
+                $post_id = (int) $row[$key];
+                break;
+            }
+        }
+        if ($post_id < 1 || !(get_post($post_id) instanceof WP_Post)) {
+            return $row;
+        }
+
+        foreach ($mapping as $attr) {
+            if (!is_array($attr)) {
+                continue;
+            }
+            $col = trim((string) ($attr['csv_col'] ?? ''));
+            if ($col === '' || self::catalog_column_is_post_field($col)) {
+                continue;
+            }
+            if (isset($row[$col]) && trim((string) $row[$col]) !== '') {
+                continue;
+            }
+
+            $tax = $col;
+            if (strpos($col, 'tax_') === 0) {
+                $tax = substr($col, 4);
+            }
+
+            $val = '';
+            if ($tax !== '' && function_exists('taxonomy_exists') && taxonomy_exists($tax)) {
+                $terms = wp_get_object_terms($post_id, $tax, ['fields' => 'names']);
+                if (!is_wp_error($terms) && is_array($terms) && $terms !== []) {
+                    $val = implode(', ', array_map('strval', $terms));
+                }
+            }
+            if ($val === '') {
+                $meta = get_post_meta($post_id, $col, true);
+                $val = self::stringify_mapped_meta_value($meta);
+            }
+            if ($val !== '') {
+                $row[$col] = $val;
+            }
+        }
+
+        return $row;
+    }
+
+    /**
+     * @param mixed $meta
+     */
+    private static function stringify_mapped_meta_value($meta): string {
+        if ($meta === '' || $meta === null || $meta === false) {
+            return '';
+        }
+        if (is_array($meta)) {
+            $flat = [];
+            array_walk_recursive($meta, static function ($item) use (&$flat) {
+                if (is_scalar($item) && (string) $item !== '') {
+                    $flat[] = (string) $item;
+                }
+            });
+
+            return implode(', ', array_slice($flat, 0, 24));
+        }
+
+        $text = trim(wp_strip_all_tags((string) $meta));
+
+        return preg_replace('/\s+/u', ' ', $text) ?? $text;
+    }
+
+    /**
      * Empresas publicadas en WP según post_type del proyecto (diagnóstico / sync).
      *
      * @param array<string, mixed>|null $config

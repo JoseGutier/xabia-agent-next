@@ -9,12 +9,13 @@ if (!defined('ABSPATH')) {
 
 class Xabia_Knowledge_Orphans {
 
-    /** @var array{migrated:int,deleted:int,fixed:int,purged_ghosts:int} */
+    /** @var array{migrated:int,deleted:int,fixed:int,purged_ghosts:int,unpublished:int} */
     private static $last_reconcile_stats = [
         'migrated'      => 0,
         'deleted'       => 0,
         'fixed'         => 0,
         'purged_ghosts' => 0,
+        'unpublished'   => 0,
     ];
 
     /**
@@ -63,7 +64,7 @@ class Xabia_Knowledge_Orphans {
     }
 
     /**
-     * @return array{migrated:int,deleted:int,fixed:int,purged_ghosts:int}
+     * @return array{migrated:int,deleted:int,fixed:int,purged_ghosts:int,unpublished:int}
      */
     public static function get_last_reconcile_stats(): array {
         return self::$last_reconcile_stats;
@@ -94,10 +95,10 @@ class Xabia_Knowledge_Orphans {
      * Limpieza post-sync: migra IDs → slug, alinea ente_id y elimina filas duplicadas.
      *
      * @param array<string, mixed> $config
-     * @return array{migrated:int,deleted:int,fixed:int,purged_ghosts:int}
+     * @return array{migrated:int,deleted:int,fixed:int,purged_ghosts:int,unpublished:int}
      */
     public static function reconcile_project_memory(string $project_id, array $config): array {
-        $stats = ['migrated' => 0, 'deleted' => 0, 'fixed' => 0, 'purged_ghosts' => 0];
+        $stats = ['migrated' => 0, 'deleted' => 0, 'fixed' => 0, 'purged_ghosts' => 0, 'unpublished' => 0];
         if (!class_exists('Xabia_DB', false)) {
             return $stats;
         }
@@ -117,6 +118,7 @@ class Xabia_Knowledge_Orphans {
         if ($catalog_slug_set === []) {
             return $stats;
         }
+        $stats['unpublished'] += self::purge_unpublished_local_wp_rows($project_id, $config);
         $stats['fixed'] += self::normalize_project_slug_fields($project_id);
         $stats['deleted'] += self::dedupe_rows_by_slug_alias($project_id);
         $stats['deleted'] += self::dedupe_rows_by_ente_id($project_id);
@@ -194,6 +196,94 @@ class Xabia_Knowledge_Orphans {
         $stats['purged_ghosts'] += self::purge_ghost_rows_not_in_catalog($project_id, $catalog_slug_set, $pairs);
 
         return $stats;
+    }
+
+    /**
+     * Quita de la memoria fichas locales que ya no están publicadas (pending, draft, trash…).
+     *
+     * @param array<string, mixed> $config
+     */
+    private static function purge_unpublished_local_wp_rows(string $project_id, array $config): int {
+        if (!function_exists('get_post') || !function_exists('get_page_by_path')) {
+            return 0;
+        }
+        if (class_exists('Xabia_Knowledge_Sync', false) && Xabia_Knowledge_Sync::is_remote_config($config)) {
+            return 0;
+        }
+        $post_type = class_exists('Xabia_Knowledge_Ingest', false)
+            ? Xabia_Knowledge_Ingest::resolve_catalog_post_type($config)
+            : '';
+        if ($post_type === '' || (function_exists('post_type_exists') && !post_type_exists($post_type))) {
+            return 0;
+        }
+        $live = ['publish'];
+        if (function_exists('apply_filters')) {
+            $filtered = apply_filters('xabia_catalog_live_post_statuses', $live, $config);
+            if (is_array($filtered) && $filtered !== []) {
+                $live = array_values(array_filter(array_map('strval', $filtered)));
+            }
+        }
+        if ($live === []) {
+            $live = ['publish'];
+        }
+
+        global $wpdb;
+        $t = Xabia_DB::table('knowledge_vectors');
+        $rows = $wpdb->get_results($wpdb->prepare(
+            "SELECT id, source_record_id, ente_id FROM {$t} WHERE project_id = %s",
+            $project_id
+        ));
+        if (!is_array($rows) || $rows === []) {
+            return 0;
+        }
+
+        $purged = 0;
+        foreach ($rows as $row) {
+            if (!is_object($row) || !isset($row->id)) {
+                continue;
+            }
+            $post = self::resolve_local_catalog_post($row, $post_type);
+            if (!($post instanceof WP_Post)) {
+                continue;
+            }
+            if (in_array((string) $post->post_status, $live, true)) {
+                continue;
+            }
+            $n = $wpdb->delete($t, ['id' => (int) $row->id, 'project_id' => $project_id], ['%d', '%s']);
+            if ($n !== false && $n > 0) {
+                $purged++;
+            }
+        }
+
+        return $purged;
+    }
+
+    /**
+     * @param object $row
+     */
+    private static function resolve_local_catalog_post($row, string $post_type): ?WP_Post {
+        $sid = trim((string) ($row->source_record_id ?? ''));
+        if (ctype_digit($sid)) {
+            $post = get_post((int) $sid);
+            if ($post instanceof WP_Post && (string) $post->post_type === $post_type) {
+                return $post;
+            }
+        }
+        $ente = self::catalog_slug_norm(trim((string) ($row->ente_id ?? '')));
+        if ($ente !== '' && $ente !== 'global') {
+            $post = get_page_by_path($ente, OBJECT, $post_type);
+            if ($post instanceof WP_Post) {
+                return $post;
+            }
+        }
+        if ($sid !== '' && !ctype_digit($sid)) {
+            $post = get_page_by_path(self::catalog_slug_norm($sid), OBJECT, $post_type);
+            if ($post instanceof WP_Post) {
+                return $post;
+            }
+        }
+
+        return null;
     }
 
     /**

@@ -7,8 +7,21 @@ if (!defined('ABSPATH')) {
     define('ABSPATH', '/tmp/wordpress/');
 }
 if (!function_exists('apply_filters')) {
-    function apply_filters($tag, $value) {
+    function apply_filters($tag, $value, ...$args) {
         return $value;
+    }
+}
+
+if (!class_exists('Xabia_Knowledge_Sync', false)) {
+    class Xabia_Knowledge_Sync {
+        public static function is_mec_catalog_config(array $config): bool {
+            return ($config['sql_preset'] ?? '') === 'mec_remote';
+        }
+
+        public static function is_remote_config(array $config): bool {
+            return ($config['source_type'] ?? '') === 'sql'
+                && trim((string) (($config['sql_config']['host'] ?? ''))) !== '';
+        }
     }
 }
 
@@ -59,5 +72,13 @@ $like_m->setAccessible(true);
 $like_terms = $like_m->invoke(null, 'cuando actúa bebé');
 assert(in_array('bebe', $like_terms, true), 'LIKE terms include unaccented bebe');
 assert(in_array('bebé', $like_terms, true), 'LIKE terms keep accented bebé variant');
+
+$catalog_sql = 'SELECT p.ID FROM wp_posts p WHERE p.post_type = \'catalog_item\'';
+$local_filtered = Xabia_Knowledge_Optimizer::apply_incremental_sql_filter(
+    $catalog_sql,
+    'demo-agent',
+    ['source_type' => 'local_sql']
+);
+assert($local_filtered === $catalog_sql, 'local WP catalog does not filter by post_modified');
 
 echo "OK test-xabia-delta-sync.php\n";

@@ -1,6 +1,6 @@
 # Guía de desarrollo — Xabia Agent Next
 
-**Versión de la guía:** 1.0.208 (alineada con Xabia Agent Core **v1.0.208** — actualizaciones WP, activación PRO retail, Polar checkout; UI chat stream + Markdown, avatar parlante / launcher; latencia, embeddings, Document-to-RAG)
+**Versión de la guía:** 1.0.318 (alineada con Xabia Agent Core **v1.0.318** — fichas CARD, Woo cart/cards, catálogo nativo, actualizaciones WP, Polar; UI chat; RAG Hub)
 
 **Manual de usuario canónico:** [manual-usuario-xabia-core.md](./manual-usuario-xabia-core.md)  
 **Despliegue:** [DESPLIEGUE_PRODUCCION_CORE.md](./DESPLIEGUE_PRODUCCION_CORE.md)  

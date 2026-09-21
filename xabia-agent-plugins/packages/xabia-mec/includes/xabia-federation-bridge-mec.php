@@ -63,7 +63,27 @@ function xabia_federation_mec_mapping_hint() {
         ],
         [
             'source_key' => 'mec_location',
-            'label'      => __('Lugar', 'xabia-intelligence'),
+            'label'      => __('Lugar / recinto (mapeado)', 'xabia-intelligence'),
+            'is_ente'    => false,
+        ],
+        [
+            'source_key' => 'municipality',
+            'label'      => __('Municipio (mapeado)', 'xabia-intelligence'),
+            'is_ente'    => false,
+        ],
+        [
+            'source_key' => 'municipality_variants',
+            'label'      => __('Variantes locativas municipio', 'xabia-intelligence'),
+            'is_ente'    => false,
+        ],
+        [
+            'source_key' => 'semantic_header',
+            'label'      => __('Cabecera semántica RAG', 'xabia-intelligence'),
+            'is_ente'    => false,
+        ],
+        [
+            'source_key' => 'rag_chunk',
+            'label'      => __('Chunk RAG completo', 'xabia-intelligence'),
             'is_ente'    => false,
         ],
         [
@@ -203,6 +223,10 @@ function xabia_federation_mec_rest_callback($request) {
                 continue;
             }
             $id = (int) $post->ID;
+            if (function_exists('xabia_mec_get_event_payload')) {
+                $records[] = xabia_mec_get_event_payload($id);
+                continue;
+            }
             $slots = function_exists('xabia_mec_compute_available_slots') ? xabia_mec_compute_available_slots($id) : '';
             $records[] = [
                 'ID'                  => $id,

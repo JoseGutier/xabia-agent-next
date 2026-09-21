@@ -10,6 +10,7 @@ if (!defined('ABSPATH')) {
 class Xabia_Web_Pages_Source {
 
     public const SOURCE_TYPE = 'web_pages';
+    public const SOURCE_TYPE_REMOTE = 'web_remote';
 
     /**
      * @param mixed $raw
@@ -204,7 +205,7 @@ class Xabia_Web_Pages_Source {
      */
     public static function sync_supplemental(string $project_id, array $config, array $opts = []): int {
         $source_type = sanitize_key((string) ($config['source_type'] ?? ''));
-        if ($source_type === self::SOURCE_TYPE || $source_type === 'multi') {
+        if ($source_type === self::SOURCE_TYPE || $source_type === self::SOURCE_TYPE_REMOTE || $source_type === 'multi') {
             return 0;
         }
         $ids = self::parse_page_ids($config['web_page_ids'] ?? []);
@@ -213,6 +214,89 @@ class Xabia_Web_Pages_Source {
         }
 
         return self::sync($project_id, $ids, $config['web_pages_attributes'] ?? null, $opts, $config);
+    }
+
+    /**
+     * @param mixed $raw
+     * @return list<string>
+     */
+    public static function parse_remote_urls($raw): array {
+        if (is_string($raw)) {
+            $raw = preg_split('/[\r\n,;]+/', $raw) ?: [];
+        }
+        if (!is_array($raw)) {
+            return [];
+        }
+        $urls = [];
+        foreach ($raw as $item) {
+            $url = esc_url_raw(trim((string) $item));
+            if ($url === '' || !class_exists('Xabia_Web_Scraper', false) || !Xabia_Web_Scraper::is_public_http_url($url)) {
+                continue;
+            }
+            $urls[] = $url;
+        }
+
+        return array_values(array_unique($urls));
+    }
+
+    /**
+     * @param list<string> $urls
+     * @return list<array<string, mixed>>
+     */
+    public static function fetch_remote_url_rows(array $urls): array {
+        $urls = self::parse_remote_urls($urls);
+        $rows = [];
+        $n = 0;
+        foreach ($urls as $url) {
+            if ($n >= 40) {
+                break;
+            }
+            if (!class_exists('Xabia_Web_Scraper', false)) {
+                break;
+            }
+            $scraped = Xabia_Web_Scraper::scrape_url($url);
+            if (is_wp_error($scraped)) {
+                continue;
+            }
+            $title = trim((string) ($scraped['title'] ?? ''));
+            $excerpt = trim((string) ($scraped['description'] ?? ''));
+            $content = Xabia_Web_Scraper::paragraphs_to_body((array) ($scraped['paragraphs'] ?? []));
+            if ($content === '' && $excerpt !== '') {
+                $content = $excerpt;
+            }
+            if ($title === '' && $content === '') {
+                continue;
+            }
+            $n++;
+            $rows[] = [
+                'ID'        => 'url-' . md5($url),
+                'Titulo'    => $title !== '' ? $title : $url,
+                'Contenido' => $content,
+                'URL'       => $url,
+                'Extracto'  => $excerpt,
+            ];
+        }
+
+        return $rows;
+    }
+
+    /**
+     * @param list<string>                $urls
+     * @param array<int,array<string,mixed>>|null $mapping
+     */
+    public static function sync_remote_urls(string $project_id, array $urls, ?array $mapping = null, array $opts = []): int {
+        unset($opts);
+        $project_id = sanitize_key($project_id);
+        if ($project_id === '') {
+            return 0;
+        }
+        $rows = self::fetch_remote_url_rows($urls);
+        if ($rows === []) {
+            return 0;
+        }
+        $map = ($mapping !== null && $mapping !== []) ? $mapping : self::default_mapping_fields();
+
+        return (int) Xabia_DB_Bridge::process_prefetched_rows($project_id, $rows, $map);
     }
 
     /**

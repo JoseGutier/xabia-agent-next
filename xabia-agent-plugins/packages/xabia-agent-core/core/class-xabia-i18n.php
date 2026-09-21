@@ -69,6 +69,41 @@ final class Xabia_I18n {
             return $translated;
         }
 
+        $matrix = self::matrix_translate($text);
+        if ($matrix !== $text) {
+            return $matrix;
+        }
+
+        return $text;
+    }
+
+    /**
+     * Traducción de respaldo (EU/EN/FR…) según idioma activo del sitio (Polylang/WPML/locale).
+     */
+    public static function matrix_translate(string $text): string {
+        $text = trim($text);
+        if ($text === '') {
+            return '';
+        }
+        $matrix = self::ui_translation_matrix();
+        if (!isset($matrix[$text]) || !is_array($matrix[$text])) {
+            return $text;
+        }
+        $lang = class_exists('Xabia_I18n_Bridge', false)
+            ? Xabia_I18n_Bridge::get_current_language()
+            : '';
+        if ($lang === '' && function_exists('determine_locale')) {
+            $lang = substr((string) determine_locale(), 0, 2);
+        }
+        $lang = substr(sanitize_key($lang), 0, 10);
+        if ($lang === '' || $lang === 'es') {
+            return $text;
+        }
+        $candidate = trim((string) ($matrix[$text][$lang] ?? ''));
+        if ($candidate !== '') {
+            return $candidate;
+        }
+
         return $text;
     }
 
@@ -157,6 +192,48 @@ final class Xabia_I18n {
                 'eu' => 'Gehienez 8 lerro mezu bakoitzeko.',
                 'en' => 'Maximum 8 lines per message.',
             ],
+
+            // — Estados de espera / voz (chatbox.js)
+            'Entendido, buscando la mejor solución...' => [
+                'eu' => 'Ulertuta, irtenbide onena bilatzen...',
+                'en' => 'Got it, searching for the best answer...',
+            ],
+            'Un momento... buscando la mejor opción de reserva' => [
+                'eu' => 'Une bat... erreserba onena bilatzen',
+                'en' => 'One moment... finding the best booking option',
+            ],
+            'Buscando el producto más adecuado...' => [
+                'eu' => 'Produktu egokiena bilatzen...',
+                'en' => 'Looking for the most suitable product...',
+            ],
+            'Localizando la información de ubicación...' => [
+                'eu' => 'Kokapen-informazioa lokalizatzen...',
+                'en' => 'Locating address information...',
+            ],
+            'Sigo analizando la información...' => [
+                'eu' => 'Informazioa aztertzen jarraitzen dut...',
+                'en' => 'Still analyzing the information...',
+            ],
+            'Un segundo más, preparando la respuesta...' => [
+                'eu' => 'Segundo bat gehiago, erantzuna prestatzen...',
+                'en' => 'One more second, preparing the answer...',
+            ],
+            'Escuchando… Habla ahora' => [
+                'eu' => 'Entzuten… Hitz egin orain',
+                'en' => 'Listening… Speak now',
+            ],
+            'Escuchar' => [
+                'eu' => 'Entzun',
+                'en' => 'Listen',
+            ],
+            'Espera a que termine de hablar y vuelve a pulsar el micrófono.' => [
+                'eu' => 'Itxaron hitz egiten amaitu artean eta sakatu berriro mikrofonoa.',
+                'en' => 'Wait until it finishes speaking and press the mic again.',
+            ],
+            'Ampliar imagen' => [
+                'eu' => 'Irudia handitu',
+                'en' => 'Enlarge image',
+            ],
         ];
     }
 
@@ -194,6 +271,18 @@ final class Xabia_I18n {
             'sessionCartClicks'    => 'Clics de compra en esta sesión:',
             'poweredBy'            => 'Powered by Xabia AI',
             'inputTooLong'         => 'Máximo 8 líneas por mensaje.',
+            'inputPlaceholder'     => 'Escribe aquí o pulsa el micro para hablar...',
+            'waitingGeneric'       => 'Entendido, buscando la mejor solución...',
+            'waitingBooking'       => 'Un momento... buscando la mejor opción de reserva',
+            'waitingShop'          => 'Buscando el producto más adecuado...',
+            'waitingLocation'      => 'Localizando la información de ubicación...',
+            'waitingAnalyzing'     => 'Sigo analizando la información...',
+            'waitingAlmost'        => 'Un segundo más, preparando la respuesta...',
+            'micListening'         => 'Escuchando… Habla ahora',
+            'voiceListen'          => 'Escuchar',
+            'micBlockedWhileBotSpeaks' => 'Espera a que termine de hablar y vuelve a pulsar el micrófono.',
+            'micLabelOff'          => 'Toca para hablar o mantén pulsado',
+            'imageEnlarge'         => 'Ampliar imagen',
         ];
     }
 

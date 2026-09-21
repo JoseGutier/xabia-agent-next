@@ -108,17 +108,22 @@ class Xabia_Knowledge_Optimizer {
     }
 
     /**
-     * Añade filtro temporal a consultas basadas en wp_posts (Woo, SQL local…).
+     * Filtro temporal opcional para SQL remoto basado en wp_posts.
      *
-     * MEC no usa este filtro: el calendario cambia por meta (próxima fecha) o publica
-     * eventos ya «antiguos» en post_modified; el ahorro de tokens va por content_hash
-     * en el upsert (solo insert/update marcan embedding pendiente).
+     * En catálogos de este WordPress (empresas, Woo/MEC local) no se recorta por
+     * post_modified: una ficha puede ser «antigua» y aun así faltar en memoria, o
+     * tener ACF/tax que el SQL no trae. Se releen todas las filas; el ahorro de tokens
+     * va por content_hash en el upsert (solo insert/update marcan embedding pendiente).
      *
      * @param array<string, mixed> $config
      */
     public static function apply_incremental_sql_filter(string $sql, string $project_id, array $config): string {
-        $skip = (class_exists('Xabia_Knowledge_Sync', false) && Xabia_Knowledge_Sync::is_mec_catalog_config($config))
-            || (bool) apply_filters('xabia_knowledge_skip_incremental_sql_filter', false, $project_id, $config);
+        $skip = false;
+        if (class_exists('Xabia_Knowledge_Sync', false)) {
+            $skip = Xabia_Knowledge_Sync::is_mec_catalog_config($config)
+                || !Xabia_Knowledge_Sync::is_remote_config($config);
+        }
+        $skip = (bool) apply_filters('xabia_knowledge_skip_incremental_sql_filter', $skip, $project_id, $config);
         if ($skip) {
             return $sql;
         }

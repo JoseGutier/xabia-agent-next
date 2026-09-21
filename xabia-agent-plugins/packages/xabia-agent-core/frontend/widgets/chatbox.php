@@ -119,10 +119,31 @@ function xabia_enqueue_chatbox_assets_for_project(string $project_id, array $pro
     if (is_readable($styles_path)) {
         $styles_ver .= '.' . (string) filemtime($styles_path);
     }
-    $js_path = __DIR__ . '/chatbox.js';
+
+    /*
+     * Hostinger CDN cachea por path e ignora ?ver=. Hay que cambiar el nombre del fichero.
+     * chatbox.js sigue siendo la fuente; se publica una copia versionada.
+     */
+    $js_source = __DIR__ . '/chatbox.js';
+    $js_basename = 'chatbox-v' . preg_replace('/[^0-9A-Za-z._-]/', '', $ver) . '.js';
+    $js_public = __DIR__ . '/' . $js_basename;
+    if (is_readable($js_source)) {
+        $need_copy = !is_readable($js_public);
+        if (!$need_copy) {
+            $need_copy = (int) filemtime($js_public) < (int) filemtime($js_source);
+        }
+        if ($need_copy) {
+            // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_copy
+            @copy($js_source, $js_public);
+        }
+    }
+    if (!is_readable($js_public)) {
+        $js_basename = 'chatbox.js';
+        $js_public = $js_source;
+    }
     $js_ver = $ver;
-    if (is_readable($js_path)) {
-        $js_ver .= '.' . (string) filemtime($js_path);
+    if (is_readable($js_public)) {
+        $js_ver .= '.' . (string) filemtime($js_public);
     }
 
     wp_enqueue_script('jquery');
@@ -130,7 +151,7 @@ function xabia_enqueue_chatbox_assets_for_project(string $project_id, array $pro
         ? ['xabia-interface']
         : [];
     wp_enqueue_style('xabia-frontend-styles', plugins_url('styles.css', __FILE__), $style_deps, $styles_ver);
-    wp_enqueue_script('xabia-chatbox', plugins_url('chatbox.js', __FILE__), ['jquery'], $js_ver, true);
+    wp_enqueue_script('xabia-chatbox', plugins_url($js_basename, __FILE__), ['jquery'], $js_ver, true);
 
     wp_localize_script(
         'xabia-chatbox',
@@ -197,12 +218,15 @@ function shortcode_xabia_agent_renderer($atts) {
     $xabia_front_injected_ente = is_string($xabia_front_injected_ente) ? trim($xabia_front_injected_ente) : '';
 
     $lang_attr = isset($atts['lang']) ? trim((string) $atts['lang']) : '';
-    $current_lang = $lang_attr !== ''
-        ? strtolower(substr(sanitize_key($lang_attr), 0, 2))
-        : strtolower(substr(get_locale(), 0, 2));
-    if ($current_lang === '') {
-        $current_lang = 'es';
+    $current_lang_code = class_exists('Xabia_Voice', false)
+        ? Xabia_Voice::resolve_page_lang_code($lang_attr)
+        : ($lang_attr !== '' ? strtolower(substr(sanitize_key($lang_attr), 0, 2)) : strtolower(substr(get_locale(), 0, 2)));
+    if ($current_lang_code === '') {
+        $current_lang_code = 'es';
     }
+    $current_lang = class_exists('Xabia_Voice', false)
+        ? Xabia_Voice::lang_code_to_locale($current_lang_code)
+        : $current_lang_code;
 
     if (session_status() === PHP_SESSION_NONE && !headers_sent()) { session_start(); }
 
@@ -297,8 +321,7 @@ function shortcode_xabia_agent_renderer($atts) {
         $greeting = str_replace('Xabia', "Xabia ($clean_name)", $greeting);
     }
 
-    $iso_map = ['es' => 'es-ES', 'eu' => 'eu-ES', 'en' => 'en-US', 'fr' => 'fr-FR', 'ca' => 'ca-ES', 'gl' => 'gl-ES', 'pt' => 'pt-PT', 'de' => 'de-DE', 'it' => 'it-IT'];
-    $current_stt = $iso_map[$current_lang] ?? ($current_lang . '-' . strtoupper($current_lang));
+    $current_stt = $current_lang;
 
     $totem_shortcode = isset($atts['totem']) ? absint($atts['totem']) : 0;
     $totem_project  = isset($project_data['totem']['enabled']) && !empty($project_data['totem']['enabled'])

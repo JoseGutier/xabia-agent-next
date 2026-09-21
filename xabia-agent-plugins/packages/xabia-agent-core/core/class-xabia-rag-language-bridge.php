@@ -14,7 +14,7 @@ class Xabia_Rag_Language_Bridge {
      * @return list<string>
      */
     public static function agglutinative_suffixes(): array {
-        $suffixes = ['ak', 'ek', 'ik', 'ok', 'rk', 'tik', 'raino', 'ko', 'ren'];
+        $suffixes = ['ak', 'ek', 'ik', 'ok', 'rk', 'tik', 'raino', 'ko', 'ren', 'dan', 'tan'];
 
         return array_values(array_filter(array_map(
             static function ($s) {
@@ -331,6 +331,59 @@ class Xabia_Rag_Language_Bridge {
         }
 
         return false;
+    }
+
+    /**
+     * True si el token es un typo cercano de una stop-word (p. ej. «emprea» ≈ «empresa»).
+     * Distancia 1 y longitud parecida: no tumba topónimos tipo «orio»/«otro».
+     *
+     * @param list<string> $stop_words
+     */
+    public static function is_near_stopword(string $needle, array $stop_words, int $max_distance = 1): bool {
+        $needle = mb_strtolower(trim($needle), 'UTF-8');
+        $nlen = mb_strlen($needle, 'UTF-8');
+        if ($nlen < 4 || $needle === '') {
+            return false;
+        }
+        foreach ($stop_words as $stop) {
+            $stop = mb_strtolower(trim((string) $stop), 'UTF-8');
+            $slen = mb_strlen($stop, 'UTF-8');
+            if ($slen < 4) {
+                continue;
+            }
+            if (abs($nlen - $slen) > 2) {
+                continue;
+            }
+            if ($needle === $stop) {
+                return true;
+            }
+            if (function_exists('levenshtein') && levenshtein($needle, $stop) <= $max_distance) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * @param list<string> $needles
+     * @param list<string> $stop_words
+     * @return list<string>
+     */
+    public static function drop_near_stopword_needles(array $needles, array $stop_words): array {
+        $out = [];
+        foreach ($needles as $needle) {
+            $needle = mb_strtolower(trim((string) $needle), 'UTF-8');
+            if ($needle === '' || mb_strlen($needle, 'UTF-8') < 4) {
+                continue;
+            }
+            if (self::is_near_stopword($needle, $stop_words)) {
+                continue;
+            }
+            $out[] = $needle;
+        }
+
+        return array_values(array_unique($out));
     }
 
     /**

@@ -74,7 +74,19 @@ class Xabia_DB_Bridge {
         $projects = get_option('xabia_projects_config', []);
         $config = $projects[$project_id] ?? [];
         $opts = is_array($opts) ? $opts : [];
-        
+        $mapping_for_sql = $attributes_override !== null ? $attributes_override : ($config['attributes'] ?? []);
+        if (class_exists('Xabia_Knowledge_Ingest', false) && is_array($sql_config)) {
+            $probe = is_array($config) ? $config : [];
+            $probe['sql_config'] = $sql_config;
+            if (is_array($mapping_for_sql)) {
+                $probe['attributes'] = $mapping_for_sql;
+            }
+            $probe = Xabia_Knowledge_Ingest::maybe_rebuild_wp_catalog_sql($probe);
+            if (is_array($probe['sql_config'] ?? null) && trim((string) ($probe['sql_config']['query'] ?? '')) !== '') {
+                $sql_config = array_merge($sql_config, $probe['sql_config']);
+            }
+        }
+
         $sql = $sql_config['query'] ?? '';
         if (empty($sql)) return 0;
 
@@ -302,6 +314,24 @@ class Xabia_DB_Bridge {
     }
 
     /**
+     * Hidratar ACF/tax del WP local solo si el catálogo vive en este sitio.
+     */
+    private static function should_hydrate_mapped_wp_fields($project_id): bool {
+        $projects = get_option('xabia_projects_config', []);
+        $config = is_array($projects[$project_id] ?? null) ? $projects[$project_id] : [];
+        $type = sanitize_key((string) ($config['source_type'] ?? ''));
+        if (in_array($type, ['csv', 'web_pages', 'web_remote'], true)) {
+            return false;
+        }
+        $host = trim((string) ($config['sql_config']['host'] ?? ''));
+        if (($type === 'sql' || $type === 'addon') && $host !== '') {
+            return false;
+        }
+
+        return true;
+    }
+
+    /**
      * Upsert con content_hash: evita re-embedding si el texto RAG no cambió.
      *
      * @return false|'insert'|'content_update'|'unchanged'
@@ -312,6 +342,13 @@ class Xabia_DB_Bridge {
         $row = apply_filters('xabia_knowledge_sync_enrich_row', $row, $project_id, $mapping);
         if (!is_array($row)) {
             $row = [];
+        }
+
+        if (
+            class_exists('Xabia_Knowledge_Ingest', false)
+            && self::should_hydrate_mapped_wp_fields($project_id)
+        ) {
+            $row = Xabia_Knowledge_Ingest::hydrate_mapped_wp_fields($row, is_array($mapping) ? $mapping : []);
         }
 
         if (class_exists('Xabia_Knowledge_Ingest', false) && Xabia_Knowledge_Ingest::should_skip_translated_row($row, (string) $project_id)) {

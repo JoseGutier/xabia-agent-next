@@ -1330,26 +1330,72 @@ class Xabia_Brain {
     }
 
     /**
-     * Trunca el chunk pero conserva líneas [Imagen disponible: …] al final.
+     * Trunca el chunk pero conserva líneas [Imagen disponible: …] y URLs http(s) completas.
+     * Evita cortar a mitad de un enlace largo (p. ej. fichas con web de reserva muy larga).
      */
     public static function truncate_chunk_preserving_imagen(string $chunk, int $max_chars = 900): string {
         $chunk = self::ensure_valid_utf8(trim($chunk));
         if ($max_chars < 1 || mb_strlen($chunk, 'UTF-8') <= $max_chars) {
             return $chunk;
         }
-        $imagen_tail = '';
+
+        $preserved = [];
         if (preg_match_all('/\[Imagen disponible:\s*https?:\/\/[^\s\]]+\s*\]/iu', $chunk, $m)) {
-            $imagen_tail = "\n" . implode("\n", array_unique($m[0]));
+            foreach (array_unique($m[0]) as $tag) {
+                $preserved[] = $tag;
+            }
             $stripped = preg_replace('/\[Imagen disponible:\s*https?:\/\/[^\s\]]+\s*\]/iu', '', $chunk);
             $chunk = trim(is_string($stripped) ? $stripped : $chunk);
         }
-        $tail_len = mb_strlen($imagen_tail, 'UTF-8');
-        $budget = max(80, $max_chars - $tail_len);
+
+        $url_placeholders = [];
+        $chunk = preg_replace_callback(
+            '#https?://[^\s<>\[\]"\']+#u',
+            static function ($m) use (&$url_placeholders) {
+                $url = rtrim((string) ($m[0] ?? ''), '.,;)…');
+                if ($url === '' || !preg_match('#^https?://#i', $url)) {
+                    return $m[0];
+                }
+                $key = '[[XABIA_URL_' . count($url_placeholders) . ']]';
+                $url_placeholders[$key] = $url;
+
+                return $key;
+            },
+            $chunk
+        );
+        if (!is_string($chunk)) {
+            $chunk = '';
+        }
+
+        $tail = $preserved !== [] ? ("\n" . implode("\n", $preserved)) : '';
+        foreach ($url_placeholders as $full_url) {
+            // Las URLs van al final enteras; el cuerpo truncado solo deja el marcador corto.
+            $tail .= "\n" . $full_url;
+        }
+        $tail_len = mb_strlen($tail, 'UTF-8');
+        $budget = max(80, $max_chars - min($tail_len, (int) ($max_chars * 0.55)));
         if (mb_strlen($chunk, 'UTF-8') > $budget) {
             $chunk = mb_substr($chunk, 0, $budget, 'UTF-8') . '…';
         }
+        if ($url_placeholders !== []) {
+            $chunk = str_replace(array_keys($url_placeholders), array_values($url_placeholders), $chunk);
+        }
 
-        return rtrim($chunk) . $imagen_tail;
+        // Si al restaurar marcadores el cuerpo ya trae la URL completa, no duplicar en cola.
+        $tail_lines = [];
+        foreach (preg_split('/\n+/u', trim($tail)) ?: [] as $line) {
+            $line = trim((string) $line);
+            if ($line === '') {
+                continue;
+            }
+            if (preg_match('#^https?://#i', $line) && mb_stripos($chunk, $line, 0, 'UTF-8') !== false) {
+                continue;
+            }
+            $tail_lines[$line] = $line;
+        }
+        $tail_out = $tail_lines !== [] ? ("\n" . implode("\n", array_values($tail_lines))) : '';
+
+        return rtrim($chunk) . $tail_out;
     }
 
     /**

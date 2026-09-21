@@ -19,26 +19,22 @@ final class SignedHubPostAuth
         $licenseKey = trim((string) ($_SERVER['HTTP_X_XABIA_LICENSE'] ?? ''));
         $sourceUrl = trim((string) ($_SERVER['HTTP_X_XABIA_SOURCE'] ?? ''));
         if ($licenseKey === '') {
-            Json::respond(401, [
+            return self::reject(401, [
                 'error' => [
                     'message' => 'Cabecera X-Xabia-License obligatoria',
                     'type'    => 'invalid_request',
                     'code'    => 'missing_license_header',
                 ],
-            ]);
-
-            return null;
+            ], 'missing_license_header');
         }
         if ($sourceUrl === '') {
-            Json::respond(401, [
+            return self::reject(401, [
                 'error' => [
                     'message' => 'Cabecera X-Xabia-Source obligatoria',
                     'type'    => 'invalid_request',
                     'code'    => 'missing_source_header',
                 ],
-            ]);
-
-            return null;
+            ], 'missing_source_header');
         }
 
         $recon = LicenseDomainEnforcer::reconcileClaimedWithHeaders($sourceUrl);
@@ -51,15 +47,13 @@ final class SignedHubPostAuth
 
         $all = LicenseRepository::findAllByLicenseKey($licenseKey);
         if ($all === []) {
-            Json::respond(403, [
+            return self::reject(403, [
                 'error' => [
                     'message' => 'Licencia inválida o inactiva',
                     'type'    => 'forbidden',
                     'code'    => 'invalid_license',
                 ],
-            ]);
-
-            return null;
+            ], 'invalid_license');
         }
 
         $domainRow = null;
@@ -95,80 +89,69 @@ final class SignedHubPostAuth
                     'registered_domains'  => $regs,
                 ],
             ]);
+            error_log('[xabia-hub-auth] unauthorized_domain source=' . $sourceUrl . ' registered=' . json_encode($regs));
 
             return null;
         }
 
         if (LicenseRepository::isSuspended($domainRow)) {
-            Json::respond(403, [
+            return self::reject(403, [
                 'error' => [
                     'message' => 'La licencia está suspendida.',
                     'type'    => 'forbidden',
                     'code'    => 'license_suspended',
                 ],
-            ]);
-
-            return null;
+            ], 'license_suspended_domain_row');
         }
 
         $row = LicenseRepository::findActiveWithWalletByKey($licenseKey, $sourceUrl);
         if ($row !== null && LicenseRepository::isSuspended($row)) {
-            Json::respond(403, [
+            return self::reject(403, [
                 'error' => [
                     'message' => 'La licencia está suspendida.',
                     'type'    => 'forbidden',
                     'code'    => 'license_suspended',
                 ],
-            ]);
-
-            return null;
+            ], 'license_suspended_wallet_row');
         }
 
         if (!LicenseRepository::allowsHubTokenConsumption($domainRow, $row)) {
-            Json::respond(403, [
+            return self::reject(403, [
                 'error' => [
                     'message' => 'Licencia inválida o inactiva',
                     'type'    => 'forbidden',
                     'code'    => 'invalid_license',
                 ],
-            ]);
-
-            return null;
+            ], 'token_consumption_not_allowed');
         }
 
         if ($row === null) {
             if (!LicenseRepository::hasWalletForLicenseKey($licenseKey)) {
-                Json::respond(403, [
+                return self::reject(403, [
                     'error' => [
                         'message' => 'Falta cartera de tokens para esta licencia',
                         'type'    => 'forbidden',
                         'code'    => 'wallet_missing',
                     ],
-                ]);
-
-                return null;
+                ], 'wallet_missing');
             }
-            Json::respond(403, [
+            return self::reject(403, [
                 'error' => [
                     'message' => 'Licencia inválida o inactiva',
                     'type'    => 'forbidden',
                     'code'    => 'invalid_license',
                 ],
-            ]);
-
-            return null;
+            ], 'wallet_row_missing');
         }
 
         if (!HubClientSignature::verify($rawBody, $licenseKey, $sourceUrl, $licenseKey)) {
-            Json::respond(403, [
+            return self::reject(403, [
                 'error' => [
                     'message' => 'Firma del cliente inválida o ausente',
                     'type'    => 'forbidden',
                     'code'    => 'invalid_proxy_signature',
                 ],
-            ]);
-
-            return null;
+            ], 'invalid_proxy_signature');
         }
 
         $billingLicenseId = (int) ($row['wallet_license_id'] ?? $row['id'] ?? 0);
@@ -216,5 +199,17 @@ final class SignedHubPostAuth
                 'registered_domains' => $regs,
             ],
         ]);
+    }
+
+    /**
+     * @param array<string, mixed> $payload
+     */
+    private static function reject(int $httpCode, array $payload, string $logCode): null
+    {
+        $error = $payload['error'] ?? $payload;
+        error_log('[xabia-hub-auth] ' . $logCode . ' ' . json_encode($error, JSON_UNESCAPED_UNICODE));
+        Json::respond($httpCode, $payload);
+
+        return null;
     }
 }

@@ -12,7 +12,7 @@ class Xabia_Rag_Query_Rewriter {
     /**
      * @param array<string, mixed> $config
      * @param callable|null        $llm_expand fn(string $user_msg, string $last_search): string
-     * @return array{embed_text: string, lexical_text: string, needles: list<string>, rewritten: bool}
+     * @return array{embed_text: string, lexical_text: string, needles: list<string>, rewritten: bool, canonical_entities: list<string>}
      */
     public static function prepare(
         string $user_msg,
@@ -25,10 +25,11 @@ class Xabia_Rag_Query_Rewriter {
         $base = $user_msg !== '' ? $user_msg : $last_search;
 
         $out = [
-            'embed_text'    => $base,
-            'lexical_text'  => $base,
-            'needles'       => [],
-            'rewritten'     => false,
+            'embed_text'         => $base,
+            'lexical_text'       => $base,
+            'needles'            => [],
+            'rewritten'          => false,
+            'canonical_entities' => [],
         ];
 
         if ($base === '') {
@@ -37,34 +38,60 @@ class Xabia_Rag_Query_Rewriter {
 
         $parts = [$base];
         $rewritten = false;
+        $canonical_entities = [];
 
         if (self::is_enabled($config) && is_callable($llm_expand)) {
             $cache_key = 'xabia_rag_qr_' . md5($base . '|' . $last_search);
             $cached = function_exists('get_transient') ? get_transient($cache_key) : false;
-            if (is_string($cached) && trim($cached) !== '' && !self::looks_like_bad_expansion(trim($cached))) {
-                $expanded = trim($cached);
+            if (is_string($cached) && trim($cached) !== '' && !self::looks_like_bad_expansion(trim($cached), $base)) {
+                $expanded_raw = trim($cached);
             } else {
                 if (is_string($cached) && trim($cached) !== '' && function_exists('delete_transient')) {
                     delete_transient($cache_key);
                 }
                 try {
-                    $expanded = trim((string) call_user_func($llm_expand, $user_msg !== '' ? $user_msg : $base, $last_search));
+                    $expanded_raw = trim((string) call_user_func($llm_expand, $user_msg !== '' ? $user_msg : $base, $last_search));
                 } catch (Throwable $e) {
-                    $expanded = '';
+                    $expanded_raw = '';
                 }
-                if ($expanded !== '' && self::looks_like_bad_expansion($expanded)) {
-                    $expanded = '';
+                if ($expanded_raw !== '' && self::looks_like_bad_expansion($expanded_raw, $base)) {
+                    $expanded_raw = '';
                 }
-                if ($expanded !== '' && function_exists('set_transient')) {
-                    set_transient($cache_key, $expanded, 10 * MINUTE_IN_SECONDS);
+                if ($expanded_raw !== '' && function_exists('set_transient')) {
+                    set_transient($cache_key, $expanded_raw, 10 * MINUTE_IN_SECONDS);
                 }
             }
-            if ($expanded !== '' && self::looks_like_bad_expansion($expanded)) {
-                $expanded = '';
+            if ($expanded_raw !== '' && self::looks_like_bad_expansion($expanded_raw, $base)) {
+                $expanded_raw = '';
             }
-            if ($expanded !== '' && mb_strtolower($expanded, 'UTF-8') !== mb_strtolower($base, 'UTF-8')) {
-                $parts[] = $expanded;
-                $rewritten = true;
+            if ($expanded_raw !== '') {
+                $parsed = self::parse_interpreter_output($expanded_raw);
+                $expanded = trim((string) ($parsed['keywords'] ?? ''));
+                $canonical_entities = isset($parsed['canonical_entities']) && is_array($parsed['canonical_entities'])
+                    ? array_values(array_filter(array_map('strval', $parsed['canonical_entities'])))
+                    : [];
+                if ($canonical_entities !== [] && function_exists('apply_filters')) {
+                    $canonical_entities = apply_filters(
+                        'xabia_rag_canonical_toponyms',
+                        $canonical_entities,
+                        $base,
+                        $user_msg,
+                        $config
+                    );
+                    if (!is_array($canonical_entities)) {
+                        $canonical_entities = [];
+                    }
+                    $canonical_entities = array_values(array_unique(array_filter(array_map(
+                        static function ($entity) {
+                            return trim((string) $entity);
+                        },
+                        $canonical_entities
+                    ))));
+                }
+                if ($expanded !== '' && mb_strtolower($expanded, 'UTF-8') !== mb_strtolower($base, 'UTF-8')) {
+                    $parts[] = $expanded;
+                    $rewritten = true;
+                }
             }
         }
 
@@ -82,30 +109,67 @@ class Xabia_Rag_Query_Rewriter {
         ))));
 
         // Si hay un criterio específico en la query, no diluir el embed con hiperónimos genéricos sueltos.
+        if ($canonical_entities !== []) {
+            foreach ($canonical_entities as $entity) {
+                $parts[] = $entity;
+            }
+        }
+
         $embed_parts = self::focus_embed_parts($parts, $base);
         $combined = trim(implode(' ', $embed_parts));
         $embed = self::sanitize_retrieval_text($combined !== '' ? $combined : $base, 2000);
-        $lexical = self::sanitize_retrieval_text(
-            $rewritten && isset($parts[1]) ? ($base . ' ' . $parts[1]) : $base,
-            2000
-        );
+        $lexical_seed = $rewritten && isset($parts[1]) ? ($base . ' ' . $parts[1]) : $base;
+        if ($canonical_entities !== []) {
+            $lexical_seed = trim($lexical_seed . ' ' . implode(' ', $canonical_entities));
+        }
+        $lexical = self::sanitize_retrieval_text($lexical_seed, 2000);
 
+        $needle_seed = self::extract_tokens($lexical !== '' ? $lexical : $base);
+        if ($canonical_entities !== []) {
+            foreach ($canonical_entities as $entity) {
+                $needle_seed[] = mb_strtolower(trim((string) $entity), 'UTF-8');
+            }
+        }
         $needles = [];
         if (class_exists('Xabia_Rag_Language_Bridge', false)) {
-            $needles = Xabia_Rag_Language_Bridge::expand_keyword_needles(
-                self::extract_tokens($lexical !== '' ? $lexical : $base),
-                $base
-            );
+            $needles = Xabia_Rag_Language_Bridge::expand_keyword_needles($needle_seed, $base);
             $needles = self::focus_lexical_needles($needles, $base);
         } else {
-            $needles = self::extract_tokens($lexical !== '' ? $lexical : $base);
+            $needles = array_values(array_unique($needle_seed));
         }
 
         return [
-            'embed_text'   => $embed,
-            'lexical_text' => $lexical !== '' ? $lexical : $embed,
-            'needles'      => array_values(array_slice($needles, 0, 40)),
-            'rewritten'    => $rewritten,
+            'embed_text'         => $embed,
+            'lexical_text'       => $lexical !== '' ? $lexical : $embed,
+            'needles'            => array_values(array_slice($needles, 0, 40)),
+            'rewritten'          => $rewritten || $canonical_entities !== [],
+            'canonical_entities' => $canonical_entities,
+        ];
+    }
+
+    /**
+     * Parsea la salida del Intérprete: palabras clave + entidad_normalizada opcional.
+     *
+     * @return array{keywords: string, canonical_entities: list<string>}
+     */
+    public static function parse_interpreter_output(string $raw): array {
+        $raw = trim(wp_strip_all_tags($raw));
+        $entities = [];
+        if (preg_match('/\bentidad_normalizada\s*:\s*(.+)$/iu', $raw, $match)) {
+            $entity_blob = trim((string) ($match[1] ?? ''));
+            $raw = trim((string) preg_replace('/\bentidad_normalizada\s*:.+$/iu', '', $raw));
+            foreach (preg_split('/[,;|]/u', $entity_blob) as $entity) {
+                $entity = trim((string) $entity);
+                if ($entity === '' || mb_strlen($entity, 'UTF-8') > 80) {
+                    continue;
+                }
+                $entities[] = $entity;
+            }
+        }
+
+        return [
+            'keywords'           => $raw,
+            'canonical_entities' => array_values(array_unique($entities)),
         ];
     }
 
@@ -218,9 +282,9 @@ class Xabia_Rag_Query_Rewriter {
     }
 
     /**
-     * Expansiones LLM inválidas (errores de transporte, prosa, etc.).
+     * Expansiones LLM inválidas (errores de transporte, prosa, o que tiran el nombre propio de la query).
      */
-    private static function looks_like_bad_expansion(string $raw): bool {
+    private static function looks_like_bad_expansion(string $raw, string $base = ''): bool {
         $raw = trim($raw);
         if ($raw === '') {
             return true;
@@ -239,6 +303,51 @@ class Xabia_Rag_Query_Rewriter {
         }
         if (preg_match('/^(error|failed|failure)\b/iu', $raw)) {
             return true;
+        }
+        if ($base !== '' && self::expansion_drops_query_tokens($raw, $base)) {
+            return true;
+        }
+
+        return false;
+    }
+
+    /**
+     * Si la query es un nombre corto (2–5 palabras, sin interrogación de catálogo),
+     * la expansión no puede tirar esos tokens. En preguntas largas el intérprete
+     * puede seguir corrigiendo topónimos.
+     */
+    public static function expansion_drops_query_tokens(string $expanded, string $base): bool {
+        $plain = trim((string) preg_replace('/[?¿!.,;:]+/u', ' ', $base));
+        $plain = trim(preg_replace('/\s+/u', ' ', $plain) ?? $plain);
+        $words = preg_split('/\s+/u', $plain) ?: [];
+        if (count($words) < 2 || count($words) > 5) {
+            return false;
+        }
+        if (preg_match('/\b(empresas?|actividades?|d[oó]nde|qu[eé]|c[oó]mo|cu[aá]ndo|hay|busco|zer|daude|non|nola)\b/iu', $plain)) {
+            return false;
+        }
+        $keep = [];
+        $hyper = array_fill_keys(self::generic_hyperonym_tokens(), true);
+        foreach (self::extract_tokens($base) as $t) {
+            $t = mb_strtolower(trim((string) $t), 'UTF-8');
+            if ($t === '' || strlen($t) < 4 || isset($hyper[$t])) {
+                continue;
+            }
+            $keep[] = $t;
+        }
+        $keep = array_values(array_unique($keep));
+        if ($keep === []) {
+            return false;
+        }
+        $hay = mb_strtolower($expanded, 'UTF-8');
+        foreach ($keep as $token) {
+            $token = mb_strtolower(trim((string) $token), 'UTF-8');
+            if ($token === '' || mb_strlen($token, 'UTF-8') < 4) {
+                continue;
+            }
+            if (mb_strpos($hay, $token) === false) {
+                return true;
+            }
         }
 
         return false;

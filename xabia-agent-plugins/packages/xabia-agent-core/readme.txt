@@ -5,7 +5,7 @@ Tags: chatbot, ai, gemini, virtual assistant, rag, wordpress
 Requires at least: 6.0
 Tested up to: 6.9
 Requires PHP: 7.4
-Stable tag: 1.0.290
+Stable tag: 1.0.318
 License: GPLv2 or later
 License URI: http://www.gnu.org/licenses/gpl-2.0.html
 
@@ -25,6 +25,39 @@ Documentación: https://xabia.ai/documentacion/
 4. Cree un agente, sincronice datos y publique con shortcode o modo nativo.
 
 == Changelog ==
+
+= 1.0.318 =
+* Chat: fichas de producto/ente ([ACTION:CARD]) con layout responsive (CTA a ancho completo); imágenes de respuesta más compactas; texto del chat sin desbordar el panel.
+* Woo: al ofrecer productos se inyectan fichas con compra directa ([ACTION:CART] → card); catálogo nativo agnóstico; reparación de URLs truncadas en RAG.
+
+= 1.0.317 =
+* Chat: render de [ACTION:CARD] fuera del flujo de listas markdown; Woo convierte CART inline en ficha (WC/contexto/título).
+
+= 1.0.316 =
+* Core: schema agnóstico [ACTION:CARD] (foto, título, meta, precio, CTA); Woo emite cards al recomendar productos.
+
+= 1.0.315 =
+* Hook xabia_chat_response_postprocess para addons (p. ej. Woo añade acciones de carrito).
+
+= 1.0.314 =
+* RAG: preservar/reparar URLs largas en chunks y en [ACTION:URL:].
+
+= 1.0.313 =
+* Listado nativo de catálogo agnóstico (sin hardcodes de vertical).
+
+= 1.0.299 =
+* TTS: localización EU en el navegador (fallback cuando Google devuelve 503); OpenAI TTS de respaldo; pausas en saltos de línea (respiración); evita voz española en páginas EU.
+
+= 1.0.298 =
+* TTS euskera: spellout nativo EU (ICU no soporta eu_ES); sustitución de numerales castellanos; horas en formato 19:30ean; voz Google eu-ES-Wavenet; sin fallback OpenAI en EU.
+
+= 1.0.297 =
+* Imágenes en chat: render de [Imagen disponible: URL] y URLs de imagen como img (no enlace); lightbox al clic.
+* i18n chatbox: matriz EU/EN para Polylang; textos de espera, placeholder y micrófono traducidos vía wp_localize_script.
+* TTS: preprocesado Intl (fechas, horas, cifras) en servidor según idioma activo antes de sintetizar.
+
+= 1.0.296 =
+* TTS multilingüe: directiva universal de formato hablado (fechas, horas, cifras) en el system prompt; clase Xabia_Voice con mapeo dinámico de locales (Polylang/WPML); data-lang en BCP-47 y voces Google por idioma.
 
 = 1.0.290 =
 * RAG léxico: unaccent (bebé→bebe), stopwords de verbos de agenda (actúa, canta…) y variantes LIKE con/sin tilde; mismo criterio en Hub.

@@ -472,16 +472,17 @@ class Xabia_Admin {
                 'csv_col' => 'ID',
                 'label' => __('ID del evento (MEC)', 'xabia-intelligence'),
                 'visual_role' => 'none',
-                'is_ente' => 1,
-                'instruction' => __('Identificador del post mec-events.', 'xabia-intelligence'),
+                'is_ente' => 0,
+                'instruction' => __('Identificador técnico del post mec-events.', 'xabia-intelligence'),
                 'import_rag' => 0,
             ],
             [
                 'csv_col' => 'Evento',
                 'label' => __('Título del evento', 'xabia-intelligence'),
                 'visual_role' => 'title',
-                'is_ente' => 0,
-                'instruction' => __('Nombre del evento para listados y búsqueda.', 'xabia-intelligence'),
+                'is_ente' => 1,
+                'ente_label_col' => 'Evento',
+                'instruction' => __('Nombre del evento (ente visible en listados RAG).', 'xabia-intelligence'),
                 'import_rag' => 1,
             ],
             ['csv_col' => 'Fecha', 'label' => __('Fecha de inicio', 'xabia-intelligence'), 'visual_role' => 'date', 'is_ente' => 0, 'instruction' => __('Fecha Y-m-d.', 'xabia-intelligence'), 'import_rag' => 1],
@@ -518,7 +519,118 @@ class Xabia_Admin {
             $field['visual_role'] = $role;
             $out[] = $field;
         }
+
+        $id_idx = null;
+        $evento_idx = null;
+        foreach ($out as $i => $field) {
+            $col = (string) ($field['csv_col'] ?? '');
+            if ($col === 'ID') {
+                $id_idx = $i;
+            } elseif ($col === 'Evento') {
+                $evento_idx = $i;
+            }
+        }
+        if ($id_idx !== null && !empty($out[$id_idx]['is_ente'])) {
+            $out[$id_idx]['is_ente'] = 0;
+            if ($evento_idx !== null) {
+                $out[$evento_idx]['is_ente'] = 1;
+                if (empty($out[$evento_idx]['ente_label_col'])) {
+                    $out[$evento_idx]['ente_label_col'] = 'Evento';
+                }
+            }
+        }
+
         return $out;
+    }
+
+    /**
+     * @param array<string, mixed> $payload
+     * @return array<string, mixed>
+     */
+    private static function xabia_mec_merge_mapping_payload(array $payload): array {
+        $fields = self::xabia_mec_remote_default_mapping_fields();
+        $payload['fields'] = $fields;
+        $cols = isset($payload['columns']) && is_array($payload['columns']) ? $payload['columns'] : [];
+        foreach ($fields as $field) {
+            if (!empty($field['csv_col'])) {
+                $cols[] = (string) $field['csv_col'];
+            }
+        }
+        $payload['columns'] = array_values(array_unique($cols));
+
+        return $payload;
+    }
+
+    private static function xabia_woo_remote_sql_preset(): string {
+        return "SELECT
+    p.ID,
+    p.post_title AS Titulo,
+    p.post_excerpt AS Extracto,
+    p.post_content AS Descripcion,
+    (SELECT meta_value FROM {prefix}postmeta WHERE post_id = p.ID AND meta_key = '_price' LIMIT 1) AS Precio,
+    (SELECT meta_value FROM {prefix}postmeta WHERE post_id = p.ID AND meta_key = '_sku' LIMIT 1) AS SKU,
+    (SELECT guid FROM {prefix}posts WHERE ID = (SELECT meta_value FROM {prefix}postmeta WHERE post_id = p.ID AND meta_key = '_thumbnail_id' LIMIT 1) LIMIT 1) AS Imagen_URL
+FROM {prefix}posts p
+WHERE p.post_type = 'product'
+  AND p.post_status = 'publish'
+ORDER BY p.post_title ASC";
+    }
+
+    /**
+     * @return list<array<string, mixed>>
+     */
+    private static function xabia_woo_remote_default_mapping_fields(): array {
+        return [
+            ['csv_col' => 'ID', 'label' => __('ID del producto', 'xabia-intelligence'), 'visual_role' => 'none', 'is_ente' => 1, 'instruction' => '', 'import_rag' => 0],
+            ['csv_col' => 'Titulo', 'label' => __('Nombre', 'xabia-intelligence'), 'visual_role' => 'title', 'is_ente' => 0, 'instruction' => '', 'import_rag' => 1],
+            ['csv_col' => 'Extracto', 'label' => __('Extracto', 'xabia-intelligence'), 'visual_role' => 'info', 'is_ente' => 0, 'instruction' => '', 'import_rag' => 1],
+            ['csv_col' => 'Descripcion', 'label' => __('Descripción', 'xabia-intelligence'), 'visual_role' => 'info', 'is_ente' => 0, 'instruction' => '', 'import_rag' => 1],
+            ['csv_col' => 'Precio', 'label' => __('Precio', 'xabia-intelligence'), 'visual_role' => 'none', 'is_ente' => 0, 'instruction' => '', 'import_rag' => 1],
+            ['csv_col' => 'SKU', 'label' => __('SKU', 'xabia-intelligence'), 'visual_role' => 'none', 'is_ente' => 0, 'instruction' => '', 'import_rag' => 1],
+            ['csv_col' => 'Imagen_URL', 'label' => __('Imagen', 'xabia-intelligence'), 'visual_role' => 'img', 'is_ente' => 0, 'instruction' => '', 'import_rag' => 0],
+        ];
+    }
+
+    private static function xabia_amelia_remote_sql_preset(): string {
+        return "SELECT id AS ID, name AS Titulo, description AS Descripcion, price AS Precio, status AS Estado
+FROM {prefix}amelia_services
+WHERE status = 'visible'
+ORDER BY name ASC";
+    }
+
+    /**
+     * @return list<array<string, mixed>>
+     */
+    private static function xabia_amelia_remote_default_mapping_fields(): array {
+        return [
+            ['csv_col' => 'ID', 'label' => __('ID del servicio', 'xabia-intelligence'), 'visual_role' => 'none', 'is_ente' => 1, 'instruction' => '', 'import_rag' => 0],
+            ['csv_col' => 'Titulo', 'label' => __('Servicio', 'xabia-intelligence'), 'visual_role' => 'title', 'is_ente' => 0, 'instruction' => '', 'import_rag' => 1],
+            ['csv_col' => 'Descripcion', 'label' => __('Descripción', 'xabia-intelligence'), 'visual_role' => 'info', 'is_ente' => 0, 'instruction' => '', 'import_rag' => 1],
+            ['csv_col' => 'Precio', 'label' => __('Precio', 'xabia-intelligence'), 'visual_role' => 'none', 'is_ente' => 0, 'instruction' => '', 'import_rag' => 1],
+            ['csv_col' => 'Estado', 'label' => __('Estado', 'xabia-intelligence'), 'visual_role' => 'none', 'is_ente' => 0, 'instruction' => '', 'import_rag' => 0],
+        ];
+    }
+
+    /**
+     * @param mixed $raw
+     * @return list<string>
+     */
+    private static function parse_web_remote_urls_from_post($raw): array {
+        if (class_exists('Xabia_Web_Pages_Source', false) && method_exists('Xabia_Web_Pages_Source', 'parse_remote_urls')) {
+            return Xabia_Web_Pages_Source::parse_remote_urls($raw);
+        }
+        if (!is_string($raw) || $raw === '') {
+            return [];
+        }
+        $out = [];
+        foreach (preg_split('/[\r\n]+/', $raw) ?: [] as $line) {
+            $url = esc_url_raw(trim($line));
+            if ($url !== '' && preg_match('#^https?://#i', $url)) {
+                $out[] = $url;
+            }
+        }
+
+        return array_values(array_unique($out));
     }
 
     /**
@@ -1517,7 +1629,11 @@ class Xabia_Admin {
             . '.xabia-wrapper.xabia-admin-app .xabia-addon-catalog-mini .xabia-addon-status-badge .dashicons{font-size:14px;width:14px;height:14px;line-height:1;}'
             . '.xabia-wrapper.xabia-admin-app .xabia-agent-tile--paused{opacity:.72;}'
             . '.xabia-wrapper.xabia-admin-app .xabia-agent-paused-badge{display:inline-block;margin-left:8px;padding:2px 8px;font-size:11px;font-weight:600;border-radius:999px;background:#fef3c7;color:#92400e;}'
+            . '.xabia-wrapper.xabia-admin-app .xabia-agent-active-badge{display:inline-block;margin-left:8px;padding:2px 8px;font-size:11px;font-weight:600;border-radius:999px;background:#d1fae5;color:#047857;}'
             . '.xabia-wrapper.xabia-admin-app .xabia-btn--pause{border-color:#d97706;color:#b45309;}'
+            . '.xabia-wrapper.xabia-admin-app .xabia-admin-header__actions{display:flex;flex-wrap:wrap;align-items:center;justify-content:flex-end;gap:10px;align-self:center;}'
+            . '.xabia-wrapper.xabia-admin-app .xabia-page-settings--agent-paused .xabia-admin-header{border-bottom-color:#d97706;}'
+            . '.xabia-wrapper.xabia-admin-app .xabia-agent-edit-id{display:inline-block;margin-right:6px;padding:2px 8px;font-size:12px;font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;background:#f1f3f4;border-radius:6px;color:#5f6368;}'
         );
         wp_enqueue_style(
             'xabia-plus-jakarta',
@@ -1629,16 +1745,16 @@ class Xabia_Admin {
             
             $sources = [];
             $source_type = sanitize_key($post['source_type'] ?? 'csv');
-            if (!in_array($source_type, ['csv', 'addon', 'multi', 'local_sql', 'sql', 'web_pages'], true)) {
+            if (!in_array($source_type, ['csv', 'addon', 'multi', 'local_sql', 'sql', 'web_pages', 'web_remote'], true)) {
                 $source_type = 'csv';
             }
-            if ($source_type === 'web_pages' && class_exists('Xabia_Web_Pages_Source', false) && $attributes === []) {
+            if (in_array($source_type, ['web_pages', 'web_remote'], true) && class_exists('Xabia_Web_Pages_Source', false) && $attributes === []) {
                 $attributes = Xabia_Web_Pages_Source::default_mapping_fields();
             }
             if ($source_type === 'multi' && !empty($post['sources']) && is_array($post['sources'])) {
                 foreach ($post['sources'] as $idx => $src) {
                     $st = sanitize_key($src['type'] ?? '');
-                    if (!in_array($st, ['csv', 'sql', 'local_sql', 'web_pages'], true)) continue;
+                    if (!in_array($st, ['csv', 'sql', 'local_sql', 'web_pages', 'web_remote'], true)) continue;
                     $attrs = [];
                     if (!empty($src['attributes']) && is_array($src['attributes'])) {
                         foreach ($src['attributes'] as $attr) {
@@ -1662,6 +1778,11 @@ class Xabia_Admin {
                     } elseif ($st === 'web_pages') {
                         $entry['web_page_ids'] = self::parse_web_page_ids_from_post($post, (int) $idx);
                         $entry['web_pages_use_public_html'] = !empty($src['web_pages_use_public_html']) ? 1 : 0;
+                        if ($attrs === [] && class_exists('Xabia_Web_Pages_Source', false)) {
+                            $entry['attributes'] = Xabia_Web_Pages_Source::default_mapping_fields();
+                        }
+                    } elseif ($st === 'web_remote') {
+                        $entry['web_remote_urls'] = self::parse_web_remote_urls_from_post($src['web_remote_urls'] ?? '');
                         if ($attrs === [] && class_exists('Xabia_Web_Pages_Source', false)) {
                             $entry['attributes'] = Xabia_Web_Pages_Source::default_mapping_fields();
                         }
@@ -1794,7 +1915,7 @@ class Xabia_Admin {
 
             $web_page_ids = self::parse_web_page_ids_from_post($post);
             $web_pages_use_public_html = !empty($post['web_pages_use_public_html']) ? 1 : 0;
-            if ($source_type === 'web_pages' && $attributes === [] && class_exists('Xabia_Web_Pages_Source', false)) {
+            if (in_array($source_type, ['web_pages', 'web_remote'], true) && $attributes === [] && class_exists('Xabia_Web_Pages_Source', false)) {
                 $attributes = Xabia_Web_Pages_Source::default_mapping_fields();
             }
 
@@ -1847,6 +1968,7 @@ class Xabia_Admin {
                 'auto_sync' => $auto_sync_cfg,
                 'web_page_ids' => $web_page_ids,
                 'web_pages_use_public_html' => $web_pages_use_public_html,
+                'web_remote_urls' => self::parse_web_remote_urls_from_post($post['web_remote_urls'] ?? ''),
             ];
             if (class_exists('Xabia_Interface', false)) {
                 $projects[$id]['interface'] = Xabia_Interface::build_config_from_post($post);
@@ -1859,6 +1981,24 @@ class Xabia_Admin {
                 $catalog_tax = Xabia_Knowledge_Ingest::resolve_catalog_activity_taxonomy($projects[$id]);
                 if ($catalog_tax !== '') {
                     $projects[$id]['catalog_activity_taxonomy'] = $catalog_tax;
+                }
+                $projects[$id] = Xabia_Knowledge_Ingest::maybe_rebuild_wp_catalog_sql($projects[$id]);
+                if (!empty($projects[$id]['sources']) && is_array($projects[$id]['sources'])) {
+                    foreach ($projects[$id]['sources'] as $si => $src) {
+                        if (!is_array($src)) {
+                            continue;
+                        }
+                        $slice = $src;
+                        $slice['source_type'] = (string) ($src['type'] ?? ($src['source_type'] ?? ''));
+                        $slice['sql_preset'] = (string) ($projects[$id]['sql_preset'] ?? '');
+                        if (empty($slice['catalog_post_type']) && !empty($projects[$id]['catalog_post_type'])) {
+                            $slice['catalog_post_type'] = $projects[$id]['catalog_post_type'];
+                        }
+                        $rebuilt = Xabia_Knowledge_Ingest::maybe_rebuild_wp_catalog_sql($slice);
+                        if (isset($rebuilt['sql_config'])) {
+                            $projects[$id]['sources'][$si]['sql_config'] = $rebuilt['sql_config'];
+                        }
+                    }
                 }
             }
             update_option('xabia_projects_config', $projects);
@@ -1942,7 +2082,12 @@ class Xabia_Admin {
             }
             self::purge_project_response_cache($id);
             $msg = $was_paused ? 'resumed' : 'paused';
-            wp_redirect(admin_url('admin.php?page=xabia-settings&msg=' . $msg));
+            $return_edit = isset($_GET['return_to']) && sanitize_key((string) wp_unslash($_GET['return_to'])) === 'edit';
+            if ($return_edit) {
+                wp_redirect(admin_url('admin.php?page=xabia-settings&edit=' . rawurlencode($id) . '&msg=' . $msg));
+            } else {
+                wp_redirect(admin_url('admin.php?page=xabia-settings&msg=' . $msg));
+            }
             exit;
         }
     }
@@ -2270,6 +2415,22 @@ class Xabia_Admin {
                 'prefix'  => $resolved_prefix,
             ]);
         }
+        if ($sqlPreset === 'woo_remote') {
+            $this->admin_json_success([
+                'message' => __('Base de datos Woo remota vinculada correctamente.', 'xabia-intelligence'),
+                'columns' => $columns,
+                'fields'  => self::xabia_woo_remote_default_mapping_fields(),
+                'prefix'  => $resolved_prefix,
+            ]);
+        }
+        if ($sqlPreset === 'amelia_remote') {
+            $this->admin_json_success([
+                'message' => __('Base de datos Amelia remota vinculada correctamente.', 'xabia-intelligence'),
+                'columns' => $columns,
+                'fields'  => self::xabia_amelia_remote_default_mapping_fields(),
+                'prefix'  => $resolved_prefix,
+            ]);
+        }
         $has_post_title = in_array('post_title', $columns, true);
         $preferred_ente_col = null;
         foreach ($columns as $col) {
@@ -2361,7 +2522,7 @@ class Xabia_Admin {
                 $cols = ['ID','Titulo','Descripcion','Link','Fecha','Hora','Precio','Imagen_URL','Categorias_Tags'];
                 $payload = ['columns' => $cols];
                 if ($slug === 'mec') {
-                    $payload['fields'] = self::xabia_mec_remote_default_mapping_fields();
+                    $payload = self::xabia_mec_merge_mapping_payload($payload);
                 } elseif ($slug === 'woo' && class_exists('Xabia_Woo_Connector', false)) {
                     $payload['fields'] = Xabia_Woo_Connector::default_mapping_fields();
                 }
@@ -2381,7 +2542,7 @@ class Xabia_Admin {
             $cols = ['ID','Titulo','Descripcion','Link','Fecha','Hora','Precio','Imagen_URL','Categorias_Tags'];
             $payload = ['columns' => $cols];
             if ($slug === 'mec') {
-                $payload['fields'] = self::xabia_mec_remote_default_mapping_fields();
+                $payload = self::xabia_mec_merge_mapping_payload($payload);
             } elseif ($slug === 'woo' && class_exists('Xabia_Woo_Connector', false)) {
                 $payload['fields'] = Xabia_Woo_Connector::default_mapping_fields();
             }
@@ -2391,7 +2552,7 @@ class Xabia_Admin {
         }
         $payload = ['columns' => array_keys(is_array($results[0] ?? null) ? $results[0] : [])];
         if ($slug === 'mec') {
-            $payload['fields'] = self::xabia_mec_remote_default_mapping_fields();
+            $payload = self::xabia_mec_merge_mapping_payload($payload);
         } elseif ($slug === 'woo' && class_exists('Xabia_Woo_Connector', false)) {
             $payload['fields'] = Xabia_Woo_Connector::default_mapping_fields();
         }
@@ -3153,7 +3314,7 @@ class Xabia_Admin {
         $config = ($project_id !== '' && is_array($projects[$project_id] ?? null)) ? $projects[$project_id] : [];
 
         $source_type = sanitize_key((string) wp_unslash($_POST['source_type'] ?? ''));
-        if ($source_type !== '' && in_array($source_type, ['csv', 'addon', 'multi', 'local_sql', 'sql', 'web_pages'], true)) {
+        if ($source_type !== '' && in_array($source_type, ['csv', 'addon', 'multi', 'local_sql', 'sql', 'web_pages', 'web_remote'], true)) {
             $config['source_type'] = $source_type;
         }
         $addon_slug = sanitize_key((string) wp_unslash($_POST['addon_slug'] ?? ''));
@@ -3434,8 +3595,11 @@ class Xabia_Admin {
         if (($data_cfg['source_type'] ?? '') === 'addon' && ($data_cfg['addon_slug'] ?? '') === 'mec' && self::xabia_attributes_need_mec_defaults($data_cfg['attributes'] ?? [])) {
             $data_cfg['attributes'] = self::xabia_mec_remote_default_mapping_fields();
         }
-        if (($data_cfg['source_type'] ?? '') === 'web_pages' && ($data_cfg['attributes'] ?? []) === [] && class_exists('Xabia_Web_Pages_Source', false)) {
+        if (in_array(($data_cfg['source_type'] ?? ''), ['web_pages', 'web_remote'], true) && ($data_cfg['attributes'] ?? []) === [] && class_exists('Xabia_Web_Pages_Source', false)) {
             $data_cfg['attributes'] = Xabia_Web_Pages_Source::default_mapping_fields();
+        }
+        if (class_exists('Xabia_Knowledge_Ingest', false)) {
+            $data_cfg = Xabia_Knowledge_Ingest::maybe_rebuild_wp_catalog_sql($data_cfg);
         }
         $legacy_addon_slug = (string) ($data_cfg['addon_slug'] ?? '');
         if ($legacy_addon_slug !== '' && $legacy_addon_slug !== $central_slug_ui && !isset($available_addons_rag[$legacy_addon_slug]) && isset($available_addons[$legacy_addon_slug])) {
@@ -3506,8 +3670,21 @@ class Xabia_Admin {
             $starter_questions_raw = implode("\n", array_map('strval', $data['rules']['starter_questions']));
         }
         $min_score = $data['rules']['min_score'] ?? '0.2';
+        $is_editing_agent = is_string($edit_id) && $edit_id !== '' && $edit_id !== 'new' && is_array($data);
+        $is_agent_paused = $is_editing_agent && !empty($data['paused']);
+        $agent_pause_url = '';
+        if ($is_editing_agent) {
+            $agent_pause_url = wp_nonce_url(
+                admin_url(
+                    'admin.php?page=xabia-settings&xabia_action=toggle_pause&project_id='
+                    . rawurlencode($edit_id)
+                    . '&return_to=edit'
+                ),
+                'xabia_toggle_pause_' . $edit_id
+            );
+        }
         ?>
-        <div class="wrap xabia-wrapper xabia-admin-app xabia-page-settings">
+        <div class="wrap xabia-wrapper xabia-admin-app xabia-page-settings<?php echo $is_agent_paused ? ' xabia-page-settings--agent-paused' : ''; ?>">
             <div class="xabia-card xabia-admin-header">
                 <div class="xabia-admin-header__brand">
                     <?php
@@ -3523,15 +3700,43 @@ class Xabia_Admin {
                         </div>
                         <p class="xabia-page-subtitle"><?php echo esc_html__('Gestiona agentes de IA y conecta tus datos. Con Conexión Segura Xabia solo necesitas la licencia en la tarjeta de abajo.', 'xabia-intelligence'); ?></p>
                     <?php else : ?>
-                    <h1 class="xabia-page-title"><?php echo $edit_id ? esc_html($data['name'] ?? __('Nuevo agente', 'xabia-intelligence')) : esc_html__('Xabia Agent', 'xabia-intelligence'); ?></h1>
-                    <p class="xabia-page-subtitle"><?php echo $edit_id
-                        ? esc_html__('Configura fuentes de datos, apariencia del chat e historial. Los cambios se guardan al pulsar «Guardar agente».', 'xabia-intelligence')
-                        : esc_html__('Gestiona agentes de IA y conecta tus datos. Con Conexión Segura Xabia solo necesitas la licencia en la tarjeta de abajo.', 'xabia-intelligence'); ?></p>
+                    <h1 class="xabia-page-title">
+                        <?php echo $edit_id ? esc_html($data['name'] ?? __('Nuevo agente', 'xabia-intelligence')) : esc_html__('Xabia Agent', 'xabia-intelligence'); ?>
+                        <?php if ($is_editing_agent) : ?>
+                            <?php if ($is_agent_paused) : ?>
+                                <span class="xabia-agent-paused-badge"><?php echo esc_html__('Pausado', 'xabia-intelligence'); ?></span>
+                            <?php else : ?>
+                                <span class="xabia-agent-active-badge"><?php echo esc_html__('Activo', 'xabia-intelligence'); ?></span>
+                            <?php endif; ?>
+                        <?php endif; ?>
+                    </h1>
+                    <p class="xabia-page-subtitle"><?php
+                    if ($is_editing_agent) {
+                        echo '<span class="xabia-agent-edit-id">' . esc_html(sprintf(__('ID: %s', 'xabia-intelligence'), $edit_id)) . '</span>';
+                        echo ' · ';
+                        echo esc_html__('Configura fuentes de datos, apariencia del chat e historial. Los cambios se guardan al pulsar «Guardar agente».', 'xabia-intelligence');
+                        if ($is_agent_paused) {
+                            echo ' · ';
+                            echo esc_html__('El chat público no responderá mientras el agente esté pausado.', 'xabia-intelligence');
+                        }
+                    } elseif ($edit_id) {
+                        echo esc_html__('Configura fuentes de datos, apariencia del chat e historial. Los cambios se guardan al pulsar «Guardar agente».', 'xabia-intelligence');
+                    } else {
+                        echo esc_html__('Gestiona agentes de IA y conecta tus datos. Con Conexión Segura Xabia solo necesitas la licencia en la tarjeta de abajo.', 'xabia-intelligence');
+                    }
+                    ?></p>
                     <?php endif; ?>
                     </div>
                 </div>
                 <?php if ($edit_id) : ?>
+                <div class="xabia-admin-header__actions">
+                    <?php if ($is_editing_agent && $agent_pause_url !== '') : ?>
+                        <a href="<?php echo esc_url($agent_pause_url); ?>" class="button xabia-btn--pause">
+                            <?php echo $is_agent_paused ? esc_html__('Activar agente', 'xabia-intelligence') : esc_html__('Pausar agente', 'xabia-intelligence'); ?>
+                        </a>
+                    <?php endif; ?>
                     <a href="<?php echo esc_url(admin_url('admin.php?page=xabia-settings')); ?>" class="button xabia-btn--ghost"><?php echo esc_html__('← Volver al listado', 'xabia-intelligence'); ?></a>
+                </div>
                 <?php endif; ?>
             </div>
 
@@ -3540,6 +3745,15 @@ class Xabia_Admin {
             <?php endif; ?>
 
             <?php if(!$edit_id): ?>
+                <?php
+                $list_flash_msg = isset($_GET['msg']) ? sanitize_key((string) wp_unslash($_GET['msg'])) : '';
+                if ($list_flash_msg === 'paused') : ?>
+                    <div class="notice notice-warning is-dismissible"><p><?php echo esc_html__('Agente pausado. El chat dejará de responder hasta que lo actives de nuevo.', 'xabia-intelligence'); ?></p></div>
+                <?php elseif ($list_flash_msg === 'resumed') : ?>
+                    <div class="notice notice-success is-dismissible"><p><?php echo esc_html__('Agente activado. El chat vuelve a estar disponible.', 'xabia-intelligence'); ?></p></div>
+                <?php elseif ($list_flash_msg === 'deleted') : ?>
+                    <div class="notice notice-success is-dismissible"><p><?php echo esc_html__('Agente eliminado.', 'xabia-intelligence'); ?></p></div>
+                <?php endif; ?>
                 <div class="xabia-toolbar">
                     <a href="<?php echo esc_url(admin_url('admin.php?page=xabia-settings&edit=new')); ?>" class="button button-primary"><?php echo esc_html__('Nuevo agente', 'xabia-intelligence'); ?></a>
                 </div>
@@ -3557,6 +3771,8 @@ class Xabia_Admin {
                             <p class="xabia-agent-tile__name"><?php echo esc_html($p['name']); ?>
                                 <?php if ($is_paused) : ?>
                                     <span class="xabia-agent-paused-badge"><?php echo esc_html__('Pausado', 'xabia-intelligence'); ?></span>
+                                <?php else : ?>
+                                    <span class="xabia-agent-active-badge"><?php echo esc_html__('Activo', 'xabia-intelligence'); ?></span>
                                 <?php endif; ?>
                             </p>
                             <span class="xabia-agent-tile__id"><?php echo esc_html(sprintf(__('ID: %s', 'xabia-intelligence'), $id)); ?></span>
@@ -3690,12 +3906,13 @@ class Xabia_Admin {
                                 <div class="xabia-field-group">
                                     <label class="xabia-label" for="xabia_openai_key"><?php echo esc_html__('OpenAI — clave secreta', 'xabia-intelligence'); ?></label>
                                     <input type="password" id="xabia_openai_key" name="xabia_openai_key" value="<?php echo esc_attr(get_option('xabia_openai_key')); ?>" class="widefat" autocomplete="off">
-                                    <p class="description"><?php echo esc_html__('Chat y embeddings cuando el motor del proyecto es OpenAI.', 'xabia-intelligence'); ?></p>
+                                    <p class="description"><?php echo esc_html__('Chat y embeddings cuando el motor del proyecto es OpenAI. También se usa como fallback de voz en alto (TTS) si Google Cloud no está disponible.', 'xabia-intelligence'); ?></p>
                                 </div>
                                 <div class="xabia-field-group">
                                     <label class="xabia-label" for="xabia_gcloud_json_path"><?php echo esc_html__('Google Cloud (Vertex AI) — ruta al JSON', 'xabia-intelligence'); ?></label>
                                     <input type="text" id="xabia_gcloud_json_path" name="xabia_gcloud_json_path" value="<?php echo esc_attr(get_option('xabia_gcloud_json_path')); ?>" class="widefat" placeholder="/ruta/absoluta/al/service-account.json" autocomplete="off">
                                     <p class="description"><?php echo esc_html__('Cuenta de servicio Vertex / Gemini. Si un agente deja la ruta vacía, se usa esta global.', 'xabia-intelligence'); ?></p>
+                                    <p class="description"><?php echo esc_html__('También activa Google Cloud Text-to-Speech (voz eu-ES-Wavenet para euskera). Activa la API «Cloud Text-to-Speech» en el mismo proyecto GCP.', 'xabia-intelligence'); ?></p>
                                 </div>
                                 <div class="xabia-field-group">
                                     <label class="xabia-label" for="xabia_google_key"><?php echo esc_html__('Google Cloud — clave de Maps', 'xabia-intelligence'); ?></label>
@@ -3799,6 +4016,13 @@ class Xabia_Admin {
                 </script>
 
             <?php else: ?>
+                <?php
+                $flash_msg = isset($_GET['msg']) ? sanitize_key((string) wp_unslash($_GET['msg'])) : '';
+                if ($flash_msg === 'paused') : ?>
+                    <div class="notice notice-warning is-dismissible"><p><?php echo esc_html__('Agente pausado. El chat dejará de responder hasta que lo actives de nuevo.', 'xabia-intelligence'); ?></p></div>
+                <?php elseif ($flash_msg === 'resumed') : ?>
+                    <div class="notice notice-success is-dismissible"><p><?php echo esc_html__('Agente activado. El chat vuelve a estar disponible.', 'xabia-intelligence'); ?></p></div>
+                <?php endif; ?>
                 <?php if (!empty($_GET['saved']) && sanitize_key((string) $_GET['saved']) === '1') : ?>
                     <div class="notice notice-success is-dismissible"><p><?php echo esc_html__('Agente guardado correctamente.', 'xabia-intelligence'); ?></p></div>
                 <?php endif; ?>
@@ -3985,17 +4209,19 @@ class Xabia_Admin {
 
                                 <label style="font-weight:bold;"><?php echo esc_html__('Fuente de información', 'xabia-intelligence'); ?></label>
                                 <input type="hidden" name="sql_preset" id="xabia_sql_preset" value="<?php echo esc_attr((string) ($data_cfg['sql_preset'] ?? '')); ?>">
+                                <input type="hidden" id="xabia_catalog_post_type" value="<?php echo esc_attr((string) ($data_cfg['catalog_post_type'] ?? '')); ?>">
                                 <select name="source_type" id="xabia-source-select" class="widefat" style="margin:8px 0 15px;">
                                     <option value="csv" <?php selected($source_type, 'csv'); ?>>📂 <?php echo esc_html__('Archivos CSV', 'xabia-intelligence'); ?></option>
-                                    <option value="local_sql" <?php selected($source_type, 'local_sql'); ?>>🗄️ <?php echo esc_html__('Base de Datos WordPress (Mismo Sitio)', 'xabia-intelligence'); ?></option>
-                                    <option value="sql" <?php selected($source_type, 'sql'); ?>>🌐 <?php echo esc_html__('Base de Datos Externa (SQL Remoto)', 'xabia-intelligence'); ?></option>
+                                    <option value="local_sql" <?php selected($source_type, 'local_sql'); ?>>🗄️ <?php echo esc_html__('Base de datos interna', 'xabia-intelligence'); ?></option>
+                                    <option value="sql" <?php selected($source_type, 'sql'); ?>>🌐 <?php echo esc_html__('Base de datos remota', 'xabia-intelligence'); ?></option>
                                     <?php if ($has_rag_presets) : ?>
                                         <option value="addon" <?php selected($source_type, 'addon'); ?>>🔌 <?php echo esc_html__('Addon nativo (conector automático)', 'xabia-intelligence'); ?></option>
                                     <?php else : ?>
                                         <option value="addon" disabled>🔌 <?php echo esc_html__('Addon nativo (instala y activa Xabia MEC o Xabia Woo)', 'xabia-intelligence'); ?></option>
                                     <?php endif; ?>
-                                    <option value="multi" <?php selected($source_type, 'multi'); ?>>🔀 <?php echo esc_html__('Multi-fuente (varias fuentes)', 'xabia-intelligence'); ?></option>
                                     <option value="web_pages" <?php selected($source_type, 'web_pages'); ?>>🌐 <?php echo esc_html__('Páginas web (este sitio)', 'xabia-intelligence'); ?></option>
+                                    <option value="web_remote" <?php selected($source_type, 'web_remote'); ?>>🌍 <?php echo esc_html__('Páginas web (remotas)', 'xabia-intelligence'); ?></option>
+                                    <option value="multi" <?php selected($source_type, 'multi'); ?>>🔀 <?php echo esc_html__('Multi-fuente (varias fuentes)', 'xabia-intelligence'); ?></option>
                                 </select>
 
                                 <div id="xabia-sql-remote-default-anchor">
@@ -4059,23 +4285,29 @@ class Xabia_Admin {
                                 </div>
 
                                 <div id="section-sql" class="source-section" style="display:none;">
-                                    <div class="xabia-panel-muted" style="margin-bottom:12px;">
+                                    <div id="xabia-sql-remote-presets" class="xabia-panel-muted" style="margin-bottom:14px;<?php echo ($source_type === 'sql') ? '' : 'display:none;'; ?>">
                                         <strong><?php echo esc_html__('Presets para SQL remoto', 'xabia-intelligence'); ?></strong>
-                                        <p class="description" style="margin:4px 0 10px;"><?php echo esc_html__('Usa un preset cuando la base externa es WordPress/MEC pero el addon no está instalado en este sitio.', 'xabia-intelligence'); ?></p>
-                                        <button type="button" id="xabia-apply-remote-mec-preset" class="button"><?php echo esc_html__('Usar preset MEC remoto', 'xabia-intelligence'); ?></button>
-                                        <span id="xabia-remote-mec-preset-state" class="description" style="margin-left:8px;<?php echo (($data_cfg['sql_preset'] ?? '') === 'mec_remote') ? '' : 'display:none;'; ?>"><?php echo esc_html__('Preset MEC remoto activo.', 'xabia-intelligence'); ?></span>
+                                        <p class="description" style="margin:4px 0 10px;"><?php echo esc_html__('Si el addon no está instalado en tu sitio, usa un preset para leer MEC, Woo o Amelia en la base remota.', 'xabia-intelligence'); ?></p>
+                                        <p class="xabia-sql-preset-actions">
+                                            <button type="button" id="xabia-apply-remote-mec-preset" class="button"><?php echo esc_html__('MEC remoto', 'xabia-intelligence'); ?></button>
+                                            <button type="button" id="xabia-apply-remote-woo-preset" class="button"><?php echo esc_html__('Woo remoto', 'xabia-intelligence'); ?></button>
+                                            <button type="button" id="xabia-apply-remote-amelia-preset" class="button"><?php echo esc_html__('Amelia remoto', 'xabia-intelligence'); ?></button>
+                                        </p>
+                                        <span id="xabia-remote-mec-preset-state" class="description" style="<?php echo (($data_cfg['sql_preset'] ?? '') === 'mec_remote') ? '' : 'display:none;'; ?>"><?php echo esc_html__('Preset MEC remoto activo.', 'xabia-intelligence'); ?></span>
+                                        <span id="xabia-remote-woo-preset-state" class="description" style="<?php echo (($data_cfg['sql_preset'] ?? '') === 'woo_remote') ? '' : 'display:none;'; ?>"><?php echo esc_html__('Preset Woo remoto activo.', 'xabia-intelligence'); ?></span>
+                                        <span id="xabia-remote-amelia-preset-state" class="description" style="<?php echo (($data_cfg['sql_preset'] ?? '') === 'amelia_remote') ? '' : 'display:none;'; ?>"><?php echo esc_html__('Preset Amelia remoto activo.', 'xabia-intelligence'); ?></span>
                                     </div>
-                                    <textarea name="sql_query" id="sql_query" class="sql-box"><?php echo esc_textarea($data_cfg['sql_config']['query'] ?? ''); ?></textarea>
-                                    <p style="margin-top:10px;">
-                                        <button type="button" id="btn-test-sql" class="button"><?php echo esc_html__('Test SQL manual', 'xabia-intelligence'); ?></button>
-                                        <button type="button" id="btn-xabia-cpt-assistant" class="button" style="margin-left:8px;"><?php echo esc_html__('Asistente CPT', 'xabia-intelligence'); ?></button>
+                                    <p class="xabia-sql-steps">
+                                        <button type="button" id="btn-xabia-cpt-assistant" class="button button-primary"><?php echo esc_html__('1. Elige el tipo de contenido', 'xabia-intelligence'); ?></button>
+                                        <button type="button" id="btn-test-sql" class="button"><?php echo esc_html__('2. Vincular base de datos', 'xabia-intelligence'); ?></button>
                                     </p>
-                                    <div class="xabia-cpt-meta-tool xabia-panel-muted" style="margin-top:14px;">
-                                        <label class="xabia-label" for="xabia-cpt-meta-slug"><?php echo esc_html__('Campos de un CPT (meta + ACF)', 'xabia-intelligence'); ?></label>
-                                        <p class="description" style="margin-top:0;"><?php echo esc_html__('Slug del tipo de contenido. Añade columnas meta detectadas y nombres de campos ACF a los selectores del mapeo.', 'xabia-intelligence'); ?></p>
-                                        <input type="text" id="xabia-cpt-meta-slug" class="regular-text" placeholder="<?php echo esc_attr__('ej. mi-ente', 'xabia-intelligence'); ?>" autocomplete="off">
-                                        <button type="button" class="button" id="xabia-btn-load-cpt-meta" style="margin-left:8px;vertical-align:middle;"><?php echo esc_html__('Añadir al mapeo', 'xabia-intelligence'); ?></button>
-                                    </div>
+                                    <p class="description" style="margin:0 0 12px;"><?php echo esc_html__('El mapeo decide qué entra en la memoria. El SQL se genera a partir de esos campos (qué empresas y qué columnas se leen). Vincular comprueba que la consulta funciona; no sustituye el mapeo si ya lo tienes.', 'xabia-intelligence'); ?></p>
+                                    <p id="xabia-sql-step-status" class="description" style="margin:0 0 10px;"></p>
+                                    <details class="xabia-sql-advanced">
+                                        <summary><?php echo esc_html__('SQL avanzado', 'xabia-intelligence'); ?></summary>
+                                        <p class="description" style="margin:8px 0;"><?php echo esc_html__('Consulta generada desde el mapeo. Al guardar se vuelve a alinear. Si la editas a mano y el FROM deja de ser posts p, se respeta como SQL a medida.', 'xabia-intelligence'); ?></p>
+                                        <textarea name="sql_query" id="sql_query" class="sql-box"><?php echo esc_textarea($data_cfg['sql_config']['query'] ?? ''); ?></textarea>
+                                    </details>
                                 </div>
 
                                 <div id="section-csv" class="source-section" style="display:none;">
@@ -4121,23 +4353,21 @@ class Xabia_Admin {
                                     <p class="description" style="margin:6px 0 0;"><?php echo esc_html__('Si está activo, descarga la URL pública de cada página (como la demo de xabia.ai) además del contenido de la base de datos.', 'xabia-intelligence'); ?></p>
                                 </div>
 
-                                <div id="xabia-supplemental-web-pages" class="xabia-panel-muted" style="display:none;margin-top:12px;">
-                                    <p style="margin:0 0 8px;"><strong><?php echo esc_html__('Páginas web complementarias', 'xabia-intelligence'); ?></strong></p>
-                                    <p class="description" style="margin:0 0 10px;"><?php echo esc_html__('Opcional: añade contenido institucional además de la fuente principal (p. ej. Addon MEC + páginas «Qué es Ondarea»).', 'xabia-intelligence'); ?></p>
-                                    <?php
-                                    if (class_exists('Xabia_Web_Pages_Source', false)) {
-                                        Xabia_Web_Pages_Source::render_page_picker(
-                                            'web_page_ids',
-                                            'web_page_ids_manual',
-                                            $saved_web_page_ids,
-                                            __('Páginas complementarias', 'xabia-intelligence')
-                                        );
-                                    }
-                                    ?>
-                                    <label style="display:flex;align-items:center;gap:8px;margin:8px 0 0;">
-                                        <input type="checkbox" name="web_pages_use_public_html" value="1" <?php checked($web_pages_public_html); ?>>
-                                        <?php echo esc_html__('Leer HTML público de esas páginas', 'xabia-intelligence'); ?>
-                                    </label>
+                                <?php
+                                $raw_web_remote = $data_cfg['web_remote_urls'] ?? [];
+                                if (is_string($raw_web_remote)) {
+                                    $saved_web_remote_urls = preg_split('/[\r\n]+/', $raw_web_remote) ?: [];
+                                } elseif (is_array($raw_web_remote)) {
+                                    $saved_web_remote_urls = $raw_web_remote;
+                                } else {
+                                    $saved_web_remote_urls = [];
+                                }
+                                $saved_web_remote_urls = array_values(array_filter(array_map('strval', $saved_web_remote_urls)));
+                                ?>
+                                <div id="section-web_remote" class="source-section" style="display:none;">
+                                    <p class="description"><?php echo esc_html__('Raspado superficial de URLs públicas ajenas a este WordPress (una por línea). No usa el SQL ni el mapeo de empresas.', 'xabia-intelligence'); ?></p>
+                                    <label for="web_remote_urls"><strong><?php echo esc_html__('URLs a indexar', 'xabia-intelligence'); ?></strong></label>
+                                    <textarea name="web_remote_urls" id="web_remote_urls" class="widefat" rows="6" placeholder="https://ejemplo.com/pagina"><?php echo esc_textarea(implode("\n", $saved_web_remote_urls)); ?></textarea>
                                 </div>
 
                                 <div id="section-multi" class="source-section" style="display:none;">
@@ -4148,20 +4378,36 @@ class Xabia_Admin {
                                         $sd = $sources_data[$si] ?? [];
                                         $st = $sd['type'] ?? ($si === 0 ? 'local_sql' : 'csv');
                                         $sc = $sd['sql_config'] ?? [];
+                                        if (class_exists('Xabia_Knowledge_Ingest', false) && in_array($st, ['local_sql', 'sql'], true)) {
+                                            $slice = $sd;
+                                            $slice['source_type'] = $st;
+                                            $slice['sql_preset'] = (string) ($data_cfg['sql_preset'] ?? '');
+                                            if (empty($slice['catalog_post_type']) && !empty($data_cfg['catalog_post_type'])) {
+                                                $slice['catalog_post_type'] = $data_cfg['catalog_post_type'];
+                                            }
+                                            $rebuilt_src = Xabia_Knowledge_Ingest::maybe_rebuild_wp_catalog_sql($slice);
+                                            if (is_array($rebuilt_src['sql_config'] ?? null)) {
+                                                $sc = $rebuilt_src['sql_config'];
+                                            }
+                                        }
                                         $csv_fn = $sd['csv_filename'] ?? '';
                                         $multi_web_ids = class_exists('Xabia_Web_Pages_Source', false)
                                             ? Xabia_Web_Pages_Source::parse_page_ids($sd['web_page_ids'] ?? [])
                                             : [];
                                         $multi_web_html = !empty($sd['web_pages_use_public_html']);
+                                        $multi_web_remote = is_array($sd['web_remote_urls'] ?? null)
+                                            ? $sd['web_remote_urls']
+                                            : [];
                                     ?>
                                     <div class="xabia-multi-source-box">
                                         <h4 style="margin-top:0;">Fuente <?php echo $si + 1; ?></h4>
                                         <label>Tipo</label>
                                         <select name="sources[<?php echo $si; ?>][type]" class="multi-source-type widefat" data-idx="<?php echo $si; ?>" style="margin-bottom:10px;">
-                                            <option value="local_sql" <?php selected($st, 'local_sql'); ?>>🗄️ <?php echo esc_html__('Base de Datos WordPress (Mismo Sitio)', 'xabia-intelligence'); ?></option>
-                                            <option value="sql" <?php selected($st, 'sql'); ?>>🌐 <?php echo esc_html__('Base de Datos Externa (SQL Remoto)', 'xabia-intelligence'); ?></option>
+                                            <option value="local_sql" <?php selected($st, 'local_sql'); ?>>🗄️ <?php echo esc_html__('Base de datos interna', 'xabia-intelligence'); ?></option>
+                                            <option value="sql" <?php selected($st, 'sql'); ?>>🌐 <?php echo esc_html__('Base de datos remota', 'xabia-intelligence'); ?></option>
                                             <option value="csv" <?php selected($st, 'csv'); ?>>📂 <?php echo esc_html__('Archivos CSV', 'xabia-intelligence'); ?></option>
                                             <option value="web_pages" <?php selected($st, 'web_pages'); ?>>🌐 <?php echo esc_html__('Páginas web (este sitio)', 'xabia-intelligence'); ?></option>
+                                            <option value="web_remote" <?php selected($st, 'web_remote'); ?>>🌍 <?php echo esc_html__('Páginas web (remotas)', 'xabia-intelligence'); ?></option>
                                         </select>
                                         <div class="multi-source-sql multi-source-panel" data-idx="<?php echo $si; ?>" style="display:<?php echo ($st === 'sql' || $st === 'local_sql') ? 'block' : 'none'; ?>;">
                                             <div class="multi-source-remote-fields" data-idx="<?php echo $si; ?>" style="display:<?php echo $st === 'sql' ? 'block' : 'none'; ?>; margin-bottom:8px;">
@@ -4176,10 +4422,13 @@ class Xabia_Admin {
                                                 <div><label>Prefijo (opc.)</label><input type="text" name="sources[<?php echo $si; ?>][sql_prefix]" value="<?php echo esc_attr($sc['prefix'] ?? ''); ?>" placeholder="wp_" class="widefat"></div>
                                                 </div>
                                             </div>
-                                            <textarea name="sources[<?php echo $si; ?>][sql_query]" class="sql-box widefat" rows="4" placeholder="SELECT ... FROM {prefix}posts ..."><?php echo esc_textarea($sc['query'] ?? ''); ?></textarea>
+                                            <details class="xabia-sql-advanced">
+                                                <summary><?php echo esc_html__('SQL avanzado', 'xabia-intelligence'); ?></summary>
+                                                <textarea name="sources[<?php echo $si; ?>][sql_query]" class="sql-box widefat" rows="4" placeholder="SELECT ... FROM {prefix}posts ..."><?php echo esc_textarea($sc['query'] ?? ''); ?></textarea>
+                                            </details>
                                             <p style="margin-top:8px;">
-                                                <button type="button" class="button multi-test-sql" data-idx="<?php echo $si; ?>"><?php echo esc_html__('Test SQL y mapear', 'xabia-intelligence'); ?></button>
-                                                <button type="button" class="button xabia-cpt-assistant-multi" data-idx="<?php echo $si; ?>" style="margin-left:8px;"><?php echo esc_html__('Asistente CPT', 'xabia-intelligence'); ?></button>
+                                                <button type="button" class="button xabia-cpt-assistant-multi" data-idx="<?php echo $si; ?>"><?php echo esc_html__('1. Elige el tipo de contenido', 'xabia-intelligence'); ?></button>
+                                                <button type="button" class="button multi-test-sql" data-idx="<?php echo $si; ?>"><?php echo esc_html__('2. Vincular base de datos', 'xabia-intelligence'); ?></button>
                                             </p>
                                         </div>
                                         <div class="multi-source-csv multi-source-panel" data-idx="<?php echo $si; ?>" style="display:<?php echo $st === 'csv' ? 'block' : 'none'; ?>;">
@@ -4212,6 +4461,10 @@ class Xabia_Admin {
                                                 <input type="checkbox" name="sources[<?php echo $si; ?>][web_pages_use_public_html]" value="1" <?php checked($multi_web_html); ?>>
                                                 <?php echo esc_html__('Leer HTML público', 'xabia-intelligence'); ?>
                                             </label>
+                                        </div>
+                                        <div class="multi-source-web_remote multi-source-panel" data-idx="<?php echo $si; ?>" style="display:<?php echo $st === 'web_remote' ? 'block' : 'none'; ?>;">
+                                            <label><?php echo esc_html__('URLs remotas (una por línea)', 'xabia-intelligence'); ?></label>
+                                            <textarea name="sources[<?php echo $si; ?>][web_remote_urls]" class="widefat" rows="4" placeholder="https://ejemplo.com/pagina"><?php echo esc_textarea(implode("\n", array_map('strval', $multi_web_remote))); ?></textarea>
                                         </div>
                                         <h4 style="margin:15px 0 8px;">Mapeo Fuente <?php echo $si + 1; ?></h4>
                                         <div class="multi-attr-container" data-idx="<?php echo $si; ?>">
@@ -4288,8 +4541,8 @@ class Xabia_Admin {
                                 </div>
 
                                 <div id="xabia-mapping-slot-general">
-                                <div id="xabia-mapping-panel">
-                                <h3 class="xabia-section-title" id="label-single-attr"><?php echo esc_html__('Mapeo de atributos', 'xabia-intelligence'); ?></h3>
+                                <div id="xabia-mapping-panel"<?php echo empty($data_cfg['attributes']) ? ' style="display:none;"' : ''; ?>>
+                                <h3 class="xabia-section-title" id="label-single-attr"><?php echo esc_html__('Ajustar el mapeo', 'xabia-intelligence'); ?></h3>
                                 <div class="xabia-rag-toolbar">
                                     <p class="description"><?php echo esc_html__('Marca «IA» en cada columna que debe alimentar el conocimiento del agente. Las filas atenuadas no se envían al entrenar (ahorra tokens). El icono ℹ en «ID» indica identificador técnico de WordPress: no marques ENTE ahí; usa el campo nombre/título del ente.', 'xabia-intelligence'); ?></p>
                                     <p class="xabia-rag-toolbar-actions">
@@ -4372,6 +4625,25 @@ class Xabia_Admin {
                                 </div>
                                 </div>
 
+                                <div id="xabia-supplemental-web-pages" class="xabia-panel-muted" style="display:none;margin-top:16px;">
+                                    <p style="margin:0 0 8px;"><strong><?php echo esc_html__('Páginas web complementarias', 'xabia-intelligence'); ?></strong></p>
+                                    <p class="description" style="margin:0 0 10px;"><?php echo esc_html__('Opcional: añade contenido institucional además de la fuente principal (p. ej. Addon MEC + páginas «Qué es Ondarea»).', 'xabia-intelligence'); ?></p>
+                                    <?php
+                                    if (class_exists('Xabia_Web_Pages_Source', false)) {
+                                        Xabia_Web_Pages_Source::render_page_picker(
+                                            'web_page_ids',
+                                            'web_page_ids_manual',
+                                            $saved_web_page_ids,
+                                            __('Páginas complementarias', 'xabia-intelligence')
+                                        );
+                                    }
+                                    ?>
+                                    <label style="display:flex;align-items:center;gap:8px;margin:8px 0 0;">
+                                        <input type="checkbox" name="web_pages_use_public_html" value="1" <?php checked($web_pages_public_html); ?>>
+                                        <?php echo esc_html__('Leer HTML público de esas páginas', 'xabia-intelligence'); ?>
+                                    </label>
+                                </div>
+
                             </div>
 
                             <div id="tab-design" class="xabia-tab-content">
@@ -4417,6 +4689,42 @@ class Xabia_Admin {
                                     <h3 class="xabia-admin-section__title"><?php echo esc_html__('Voz (lectura en alto)', 'xabia-intelligence'); ?></h3>
                                     <p class="description"><?php echo esc_html__('Cuando el usuario pulsa el altavoz en el chat.', 'xabia-intelligence'); ?></p>
                                 </div>
+                                <?php
+                                if (class_exists('Xabia_Voice', false) && $edit_id !== '' && $edit_id !== 'new') {
+                                    $tts_status = Xabia_Voice::tts_engine_status($edit_id, is_array($data) ? $data : []);
+                                    $tts_ok = !empty($tts_status['google_cloud_tts'])
+                                        || !empty($tts_status['openai_tts'])
+                                        || !empty($tts_status['hub_tts']);
+                                    ?>
+                                    <div class="xabia-tts-status" style="margin:0 0 14px;padding:12px 14px;border-radius:6px;border:1px solid <?php echo $tts_ok ? '#00a32a' : '#d63638'; ?>;background:<?php echo $tts_ok ? '#edfaef' : '#fcf0f1'; ?>;">
+                                        <p style="margin:0 0 8px;font-weight:600;color:#1d2327;">
+                                            <?php echo esc_html__('Motor de voz en servidor', 'xabia-intelligence'); ?>:
+                                            <?php if ($tts_ok) : ?>
+                                                <span style="color:#00a32a;"><?php echo esc_html__('activo', 'xabia-intelligence'); ?></span>
+                                            <?php else : ?>
+                                                <span style="color:#d63638;"><?php echo esc_html__('no configurado — solo navegador', 'xabia-intelligence'); ?></span>
+                                            <?php endif; ?>
+                                        </p>
+                                        <ul style="margin:0;padding-left:1.2em;font-size:12.5px;line-height:1.55;color:#50575e;">
+                                            <li><?php echo !empty($tts_status['hub_tts'])
+                                                ? esc_html__('Hub Xabia TTS: licencia activa (recomendado; voz eu-ES-Wavenet centralizada).', 'xabia-intelligence')
+                                                : esc_html__('Hub Xabia TTS: sin licencia configurada.', 'xabia-intelligence'); ?></li>
+                                            <li><?php echo !empty($tts_status['google_cloud_tts'])
+                                                ? esc_html__('Google Cloud TTS local: listo (infraestructura propia).', 'xabia-intelligence')
+                                                : esc_html__('Google Cloud TTS local: no configurado en este servidor.', 'xabia-intelligence'); ?></li>
+                                            <li><?php echo !empty($tts_status['openai_tts'])
+                                                ? esc_html__('OpenAI TTS local: clave configurada (infraestructura propia).', 'xabia-intelligence')
+                                                : esc_html__('OpenAI TTS local: sin clave en este servidor.', 'xabia-intelligence'); ?></li>
+                                        </ul>
+                                        <?php if (!$tts_ok) : ?>
+                                            <p class="description" style="margin:10px 0 0;font-size:12px;line-height:1.5;">
+                                                <?php echo esc_html__('Configura la licencia Xabia para usar TTS centralizado en el Hub, o añade credenciales locales en Infraestructura propia.', 'xabia-intelligence'); ?>
+                                            </p>
+                                        <?php endif; ?>
+                                    </div>
+                                    <?php
+                                }
+                                ?>
                                 <label>Preferencia de voz</label>
                                 <select name="tts_voice" class="widefat" style="max-width:280px;">
                                     <option value="default" <?php selected($tts_voice, 'default'); ?>>Por defecto (idioma del navegador)</option>
@@ -4653,6 +4961,7 @@ class Xabia_Admin {
 
                             <div id="tab-history" class="xabia-tab-content">
                                 <h3><?php echo esc_html__('Registro de conversaciones', 'xabia-intelligence'); ?></h3>
+                                <p class="description"><?php echo esc_html__('Se muestran las conversaciones más recientes de este agente (hasta varios cientos). El peso en base de datos es bajo: solo texto de pregunta y respuesta.', 'xabia-intelligence'); ?></p>
                                 <?php $logs = self::get_project_logs($edit_id); if($logs): ?>
                                     <table class="xabia-log-table">
                                         <thead><tr><th>Fecha</th><th>User</th><th>Respuesta IA</th></tr></thead>
@@ -4767,7 +5076,7 @@ class Xabia_Admin {
                                     <?php echo esc_html__('Requiere suscripción en el Hub (Addons): activa el conector premium correspondiente (MEC, Woo, etc.) para sincronizar.', 'xabia-intelligence'); ?>
                                 </p>
                                 <button type="button" id="btn-sync-ajax" class="button xabia-sidebar-action"<?php echo !empty($xabia_premium_addon_sync_locked) ? ' disabled="disabled" aria-disabled="true"' : ''; ?>><?php echo esc_html__('1. Sincronizar datos (manual)', 'xabia-intelligence'); ?></button>
-                                <p class="description" style="margin:6px 0 0;"><?php echo esc_html__('Solo añade o actualiza lo que ha cambiado; no borra el resto. Para empezar de cero usa «Borrar memoria vectorial».', 'xabia-intelligence'); ?></p>
+                                <p class="description" style="margin:6px 0 0;"><?php echo esc_html__('Relee el catálogo y solo marca para entrenar lo nuevo o cuyo texto haya cambiado. Lo igual no gasta tokens. No borra la memoria.', 'xabia-intelligence'); ?></p>
                                 <button type="button" id="btn-train-ajax" class="button button-primary xabia-sidebar-action"<?php
                                     echo $tokens_depleted_ui
                                         ? ' disabled="disabled" aria-disabled="true" title="' . esc_attr__('Saldo de tokens agotado. Recarga en Cartera / Wallet.', 'xabia-intelligence') . '"'
@@ -4801,6 +5110,7 @@ class Xabia_Admin {
                                 </details>
                                 <hr>
                                 <button type="button" id="btn-clear-ajax" class="button xabia-btn--danger-outline" style="width:100%;margin-top:8px;"><?php echo esc_html__('Borrar memoria vectorial', 'xabia-intelligence'); ?></button>
+                                <p class="description" style="margin:6px 0 0;"><?php echo esc_html__('Solo en caso extremo (datos corruptos). Una empresa nueva no requiere borrar: sincroniza y entrena el lote pendiente.', 'xabia-intelligence'); ?></p>
                             </div>
 
                             <div class="xabia-playground-card" id="xabia-playground-card">
@@ -5108,7 +5418,8 @@ class Xabia_Admin {
 
             function xabiaCopySingleSourceIntoMultiSource0(fromType) {
                 if (xabiaMultiSource0HasData()) return;
-                var sourceType = (fromType === 'sql' || fromType === 'local_sql' || fromType === 'csv') ? fromType : 'local_sql';
+                var allowed = ['sql', 'local_sql', 'csv', 'web_pages', 'web_remote'];
+                var sourceType = allowed.indexOf(fromType) !== -1 ? fromType : 'local_sql';
                 var rows = xabiaCollectSingleAttributes();
                 var cols = xabiaUniqueSorted(rows.map(function(r) { return r.csv_col; }).filter(Boolean));
 
@@ -5120,7 +5431,9 @@ class Xabia_Admin {
                     $('input[name="sources[0][sql_pass]"]').val($('#sql_pass').val() || '');
                     $('input[name="sources[0][sql_prefix]"]').val($('#sql_prefix').val() || '');
                     $('textarea[name="sources[0][sql_query]"]').val($('#sql_query').val() || '');
-                } else {
+                } else if (sourceType === 'web_remote') {
+                    $('textarea[name="sources[0][web_remote_urls]"]').val($('#web_remote_urls').val() || '');
+                } else if (sourceType === 'csv') {
                     xabiaPendingMultiCsv0 = $('#selected_csv_file').val() || '';
                 }
                 renderAttributeRows($('.multi-attr-container[data-idx="0"]'), rows, cols, 'sources[0][attributes]');
@@ -5130,6 +5443,10 @@ class Xabia_Admin {
             var xabiaWooLicenseOk = <?php echo (function_exists('xabia_woo_license_gate') && xabia_woo_license_gate()) ? 'true' : 'false'; ?>;
             var XABIA_REMOTE_MEC_SQL = <?php echo wp_json_encode(trim(self::xabia_mec_remote_sql_preset()), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES); ?>;
             var XABIA_REMOTE_MEC_FIELDS = <?php echo wp_json_encode(self::xabia_mec_remote_default_mapping_fields(), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES); ?>;
+            var XABIA_REMOTE_WOO_SQL = <?php echo wp_json_encode(trim(self::xabia_woo_remote_sql_preset()), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES); ?>;
+            var XABIA_REMOTE_WOO_FIELDS = <?php echo wp_json_encode(self::xabia_woo_remote_default_mapping_fields(), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES); ?>;
+            var XABIA_REMOTE_AMELIA_SQL = <?php echo wp_json_encode(trim(self::xabia_amelia_remote_sql_preset()), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES); ?>;
+            var XABIA_REMOTE_AMELIA_FIELDS = <?php echo wp_json_encode(self::xabia_amelia_remote_default_mapping_fields(), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES); ?>;
             function xabiaUpdatePremiumConnectorUi() {
                 var addon = ($('#xabia-source-select').val() === 'addon');
                 var slug = String($('#addon_slug').val() || '');
@@ -5148,24 +5465,29 @@ class Xabia_Admin {
                 $('#xabia-premium-connector-sync-notice').toggle(!!locked);
             }
 
+            function xabiaShowMappingPanel() {
+                $('#xabia-mapping-panel').show();
+                $('#label-single-attr').show();
+                $('#attr-container').show();
+            }
+
             function xabiaUpdateWebPagesUi() {
                 var v = $('#xabia-source-select').val();
                 var showSupplemental = (v === 'addon' || v === 'local_sql' || v === 'sql' || v === 'csv');
                 $('#xabia-supplemental-web-pages').toggle(!!showSupplemental);
-                if (v === 'web_pages') {
-                    $('#label-single-attr').hide();
-                    $('#attr-container').hide();
-                } else if (v !== 'multi') {
-                    $('#label-single-attr').show();
-                    $('#attr-container').show();
+                $('#xabia-sql-remote-presets').toggle(v === 'sql');
+                if (v === 'web_pages' || v === 'web_remote') {
+                    $('#xabia-mapping-panel').hide();
+                } else if (v !== 'multi' && $('#attr-container .row-repeater-box').length) {
+                    xabiaShowMappingPanel();
                 }
             }
 
             $('#xabia-source-select').change(function(){ 
                 let v = $(this).val();
-                if (v !== 'sql' && $('#xabia_sql_preset').val() === 'mec_remote') {
+                if (v !== 'sql' && $('#xabia_sql_preset').val()) {
                     $('#xabia_sql_preset').val('');
-                    $('#xabia-remote-mec-preset-state').hide();
+                    $('#xabia-remote-mec-preset-state, #xabia-remote-woo-preset-state, #xabia-remote-amelia-preset-state').hide();
                 }
                 if (v === 'multi') {
                     xabiaCopySingleSourceIntoMultiSource0(xabiaPrevSourceVal);
@@ -5174,14 +5496,13 @@ class Xabia_Admin {
                     $('#xabia-supplemental-web-pages').hide();
                     $('#label-single-attr').hide();
                     $('#attr-container').hide();
+                    $('#xabia-mapping-panel').hide();
                     $('#section-sql-remote-fields').hide();
                     loadMultiCsvOptions();
                 } else {
                     $('#section-multi').hide();
-                    $('#label-single-attr').show();
-                    $('#attr-container').show();
                     $('.source-section').hide();
-                    if (v === 'local_sql') $('#section-sql').show();
+                    if (v === 'local_sql' || v === 'sql') $('#section-sql').show();
                     else if ($('#section-'+v).length) $('#section-'+v).show();
                     if(v === 'sql' || v === 'addon') $('#section-sql-remote-fields').show();
                     else $('#section-sql-remote-fields').hide();
@@ -5498,7 +5819,17 @@ class Xabia_Admin {
                 $box.toggleClass('xabia-rag-excluded', !on);
             }
             function xabiaApplyRagPreset(mode) {
-                $('#xabia-project-form .row-repeater-box').each(function() {
+                var $scope = $('#xabia-mapping-panel');
+                if (!$scope.length) {
+                    alert('<?php echo esc_js(__('No hay panel de mapeo visible.', 'xabia-intelligence')); ?>');
+                    return;
+                }
+                var $rows = $scope.find('.row-repeater-box');
+                if (!$rows.length) {
+                    alert('<?php echo esc_js(__('No hay filas de mapeo. Pulsa «Conectar y mapear» primero.', 'xabia-intelligence')); ?>');
+                    return;
+                }
+                $rows.each(function() {
                     var $box = $(this);
                     var col = $box.find('.xabia-col-selector').val() || '';
                     var role = $box.find('select[name*="[visual_role]"]').val() || 'none';
@@ -5609,7 +5940,11 @@ class Xabia_Admin {
                     p.columns = xabiaUniqueSorted(p.rows.map(function(r) { return r.csv_col; }).filter(Boolean));
                 }
                 renderAttributeRows($('#attr-container'), p.rows, p.columns, 'attributes');
-                alert("✅ Columnas recibidas. Ajusta el mapeo y guarda el agente.");
+                xabiaRefreshEnteLabelColOptions($('#attr-container'));
+                xabiaShowMappingPanel();
+                xabiaSyncSqlFromMapping();
+                $('#xabia-sql-step-status').text('<?php echo esc_js(__('Campos vinculados. Ajusta el mapeo y guarda el agente.', 'xabia-intelligence')); ?>');
+                alert("✅ <?php echo esc_js(__('Campos vinculados. Ajusta el mapeo y guarda el agente.', 'xabia-intelligence')); ?>");
             }
 
             function renderMultiMapping(idx, data) {
@@ -5620,6 +5955,7 @@ class Xabia_Admin {
                 var $container = $('.multi-attr-container[data-idx="' + idx + '"]');
                 renderAttributeRows($container, p.rows, p.columns, 'sources[' + idx + '][attributes]');
                 $container.closest('.xabia-multi-source-box').find('.multi-csv-feedback[data-idx="'+idx+'"]').text('✅ ' + (p.rows.length) + ' columnas mapeadas.');
+                xabiaSyncSqlFromMapping();
             }
 
             function mergeColsIntoSelectors(extraCols) {
@@ -5675,11 +6011,21 @@ class Xabia_Admin {
                 }
                 var $scopeMap = $(this).closest('#attr-container, .multi-attr-container');
                 xabiaRefreshEnteLabelColOptions($scopeMap.length ? $scopeMap : $('#xabia-project-form'));
+                xabiaSyncSqlFromMapping();
             });
 
-            $('#xabia-rag-preset-recommended').on('click', function() { xabiaApplyRagPreset('recommended'); });
-            $('#xabia-rag-exclude-media').on('click', function() { xabiaApplyRagPreset('media'); });
-            $('#xabia-rag-include-all').on('click', function() { xabiaApplyRagPreset('all'); });
+            $(document).on('click', '#xabia-rag-preset-recommended', function(e) {
+                e.preventDefault();
+                xabiaApplyRagPreset('recommended');
+            });
+            $(document).on('click', '#xabia-rag-exclude-media', function(e) {
+                e.preventDefault();
+                xabiaApplyRagPreset('media');
+            });
+            $(document).on('click', '#xabia-rag-include-all', function(e) {
+                e.preventDefault();
+                xabiaApplyRagPreset('all');
+            });
             $('#xabia-project-form').on('change', '.xabia-import-rag-cb', function() {
                 xabiaSyncRowRagStyle($(this).closest('.row-repeater-box'));
             });
@@ -5859,6 +6205,48 @@ class Xabia_Admin {
                 });
                 if (lines.length === 0) lines.push('    p.ID');
                 return 'SELECT\n' + lines.join(',\n') + '\nFROM {prefix}posts p\nWHERE p.post_type = \'' + xabiaSqlEscLiteral(postType) + '\'\n  AND p.post_status = \'publish\'';
+            }
+            function xabiaLooksLikeWpPostsCatalogSql(sql) {
+                sql = (sql || '').trim();
+                if (!sql) return true;
+                if (/amelia_/i.test(sql)) return false;
+                return /\bFROM\s+(?:\{prefix\}|[`'"]?[A-Za-z0-9_]*)posts[`'"]?\s+p\b/i.test(sql);
+            }
+            function xabiaPostTypeFromSql(sql) {
+                var m = (sql || '').match(/p\.post_type\s*=\s*'([^']+)'/i) || (sql || '').match(/post_type\s*=\s*'([^']+)'/i);
+                return m ? m[1] : '';
+            }
+            function xabiaMappingColsFromContainer($c) {
+                var cols = [];
+                var seen = {};
+                $c.find('.xabia-col-selector').each(function() {
+                    var v = ($(this).val() || '').trim();
+                    if (!v || seen[v]) return;
+                    seen[v] = 1;
+                    cols.push(v);
+                });
+                return cols;
+            }
+            function xabiaSyncSqlFromMappingContainer($container, $ta) {
+                if (!$ta || !$ta.length) return;
+                var src = ($('#xabia-source-select').val() || '');
+                if (src !== 'local_sql' && src !== 'sql' && !$container.hasClass('multi-attr-container')) return;
+                if (($('#xabia_sql_preset').val() || '').trim()) return;
+                var sql = $ta.val() || '';
+                if (!xabiaLooksLikeWpPostsCatalogSql(sql)) return;
+                var cols = xabiaMappingColsFromContainer($container);
+                if (!cols.length) return;
+                var pt = xabiaPostTypeFromSql(sql) || ($('#xabia_catalog_post_type').val() || '').trim();
+                if (!pt) return;
+                if (cols.indexOf('ID') === -1) cols.unshift('ID');
+                $ta.val(xabiaBuildCptSelectSql(pt, cols));
+            }
+            function xabiaSyncSqlFromMapping() {
+                xabiaSyncSqlFromMappingContainer($('#attr-container'), $('#sql_query'));
+                $('.multi-attr-container').each(function() {
+                    var idx = $(this).data('idx');
+                    xabiaSyncSqlFromMappingContainer($(this), $('textarea[name="sources[' + idx + '][sql_query]"]'));
+                });
             }
             function xabiaCptAssistShow(on) {
                 var d = on ? 'block' : 'none';
@@ -6132,6 +6520,7 @@ class Xabia_Admin {
                 if (!xabiaCptAssistTarget) return;
                 if (xabiaCptAssistTarget.type === 'single') {
                     $('#sql_query').val(sql);
+                    $('#xabia-sql-step-status').text('<?php echo esc_js(__('Tipo de contenido elegido. Pulsa «2. Vincular base de datos».', 'xabia-intelligence')); ?>');
                 } else if (xabiaCptAssistTarget.type === 'multi') {
                     var idx = xabiaCptAssistTarget.idx;
                     $('textarea[name="sources[' + idx + '][sql_query]"]').val(sql);
@@ -6276,6 +6665,8 @@ class Xabia_Admin {
 
             $('#btn-test-sql').click(function(e){
                 e.preventDefault();
+                xabiaSyncSqlFromMapping();
+                var keepMapping = $('#attr-container .xabia-col-selector').length > 0;
                 xabiaAdminPost({
                     action: 'xabia_test_sql',
                     source_type: ($('#xabia-source-select').val() || 'sql'),
@@ -6289,22 +6680,44 @@ class Xabia_Admin {
                 }, function(r) {
                     if (r.success) {
                         if (r.data.message) alert(r.data.message);
-                        renderMapping(r.data);
+                        if (keepMapping) {
+                            mergeColsIntoSelectors(r.data.columns || []);
+                            xabiaSyncSqlFromMapping();
+                            xabiaShowMappingPanel();
+                            $('#xabia-sql-step-status').text('<?php echo esc_js(__('Consulta comprobada. El mapeo se mantiene; el SQL se alinea con él.', 'xabia-intelligence')); ?>');
+                        } else {
+                            renderMapping(r.data);
+                        }
                     } else alert((r.data && r.data.message) ? r.data.message : '');
                 });
             });
+            $('#xabia-project-form').on('submit', function() { xabiaSyncSqlFromMapping(); });
+            xabiaSyncSqlFromMapping();
 
             $('#xabia-apply-remote-mec-preset').on('click', function(e) {
                 e.preventDefault();
+                xabiaApplyRemoteSqlPreset('mec_remote', XABIA_REMOTE_MEC_SQL, XABIA_REMOTE_MEC_FIELDS);
+            });
+            $('#xabia-apply-remote-woo-preset').on('click', function(e) {
+                e.preventDefault();
+                xabiaApplyRemoteSqlPreset('woo_remote', XABIA_REMOTE_WOO_SQL, XABIA_REMOTE_WOO_FIELDS);
+            });
+            $('#xabia-apply-remote-amelia-preset').on('click', function(e) {
+                e.preventDefault();
+                xabiaApplyRemoteSqlPreset('amelia_remote', XABIA_REMOTE_AMELIA_SQL, XABIA_REMOTE_AMELIA_FIELDS);
+            });
+            function xabiaApplyRemoteSqlPreset(name, sql, fields) {
                 $('#xabia-source-select').val('sql').trigger('change');
-                $('#xabia_sql_preset').val('mec_remote');
-                $('#sql_query').val(XABIA_REMOTE_MEC_SQL);
+                $('#xabia_sql_preset').val(name);
+                $('#sql_query').val(sql);
                 if (!$('#sql_prefix').val()) {
                     $('#sql_prefix').val('wp_');
                 }
-                renderMapping({ fields: XABIA_REMOTE_MEC_FIELDS });
-                $('#xabia-remote-mec-preset-state').show();
-            });
+                renderMapping({ fields: fields });
+                $('#xabia-remote-mec-preset-state').toggle(name === 'mec_remote');
+                $('#xabia-remote-woo-preset-state').toggle(name === 'woo_remote');
+                $('#xabia-remote-amelia-preset-state').toggle(name === 'amelia_remote');
+            }
 
             $('#btn-scan-csv').click(function(e){
                 e.preventDefault();
@@ -7013,9 +7426,22 @@ class Xabia_Admin {
         return ['days' => array_values($days), 'total' => $total, 'max' => $max];
     }
 
-    private static function get_project_logs($pid) { 
-        global $wpdb; 
-        $t = Xabia_DB::table('logs'); 
-        return $wpdb->get_results($wpdb->prepare("SELECT * FROM $t WHERE project_id=%s ORDER BY id DESC LIMIT 20",$pid)); 
+    /**
+     * Registro de conversaciones del agente (pestaña Historial).
+     * Límite alto a propósito: cada fila es texto corto; cientos/miles pesan poco en MySQL.
+     *
+     * @return list<object>
+     */
+    private static function get_project_logs($pid) {
+        global $wpdb;
+        $t = Xabia_DB::table('logs');
+        $limit = (int) apply_filters('xabia_project_logs_ui_limit', 400, $pid);
+        $limit = max(50, min(2000, $limit));
+
+        return $wpdb->get_results($wpdb->prepare(
+            "SELECT * FROM $t WHERE project_id=%s ORDER BY id DESC LIMIT %d",
+            $pid,
+            $limit
+        ));
     }
 }

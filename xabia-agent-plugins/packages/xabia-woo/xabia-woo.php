@@ -3,7 +3,7 @@
  * Plugin Name: Xabia Woo
  * Plugin URI: https://xabia.ai
  * Description: Addon que transforma tu WooCommerce en una plataforma de comercio conversacional avanzado. Dota al Agente de IA con inteligencia sobre tu catálogo para carritos asistidos e interacciones de ventas hiperpersonalizadas.
- * Version: 1.0.4
+ * Version: 1.0.7
  * Author: Digixop
  * Author URI: https://digixop.com
  * Text Domain: xabia-intelligence

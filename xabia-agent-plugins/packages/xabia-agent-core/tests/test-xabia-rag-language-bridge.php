@@ -63,6 +63,19 @@ assert(
     'vela still matches plural velas'
 );
 
+$stops = ['empresa', 'empresas', 'alguna', 'otro', 'actividad'];
+assert(
+    Xabia_Rag_Language_Bridge::is_near_stopword('emprea', $stops),
+    'typo of empresa is dropped as a keyword needle'
+);
+assert(
+    !Xabia_Rag_Language_Bridge::is_near_stopword('orio', $stops),
+    'short toponym is not treated as a stop-word typo'
+);
+$filtered = Xabia_Rag_Language_Bridge::drop_near_stopword_needles(['emprea', 'orio', 'vela'], $stops);
+assert(!in_array('emprea', $filtered, true), 'drop_near_stopword removes emprea');
+assert(in_array('orio', $filtered, true), 'drop_near_stopword keeps orio');
+
 require_once dirname(__DIR__) . '/core/class-xabia-rag-hybrid-ranker.php';
 $fused = Xabia_Rag_Hybrid_Ranker::rrf_fuse([
     [
