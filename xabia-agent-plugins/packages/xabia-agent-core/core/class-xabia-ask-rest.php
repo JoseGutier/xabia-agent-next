@@ -64,6 +64,18 @@ final class Xabia_Ask_Rest {
         }
         if (self::wants_stream($request) && class_exists('Xabia_Chat_Stream', false)) {
             Xabia_Chat_Stream::arm();
+            @ini_set('zlib.output_compression', '0');
+            @ini_set('output_buffering', 'off');
+            while (ob_get_level() > 0) {
+                @ob_end_clean();
+            }
+            if (!headers_sent()) {
+                header('Content-Type: text/event-stream; charset=utf-8');
+                header('X-Accel-Buffering: no');
+                header('X-LiteSpeed-Cache-Control: no-cache');
+                header('Cache-Control: no-cache, no-transform');
+                header('Connection: keep-alive');
+            }
         }
         foreach ($request->get_params() as $key => $value) {
             if (!is_string($key) || $key === '') {

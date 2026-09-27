@@ -70,6 +70,7 @@ final class Xabia_Chat_Stream {
         if (class_exists('Xabia_Chat_Pipeline', false)) {
             Xabia_Chat_Pipeline::note_first_token();
         }
+        self::discard_buffers();
         self::open();
         echo self::encode_event('delta', ['text' => $text]);
         self::flush_buffers();
@@ -102,24 +103,29 @@ final class Xabia_Chat_Stream {
         }
         @ini_set('zlib.output_compression', '0');
         @ini_set('output_buffering', 'off');
-        while (ob_get_level() > 0) {
-            @ob_end_flush();
-        }
+        self::discard_buffers();
         if (!headers_sent()) {
             http_response_code(200);
             header('Content-Type: text/event-stream; charset=utf-8');
-            header('Cache-Control: no-cache, no-transform');
             header('X-Accel-Buffering: no');
+            header('X-LiteSpeed-Cache-Control: no-cache');
+            header('Cache-Control: no-cache, no-transform');
             header('Connection: keep-alive');
         }
         echo ':' . str_repeat(' ', 2048) . "\n\n";
         self::flush_buffers();
     }
 
+    private static function discard_buffers(): void {
+        while (ob_get_level() > 0) {
+            @ob_end_clean();
+        }
+    }
+
     private static function flush_buffers(): void {
-        if (function_exists('ob_flush')) {
+        while (ob_get_level() > 0) {
             @ob_flush();
         }
-        flush();
+        @flush();
     }
 }

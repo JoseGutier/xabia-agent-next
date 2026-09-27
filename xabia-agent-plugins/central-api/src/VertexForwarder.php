@@ -454,16 +454,20 @@ final class VertexForwarder
             CURLOPT_POSTFIELDS     => $json,
             CURLOPT_HTTPHEADER     => [
                 'Content-Type: application/json',
+                'Accept: text/event-stream',
                 'Authorization: Bearer ' . $token,
             ],
             CURLOPT_RETURNTRANSFER => false,
             CURLOPT_TIMEOUT        => 90,
+            CURLOPT_BUFFERSIZE     => 128,
+            CURLOPT_TCP_NODELAY    => true,
             CURLOPT_WRITEFUNCTION  => static function ($ch, $chunk) use (&$raw, &$carry, &$acc, &$http, &$started, &$usage, &$finish) {
                 $raw .= $chunk;
                 if ($http === 0) {
                     $http = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
                 }
-                if ($http !== 200) {
+                // 0 = las cabeceras aún no están; igual hay que reemitir los data:.
+                if ($http >= 400) {
                     return strlen($chunk);
                 }
                 $carry .= $chunk;
@@ -520,6 +524,7 @@ final class VertexForwarder
                 ]],
                 'usage' => $usage,
             ];
+            self::discardBuffers();
             echo 'data: ' . json_encode($tail, JSON_UNESCAPED_UNICODE) . "\n\n";
             self::flushStream();
 
@@ -660,6 +665,7 @@ final class VertexForwarder
                 'finish_reason' => null,
             ]],
         ];
+        self::discardBuffers();
         echo 'data: ' . json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) . "\n\n";
         self::flushStream();
     }
@@ -669,26 +675,32 @@ final class VertexForwarder
         ignore_user_abort(true);
         @ini_set('zlib.output_compression', '0');
         @ini_set('output_buffering', 'off');
-        while (ob_get_level() > 0) {
-            @ob_end_flush();
-        }
+        self::discardBuffers();
         if (!headers_sent()) {
             http_response_code(200);
             header('Content-Type: text/event-stream; charset=utf-8');
-            header('Cache-Control: no-cache, no-transform');
             header('X-Accel-Buffering: no');
+            header('X-LiteSpeed-Cache-Control: no-cache');
+            header('Cache-Control: no-cache, no-transform');
             header('Connection: keep-alive');
         }
         echo ':' . str_repeat(' ', 2048) . "\n\n";
         self::flushStream();
     }
 
+    private static function discardBuffers(): void
+    {
+        while (ob_get_level() > 0) {
+            @ob_end_clean();
+        }
+    }
+
     private static function flushStream(): void
     {
-        if (function_exists('ob_flush')) {
+        while (ob_get_level() > 0) {
             @ob_flush();
         }
-        flush();
+        @flush();
     }
 
     /**

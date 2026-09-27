@@ -755,7 +755,7 @@ final class Xabia_Digixop_Client {
             'timeout' => 60,
         ];
         $args = apply_filters('xabia_digixop_proxy_http_args', $args, $openai_body, $project_id, $config);
-        $resp = wp_remote_post($url, is_array($args) ? $args : []);
+        $resp = wp_remote_post($req['url'], is_array($args) ? $args : []);
         $code = is_wp_error($resp) ? 0 : (int) wp_remote_retrieve_response_code($resp);
         $raw = is_wp_error($resp) ? $resp->get_error_message() : (string) wp_remote_retrieve_body($resp);
         $json = null;

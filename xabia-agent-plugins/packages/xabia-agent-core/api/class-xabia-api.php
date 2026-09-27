@@ -2238,10 +2238,14 @@ if (!class_exists('Xabia_API')) {
             // Listado nativo WP (taxonomía/CPT): completo y determinista. El Hub top-K
             // puede omitir fichas válidas del catálogo en preguntas de listado.
             $catalog_activity_profile = self::resolve_catalog_activity_profile($search_term, $user_msg_clean);
+            $catalog_first_turn = class_exists('Xabia_Rag_Query_Rewriter', false)
+                ? !Xabia_Rag_Query_Rewriter::history_has_prior_turns(is_array($history) ? $history : [])
+                : false;
             $catalog_intent_early = self::resolve_catalog_list_intent(
                 $user_msg_clean !== '' ? $user_msg_clean : $search_term,
                 (string) $project_id,
-                is_array($config) ? $config : []
+                is_array($config) ? $config : [],
+                $catalog_first_turn
             );
             $wants_native_catalog = $entity_anchor === ''
                 && $named_entity === ''
@@ -2295,11 +2299,12 @@ if (!class_exists('Xabia_API')) {
             if ($rag_lexical_query !== '') {
                 $hub_rag_opts['lexical_query_text'] = $rag_lexical_query;
             }
-            // Listado amplio: Capa 1 regex + Capa 2 micro-LLM (CATALOG|GENERAL). Top-K elevado antes del recorte.
+            // Listado amplio: en el turno 1 no hay micro-modelo. Top-K dentro de 5–10.
             $catalog_intent = self::resolve_catalog_list_intent(
                 $user_msg_clean !== '' ? $user_msg_clean : $search_term,
                 (string) $project_id,
-                is_array($config) ? $config : []
+                is_array($config) ? $config : [],
+                $catalog_first_turn
             );
             if (!empty($catalog_intent['hit'])) {
                 $hub_rag_opts['catalog_list'] = true;
@@ -2461,11 +2466,16 @@ if (!class_exists('Xabia_API')) {
                                 : 2;
                             $out['chunks'] = Xabia_Rag_Hybrid_Ranker::diversify_catalog_top_k(
                                 $out['chunks'],
-                                max(1, (int) $rag_fetch_limit),
+                                max(1, min(Xabia_Brain::PROMPT_CHUNK_MAX, (int) $rag_fetch_limit)),
                                 $max_per
                             );
                             self::$last_rag_debug['priority_boost'] = 'hub';
                         }
+                        $prompt_chunk_max = class_exists('Xabia_Brain', false) ? (int) Xabia_Brain::PROMPT_CHUNK_MAX : 10;
+                        if (count($out['chunks']) > $prompt_chunk_max) {
+                            $out['chunks'] = array_slice($out['chunks'], 0, $prompt_chunk_max);
+                        }
+                        $chunk_count = count($out['chunks']);
                         $formatted_chunks = self::format_hub_rag_chunks_for_prompt($out['chunks'], $config);
                         if (strlen(trim($formatted_chunks)) >= 10) {
                             $context = $formatted_chunks;
@@ -2916,9 +2926,11 @@ if (!class_exists('Xabia_API')) {
             $config['_xabia_proxy_user_lang'] = $user_lang;
             $temperature = isset($config['rules']['min_score']) ? floatval($config['rules']['min_score']) : 0.2;
             $ai_driver = $config['ai_driver'] ?? 'openai';
-            $max_tokens = self::chat_max_tokens($config['rules']['max_output_tokens'] ?? 1200);
+            $max_tokens = self::chat_max_tokens($config['rules']['max_output_tokens'] ?? 300);
             if (!empty($config['_xabia_temporal_catalog'])) {
                 $max_tokens = max($max_tokens, (int) apply_filters('xabia_temporal_catalog_max_output_tokens', 2500, $project_id, $config));
+            } else {
+                $max_tokens = min($max_tokens, 300);
             }
 
             $ente_display = '';
@@ -4023,9 +4035,13 @@ if (!class_exists('Xabia_API')) {
                     . "Incluye solo el identificador/nombre y un detalle breve del CONTEXTO. "
                     . "PROHIBIDO en el listado: volcar el anexo de detalle (bloque tras «---») ni atributos extendidos de ficha. "
                     . "Reserva esos datos para cuando el usuario pida profundizar en una entidad concreta. "
-                    . "Cierra invitando a elegir o pedir más detalle de una opción.\n";
+                    . "Cierra invitando a elegir o pedir más detalle de una opción. "
+                    . "Extensión: como máximo unos 300 tokens. Una entidad por línea: identificador y atributos presentes en el contexto.\n";
             } elseif ($response_mode === 'development') {
                 $format_instruction = "FORMATO DESARROLLO: El usuario quiere profundizar en uno o muy pocos ítems. Responde en 1-2 párrafos cortos, con empatía y sin repetir datos ya dichos. Si pide datos de ficha/contacto y están en el CONTEXTO, úsalos. Objetivo: resolver dudas y conversión.\n";
+            }
+            if (!$temporal_catalog) {
+                $format_instruction .= "SÍNTESIS: Respuesta breve y estructurada sobre los atributos del ente que aparecen en el contexto. Tope orientativo: 300 tokens.\n";
             }
 
             $semantic_navigation = self::semantic_navigation_system_rule();
@@ -5286,7 +5302,7 @@ if (!class_exists('Xabia_API')) {
         /**
          * @return array{hit: bool, source: string}
          */
-        public static function resolve_catalog_list_intent(string $text, string $project_id = '', array $config = []): array
+        public static function resolve_catalog_list_intent(string $text, string $project_id = '', array $config = [], bool $first_turn = false): array
         {
             if (!class_exists('Xabia_Catalog_Intent', false)) {
                 $q = mb_strtolower(trim(wp_strip_all_tags((string) $text)), 'UTF-8');
@@ -5307,6 +5323,7 @@ if (!class_exists('Xabia_API')) {
             $ctx = [
                 'project_id' => $project_id,
                 'config'     => $config,
+                'first_turn' => $first_turn,
             ];
             if ($project_id !== '' || $config !== []) {
                 $ctx['llm_classify'] = static function (string $msg) use ($project_id, $config): string {
@@ -6804,7 +6821,7 @@ if (!class_exists('Xabia_API')) {
             float $similarity_threshold,
             ?array $query_vector = null
         ): string {
-            $limit = max(3, min(8, $max_chunks));
+            $limit = max(Xabia_Brain::PROMPT_CHUNK_MIN, min(Xabia_Brain::PROMPT_CHUNK_MAX, $max_chunks));
             $threshold = 0.01;
 
             $query_vector = self::get_query_embedding($needle, $config, $project_id);

@@ -13,22 +13,22 @@ class Xabia_Catalog_Intent {
     /**
      * Top-K mínimo al detectar listado (regex o semántico), antes del recorte elástico.
      */
-    public const RAG_CHUNK_FLOOR = 20;
+    public const RAG_CHUNK_FLOOR = 8;
 
     /**
-     * Suelo cuando la intención viene solo del micro-LLM (spec: 15).
+     * Suelo cuando la intención viene solo del micro-LLM.
      */
-    public const SEMANTIC_RAG_CHUNK_FLOOR = 15;
+    public const SEMANTIC_RAG_CHUNK_FLOOR = 8;
 
     /**
-     * Listados anclados a hoy/esta noche/mañana: caben los eventos de un día completo.
+     * Listados anclados a un intervalo. El prompt no pasa del tope genérico.
      */
-    public const TEMPORAL_RAG_CHUNK_FLOOR = 25;
+    public const TEMPORAL_RAG_CHUNK_FLOOR = 8;
 
     /**
-     * Tope del floor configurable (filter); el cap duro sigue en Brain::MAX_CATALOG_RAG_CHUNKS.
+     * Tope del floor configurable (filter). El cap duro es Brain::PROMPT_CHUNK_MAX.
      */
-    public const RAG_CHUNK_FLOOR_MAX = 25;
+    public const RAG_CHUNK_FLOOR_MAX = 10;
 
     public const LABEL_CATALOG = 'CATALOG';
     public const LABEL_GENERAL = 'GENERAL';
@@ -233,6 +233,11 @@ class Xabia_Catalog_Intent {
             return ['hit' => true, 'source' => 'regex', 'kind' => self::KIND_CATALOG];
         }
 
+        // Turno 1: búsqueda directa del ente. Sin micro-modelo y sin vocabulario de intención.
+        if (!empty($ctx['first_turn'])) {
+            return ['hit' => false, 'source' => 'first_turn', 'kind' => ''];
+        }
+
         $q = self::normalize($text);
         if ($q === '' || self::looks_like_utility_only($q)) {
             return ['hit' => false, 'source' => 'none', 'kind' => ''];
@@ -309,11 +314,13 @@ class Xabia_Catalog_Intent {
                 $floor = (int) $filtered;
             }
         }
-        $floor = max(10, min(self::RAG_CHUNK_FLOOR_MAX, $floor));
-        $cap = 50;
+        $min = 5;
+        $cap = 10;
         if (class_exists('Xabia_Brain', false)) {
-            $cap = (int) Xabia_Brain::MAX_CATALOG_RAG_CHUNKS;
+            $min = (int) Xabia_Brain::PROMPT_CHUNK_MIN;
+            $cap = (int) Xabia_Brain::PROMPT_CHUNK_MAX;
         }
+        $floor = max($min, min(self::RAG_CHUNK_FLOOR_MAX, $floor));
 
         return max(1, min($cap, max($base, $floor)));
     }

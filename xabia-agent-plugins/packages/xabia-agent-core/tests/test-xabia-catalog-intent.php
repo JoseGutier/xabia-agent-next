@@ -17,6 +17,7 @@ if (!function_exists('wp_strip_all_tags')) {
     }
 }
 
+require_once dirname(__DIR__) . '/core/class-xabia-rag-query-rewriter.php';
 require_once dirname(__DIR__) . '/core/class-xabia-catalog-intent.php';
 require_once dirname(__DIR__) . '/core/class-xabia-rag-chunk-enricher.php';
 require_once dirname(__DIR__) . '/core/class-xabia-brain.php';
@@ -60,11 +61,11 @@ foreach ($not_listing as $q) {
 }
 
 $limit = Xabia_Catalog_Intent::rag_chunk_limit(4);
-assert($limit >= 15 && $limit <= 25, 'catalog intent floor is 15–25, got ' . $limit);
-assert($limit === 20, 'default regex floor is 20');
+assert($limit >= 5 && $limit <= 10, 'catalog intent floor is 5–10, got ' . $limit);
+assert($limit === 8, 'default regex floor is 8');
 
 $sem = Xabia_Catalog_Intent::rag_chunk_limit(4, 'llm');
-assert($sem === 15, 'semantic floor is 15, got ' . $sem);
+assert($sem === 8, 'semantic floor is 8, got ' . $sem);
 
 $temporal_qs = [
     'que conciertos hay esta noche?',
@@ -78,7 +79,7 @@ foreach ($temporal_qs as $q) {
     assert($r['hit'] === true && ($r['kind'] ?? '') === 'temporal', 'temporal resolve: ' . $q);
 }
 $tlimit = Xabia_Catalog_Intent::rag_chunk_limit(4, 'temporal');
-assert($tlimit === 25, 'temporal floor is 25, got ' . $tlimit);
+assert($tlimit === 8, 'temporal floor is 8, got ' . $tlimit);
 
 assert(!Xabia_Catalog_Intent::is_temporal_query('hoy estoy bien'), 'casual hoy should not be temporal');
 
@@ -88,6 +89,29 @@ assert(stripos($exp, 'musica') !== false || stripos($exp, 'música') !== false, 
 $ft_concierto = Xabia_Brain::build_fulltext_boolean_query('conciertos esta noche', []);
 assert(strpos($ft_concierto, '+(') !== false, 'FT uses OR group for semantic field');
 assert(stripos($ft_concierto, 'actuacion') !== false || stripos($ft_concierto, 'recital') !== false, 'FT group includes synonyms');
+
+$llmCalled = false;
+$firstTurn = Xabia_Catalog_Intent::resolve('consulta de un ente', [
+    'first_turn' => true,
+    'config' => ['rules' => ['catalog_intent_micro_llm' => true]],
+    'llm_classify' => static function () use (&$llmCalled) {
+        $llmCalled = true;
+        return 'CATALOG';
+    },
+]);
+assert($firstTurn['hit'] === false && ($firstTurn['source'] ?? '') === 'first_turn', 'turn 1 is a direct entity search');
+assert($llmCalled === false, 'turn 1 must not call the micro-model');
+
+$followCalled = false;
+$follow = Xabia_Catalog_Intent::resolve('consulta de un ente', [
+    'first_turn' => false,
+    'config' => ['rules' => ['catalog_intent_micro_llm' => true]],
+    'llm_classify' => static function () use (&$followCalled) {
+        $followCalled = true;
+        return 'GENERAL';
+    },
+]);
+assert($followCalled === true && ($follow['source'] ?? '') === 'llm', 'a later turn may call the micro-model');
 
 // Capa 2: micro-LLM fallback (mock) — frase que no pilla la regex.
 $paraphrase = 'quiero ir al trote por el monte';

@@ -91,21 +91,28 @@ final class ProxyHandler
                 if (!empty($streamed['started'])) {
                     self::billStreamedChat($billingLicenseId, $sourceUrl, $vertexTier, $streamed);
                     echo "data: [DONE]\n\n";
-                    flush();
+                    while (ob_get_level() > 0) {
+                        @ob_flush();
+                    }
+                    @flush();
 
                     return;
                 }
-                if (self::streamResultIsCompletion($streamed)) {
-                    $up = [
-                        'http_code' => (int) $streamed['http_code'],
-                        'decoded'   => $streamed['decoded'],
-                        'raw'       => (string) ($streamed['raw'] ?? ''),
+                // stream=1 no vuelve a generateContent. El cliente puede reintentar sin stream.
+                $decodedStream = is_array($streamed['decoded'] ?? null) ? $streamed['decoded'] : null;
+                if (!is_array($decodedStream)) {
+                    $decodedStream = [
+                        'error' => [
+                            'message' => 'streamGenerateContent no abrió el flujo',
+                            'type'    => 'xabia_hub_stream',
+                        ],
                     ];
-                } else {
-                    $syncInput = $input;
-                    unset($syncInput['stream']);
-                    $up = VertexForwarder::forwardOpenAiCompatible($syncInput, $vertexTier);
                 }
+                $up = [
+                    'http_code' => (int) (($streamed['http_code'] ?? 0) > 0 ? $streamed['http_code'] : 502),
+                    'decoded'   => $decodedStream,
+                    'raw'       => (string) ($streamed['raw'] ?? ''),
+                ];
             } else {
                 $up = VertexForwarder::forwardOpenAiCompatible($input, $vertexTier);
             }

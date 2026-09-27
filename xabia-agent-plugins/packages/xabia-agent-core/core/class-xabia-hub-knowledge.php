@@ -192,7 +192,7 @@ final class Xabia_Hub_Knowledge {
             return $empty;
         }
         $url = (string) apply_filters('xabia_hub_knowledge_search_url', Xabia_Digixop_Client::default_knowledge_search_url(), $project_id);
-        $mc = class_exists('Xabia_Brain', false) ? Xabia_Brain::MAX_CATALOG_RAG_CHUNKS : 50;
+        $mc = class_exists('Xabia_Brain', false) ? Xabia_Brain::PROMPT_CHUNK_MAX : 10;
         $profile_body = [
             'match_in_header'     => $needles !== [] ? $needles : ['empresa'],
             'exclude_in_category' => array_values(array_filter(array_map('strval', $activity_profile['exclude_in_category'] ?? []))),

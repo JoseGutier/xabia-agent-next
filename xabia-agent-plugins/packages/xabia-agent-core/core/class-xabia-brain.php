@@ -15,13 +15,17 @@ class Xabia_Brain {
     const DEFAULT_MAX_CHUNKS = 4;
     /** Coincide con el límite del Hub y el campo «Resultados máximos de contexto» en el admin. */
     const MAX_RAG_CHUNKS = 15;
+    /** Mínimo genérico de fragmentos de ente inyectados en el prompt. */
+    const PROMPT_CHUNK_MIN = 5;
+    /** Máximo genérico de fragmentos de ente inyectados en el prompt. */
+    const PROMPT_CHUNK_MAX = 10;
     /**
-     * Suelo de chunks al detectar intención de catálogo, antes del recorte elástico.
-     * Alineado con {@see Xabia_Catalog_Intent::RAG_CHUNK_FLOOR} (15–24).
+     * Suelo al detectar un listado, antes del recorte.
+     * Alineado con {@see Xabia_Catalog_Intent::RAG_CHUNK_FLOOR}.
      */
-    const CATALOG_INTENT_MIN_CHUNKS = 20;
-    /** Listados de catálogo (varias empresas): evita discriminar por el top-k corto del chat normal. */
-    const MAX_CATALOG_RAG_CHUNKS = 50;
+    const CATALOG_INTENT_MIN_CHUNKS = 8;
+    /** Tope de fragmentos de un listado. Igual que {@see self::PROMPT_CHUNK_MAX}. */
+    const MAX_CATALOG_RAG_CHUNKS = 10;
     /**
      * Embeddings vía Hub/Vertex (espacio vectorial unificado).
      * OpenAI BYOK directo usa {@see self::OPENAI_BYOK_EMBEDDING_MODEL}.

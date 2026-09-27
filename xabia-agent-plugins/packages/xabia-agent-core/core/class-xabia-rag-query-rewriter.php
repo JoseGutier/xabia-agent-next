@@ -261,7 +261,7 @@ class Xabia_Rag_Query_Rewriter {
         $hyper = array_fill_keys(self::generic_hyperonym_tokens(), true);
         $stop = [
             'para', 'como', 'esta', 'este', 'estos', 'estas', 'hay', 'alguna', 'algunas',
-            'actividades', 'actividad', 'opciones', 'empresa', 'empresas', 'quiero', 'busco',
+            'quiero', 'busco',
         ];
         $content = [];
         foreach ($tokens as $t) {
@@ -312,18 +312,14 @@ class Xabia_Rag_Query_Rewriter {
     }
 
     /**
-     * Si la query es un nombre corto (2–5 palabras, sin interrogación de catálogo),
-     * la expansión no puede tirar esos tokens. En preguntas largas el intérprete
-     * puede seguir corrigiendo topónimos.
+     * Una expansión que no conserva ningún token de contenido de la consulta
+     * (2–5 tokens) se descarta. No hay lista de intención: basta el solapamiento.
      */
     public static function expansion_drops_query_tokens(string $expanded, string $base): bool {
         $plain = trim((string) preg_replace('/[?¿!.,;:]+/u', ' ', $base));
         $plain = trim(preg_replace('/\s+/u', ' ', $plain) ?? $plain);
         $words = preg_split('/\s+/u', $plain) ?: [];
         if (count($words) < 2 || count($words) > 5) {
-            return false;
-        }
-        if (preg_match('/\b(empresas?|actividades?|d[oó]nde|qu[eé]|c[oó]mo|cu[aá]ndo|hay|busco|zer|daude|non|nola)\b/iu', $plain)) {
             return false;
         }
         $keep = [];
@@ -345,19 +341,17 @@ class Xabia_Rag_Query_Rewriter {
             if ($token === '' || mb_strlen($token, 'UTF-8') < 4) {
                 continue;
             }
-            if (mb_strpos($hay, $token) === false) {
-                return true;
+            if (mb_strpos($hay, $token) !== false) {
+                return false;
             }
         }
 
-        return false;
+        return true;
     }
 
     /**
-     * @param array<string, mixed> $config
-     */
-    /**
-     * El modelo solo reescribe si ya hay un turno previo. El primer mensaje pasa directo.
+     * Turno 1: la consulta original va directa a la búsqueda. El micro-modelo
+     * solo se llama si hay un turno previo que resolver (anáfora, referencia).
      *
      * @param list<array<string, mixed>> $history
      */

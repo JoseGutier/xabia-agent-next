@@ -78,5 +78,9 @@ assert(Xabia_Rag_Query_Rewriter::history_has_prior_turns([
     ['role' => 'user', 'content' => 'hola'],
     ['role' => 'assistant', 'content' => 'buenas'],
 ]) === true, 'prior user turn counts as history');
+$rewriteStarted = microtime(true);
+assert(Xabia_Rag_Query_Rewriter::should_invoke_llm(['rules' => ['rag_query_rewrite' => 'on']], false) === false, 'turn 1 never rewrites');
+$rewriteMs = (microtime(true) - $rewriteStarted) * 1000;
+assert($rewriteMs < 10, 'turn 1 rewrite decision stays under 10ms, got ' . $rewriteMs);
 
 echo "OK xabia-rag-query-rewriter tests\n";
