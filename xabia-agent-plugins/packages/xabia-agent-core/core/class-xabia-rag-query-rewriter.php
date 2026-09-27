@@ -356,6 +356,38 @@ class Xabia_Rag_Query_Rewriter {
     /**
      * @param array<string, mixed> $config
      */
+    /**
+     * El modelo solo reescribe si ya hay un turno previo. El primer mensaje pasa directo.
+     *
+     * @param list<array<string, mixed>> $history
+     */
+    public static function history_has_prior_turns(array $history): bool {
+        foreach ($history as $row) {
+            if (!is_array($row)) {
+                continue;
+            }
+            $role = (string) ($row['role'] ?? '');
+            if ($role !== 'user' && $role !== 'assistant') {
+                continue;
+            }
+            if (trim((string) ($row['content'] ?? '')) !== '') {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * @param array<string, mixed> $config
+     */
+    public static function should_invoke_llm(array $config, bool $has_prior_turns): bool {
+        return $has_prior_turns && self::is_enabled($config);
+    }
+
+    /**
+     * @param array<string, mixed> $config
+     */
     public static function is_enabled(array $config): bool {
         $rules = is_array($config['rules'] ?? null) ? $config['rules'] : [];
         if (!array_key_exists('rag_query_rewrite', $rules)) {

@@ -2596,6 +2596,248 @@
             stopMicSession($(this));
         });
 
+        function applyChatSuccess($box, $history, data, isContinue) {
+            hideTyping($box);
+            if (!(data && data.response)) {
+                applyChatFailure($box, $history, xabiaI18n('errorGeneric', 'Error'));
+                return;
+            }
+            var raw = data.response;
+            if (isContinue) {
+                var $lastBot = $history.find('.xabia-msg.bot').last();
+                if ($lastBot.length) {
+                    var prev = String($lastBot.attr('data-raw') || '');
+                    var merged = raw;
+                    if (prev && raw.indexOf(prev) !== 0) {
+                        merged = prev + '\n\n' + raw;
+                    }
+                    $lastBot.attr('data-raw', merged);
+                    $lastBot.removeClass('xabia-msg-typing');
+                    $lastBot.find('.xabia-continue').remove();
+                    var $content = $lastBot.find('.xabia-msg-content');
+                    if ($content.length) {
+                        $content.html(renderBotHtml(merged, chatboxImagesBase($box)));
+                    } else {
+                        $lastBot.append($('<span class="xabia-msg-content"></span>').html(renderBotHtml(merged, chatboxImagesBase($box))));
+                    }
+                    if (data.truncated) {
+                        $lastBot.append(' ').append(makeContinueButton());
+                    }
+                    attachMsgSpeakButton($box, $lastBot, merged);
+                    speakText($box, merged);
+                } else {
+                    appendBotMessage($box, $history, raw, { truncated: !!data.truncated });
+                }
+            } else {
+                appendBotMessage($box, $history, raw, { truncated: !!data.truncated });
+            }
+            scrollMessages($box);
+            syncChatUiState($box);
+        }
+
+        function applyChatFailure($box, $history, errText) {
+            hideTyping($box);
+            $box.find('.xabia-continue').prop('disabled', false);
+            var $err = $('<div class="xabia-msg bot xabia-msg--error"></div>');
+            $err.append($('<span class="xabia-msg-content"></span>').text(errText || xabiaI18n('errorGeneric', 'Error')));
+            messagesStream($box).append($err);
+            scrollMessages($box);
+            syncChatUiState($box);
+        }
+
+        function postChatJson($box, $history, payload, isContinue) {
+            var endpoint = $box.attr('data-ask-endpoint') || $box.data('endpoint');
+            return $.post(endpoint, payload, null, 'json').done(function(r) {
+                if (r && r.success && r.data) {
+                    applyChatSuccess($box, $history, r.data, isContinue);
+                } else {
+                    var errText = (r && r.data && r.data.message) ? String(r.data.message) : xabiaI18n('errorGeneric', 'Error');
+                    applyChatFailure($box, $history, errText);
+                }
+            }).fail(function(xhr, status) {
+                var errText = xabiaI18n('errorServer', 'Error servidor.');
+                if (status === 'parsererror') {
+                    errText = xabiaI18n('errorInvalidResponse', 'Respuesta inválida del servidor. Actualiza Xabia Core o revisa el log PHP del hosting.');
+                    if (xhr && xhr.responseText && window.console && console.warn) {
+                        console.warn('[Xabia] chat parsererror:', String(xhr.responseText).substring(0, 800));
+                    }
+                } else if (xhr && xhr.responseJSON && xhr.responseJSON.data && xhr.responseJSON.data.message) {
+                    errText = String(xhr.responseJSON.data.message);
+                } else if (xhr && xhr.status === 504) {
+                    errText = xabiaI18n('errorTimeout', 'El servidor tardó demasiado. Inténtalo de nuevo en unos segundos.');
+                }
+                applyChatFailure($box, $history, errText);
+            });
+        }
+
+        function readChatSse(body, onEvent) {
+            var reader = body.getReader();
+            var decoder = new TextDecoder('utf-8');
+            var buf = '';
+            var state = { done: false };
+            function consume(block) {
+                var event = 'message';
+                var data = '';
+                String(block).split(/\n/).forEach(function(line) {
+                    if (line.indexOf('event:') === 0) {
+                        event = line.slice(6).trim();
+                    } else if (line.indexOf('data:') === 0) {
+                        data += line.slice(5).trim();
+                    }
+                });
+                if (!data || data.charAt(0) === ':') {
+                    return;
+                }
+                var json = null;
+                try {
+                    json = JSON.parse(data);
+                } catch (eParse) {
+                    return;
+                }
+                if (event === 'done') {
+                    state.done = true;
+                }
+                onEvent(event, json, state);
+            }
+            function pump() {
+                return reader.read().then(function(result) {
+                    buf += decoder.decode(result.value || new Uint8Array(), { stream: !result.done });
+                    var parts = buf.split(/\n\n/);
+                    buf = parts.pop();
+                    parts.forEach(consume);
+                    if (result.done) {
+                        if (String(buf || '').trim() !== '') {
+                            consume(buf);
+                        }
+                        return state;
+                    }
+                    return pump();
+                });
+            }
+            return pump();
+        }
+
+        function paintStreamingBot($box, $bot, raw) {
+            $bot.attr('data-raw', raw);
+            var $content = $bot.find('.xabia-msg-content');
+            if (!$content.length) {
+                $content = $('<span class="xabia-msg-content"></span>');
+                $bot.append($content);
+            }
+            $content.html(renderBotHtml(String(raw || ''), chatboxImagesBase($box)));
+            scrollMessages($box);
+        }
+
+        function dispatchChatRequest($box, $history, payload, isContinue) {
+            var askUrl = $box.attr('data-ask-endpoint');
+            if (!askUrl || !window.fetch || !window.ReadableStream) {
+                return postChatJson($box, $history, payload, isContinue);
+            }
+            var streamPayload = $.extend({}, payload, { stream: '1' });
+            var acc = '';
+            var gotDelta = false;
+            var createdLive = false;
+            var $live = null;
+            var prevRaw = '';
+            if (isContinue) {
+                var $prevBot = $history.find('.xabia-msg.bot').last();
+                prevRaw = $prevBot.length ? String($prevBot.attr('data-raw') || '') : '';
+                $live = $prevBot;
+            }
+            function rollbackLive() {
+                if (createdLive && $live) {
+                    $live.remove();
+                    $live = null;
+                    createdLive = false;
+                    return;
+                }
+                if (isContinue && $live && $live.length) {
+                    paintStreamingBot($box, $live, prevRaw);
+                }
+            }
+            function fallbackJson() {
+                rollbackLive();
+                showTyping($box, payload.message || '');
+                var jsonPayload = $.extend({}, payload);
+                delete jsonPayload.stream;
+                return postChatJson($box, $history, jsonPayload, isContinue);
+            }
+            return fetch(askUrl, {
+                method: 'POST',
+                credentials: 'same-origin',
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
+                    'Accept': 'text/event-stream, application/json'
+                },
+                body: $.param(streamPayload)
+            }).then(function(res) {
+                var ct = String(res.headers.get('content-type') || '').toLowerCase();
+                if (ct.indexOf('text/event-stream') === -1) {
+                    return res.json().then(function(body) {
+                        if (res.status === 403) {
+                            applyChatFailure($box, $history, (body && body.message) ? String(body.message) : xabiaI18n('errorGeneric', 'Error'));
+                            return;
+                        }
+                        if (body && body.success && body.data) {
+                            applyChatSuccess($box, $history, body.data, isContinue);
+                            return;
+                        }
+                        if (body && body.success === false) {
+                            applyChatFailure($box, $history, (body.data && body.data.message) ? String(body.data.message) : xabiaI18n('errorGeneric', 'Error'));
+                            return;
+                        }
+                        return fallbackJson();
+                    }).catch(function() {
+                        return fallbackJson();
+                    });
+                }
+                if (!res.ok || !res.body) {
+                    return fallbackJson();
+                }
+                return readChatSse(res.body, function(event, json) {
+                    if (event === 'delta' && json && json.text) {
+                        if (!gotDelta) {
+                            gotDelta = true;
+                            hideTyping($box);
+                            if (!isContinue) {
+                                $live = $('<div class="xabia-msg bot"></div>');
+                                $history.append($live);
+                                createdLive = true;
+                            } else if (!$live || !$live.length) {
+                                $live = $('<div class="xabia-msg bot"></div>');
+                                $history.append($live);
+                                createdLive = true;
+                            }
+                        }
+                        acc += String(json.text);
+                        var shown = prevRaw ? (prevRaw + '\n\n' + acc) : acc;
+                        paintStreamingBot($box, $live, shown);
+                    } else if (event === 'done' && json) {
+                        hideTyping($box);
+                        var finalRaw = String(json.response || (prevRaw ? (prevRaw + '\n\n' + acc) : acc));
+                        if ($live && $live.length) {
+                            paintStreamingBot($box, $live, finalRaw);
+                            $live.find('.xabia-continue').remove();
+                            finishBotMessage($box, $history, $live, finalRaw, { truncated: !!json.truncated });
+                        } else {
+                            applyChatSuccess($box, $history, json, isContinue);
+                        }
+                    } else if (event === 'error' && !gotDelta) {
+                        acc = '';
+                    }
+                }).then(function(state) {
+                    if (!state || !state.done) {
+                        return fallbackJson();
+                    }
+                });
+            }).catch(function() {
+                if (!gotDelta) {
+                    return fallbackJson();
+                }
+                return fallbackJson();
+            });
+        }
+
         function submitChatMessage($box, options) {
             options = options || {};
             var $input = $box.find('.xabia-input-field');
@@ -2625,6 +2867,10 @@
                 user_lang: htmlLang || xabiaBcp47FromLang($box.data('lang')),
                 visitor_key: xabiaVisitorKey($box.data('project'))
             };
+            var boxNonce = $box.data('nonce');
+            if (boxNonce) {
+                payload.nonce = String(boxNonce);
+            }
             if (xabiaIsLiteMode()) {
                 var liteCfg = xabiaChatSettings();
                 if (liteCfg.nonce) {
@@ -2689,62 +2935,7 @@
             }
             $box.find('.xabia-continue').prop('disabled', true);
             showTyping($box, val);
-            $.post($box.data('endpoint'), payload, null, 'json').done(function(r) {
-                hideTyping($box);
-                if (r.success && r.data && r.data.response) {
-                    var raw = r.data.response;
-                    if (isContinue) {
-                        var $lastBot = $history.find('.xabia-msg.bot').last();
-                        if ($lastBot.length) {
-                            var prev = String($lastBot.attr('data-raw') || '');
-                            var merged = prev ? (prev + '\n\n' + raw) : raw;
-                            $lastBot.attr('data-raw', merged);
-                            $lastBot.removeClass('xabia-msg-typing');
-                            $lastBot.find('.xabia-continue').remove();
-                            var $content = $lastBot.find('.xabia-msg-content');
-                            if ($content.length) {
-                                $content.html(renderBotHtml(merged, chatboxImagesBase($box)));
-                            } else {
-                                $lastBot.append($('<span class="xabia-msg-content"></span>').html(renderBotHtml(merged, chatboxImagesBase($box))));
-                            }
-                            if (r.data.truncated) {
-                                $lastBot.append(' ').append(makeContinueButton());
-                            }
-                            attachMsgSpeakButton($box, $lastBot, merged);
-                            speakText($box, merged);
-                        } else {
-                            appendBotMessage($box, $history, raw, { truncated: !!r.data.truncated });
-                        }
-                    } else {
-                        appendBotMessage($box, $history, raw, { truncated: !!r.data.truncated });
-                    }
-                } else {
-                    var errText = (r.data && r.data.message) ? String(r.data.message) : xabiaI18n('errorGeneric', 'Error');
-                    var $err = $('<div class="xabia-msg bot xabia-msg--error"></div>');
-                    $err.append($('<span class="xabia-msg-content"></span>').text(errText));
-                    $history.append($err);
-                    $box.find('.xabia-continue').prop('disabled', false);
-                }
-                scrollMessages($box);
-                syncChatUiState($box);
-            }).fail(function(xhr, status) {
-                hideTyping($box);
-                $box.find('.xabia-continue').prop('disabled', false);
-                var errText = xabiaI18n('errorServer', 'Error servidor.');
-                if (status === 'parsererror') {
-                    errText = xabiaI18n('errorInvalidResponse', 'Respuesta inválida del servidor. Actualiza Xabia Core o revisa el log PHP del hosting.');
-                    if (xhr && xhr.responseText && window.console && console.warn) {
-                        console.warn('[Xabia] chat parsererror:', String(xhr.responseText).substring(0, 800));
-                    }
-                } else if (xhr && xhr.responseJSON && xhr.responseJSON.data && xhr.responseJSON.data.message) {
-                    errText = String(xhr.responseJSON.data.message);
-                } else if (xhr && xhr.status === 504) {
-                    errText = xabiaI18n('errorTimeout', 'El servidor tardó demasiado. Inténtalo de nuevo en unos segundos.');
-                }
-                messagesStream($box).append('<div class="xabia-msg bot xabia-msg--error"><span class="xabia-msg-content">' + errText + '</span></div>');
-                scrollMessages($box);
-                syncChatUiState($box);
-            });
+            dispatchChatRequest($box, $history, payload, isContinue);
         }
 
         $(document).on('click', '.xabia-send', function(e) {

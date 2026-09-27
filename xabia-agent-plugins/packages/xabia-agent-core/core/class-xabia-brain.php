@@ -1,8 +1,8 @@
 <?php
 /**
- * XABIA BRAIN — búsqueda RAG (FULLTEXT + LIKE de respaldo y vectorial) y formateo de contexto.
- * - Léxico: MATCH ... AGAINST BOOLEAN MODE sobre content_chunk; fallback LIKE (chunk + meta).
- * - Vector: embeddings + similitud coseno, umbral y top_k (cuando use_vector y hay vector_data).
+ * XABIA BRAIN — búsqueda RAG (FULLTEXT + LIKE de respaldo) y formateo de contexto.
+ * - Léxico local: MATCH ... AGAINST BOOLEAN MODE sobre content_chunk; fallback LIKE (chunk + meta).
+ * - Vectorial: solo en el Hub. WordPress no calcula coseno; si el Hub no responde, el fallback es léxico.
  */
 
 if (!defined('ABSPATH')) exit;
@@ -30,7 +30,6 @@ class Xabia_Brain {
 
     /** Embeddings solo cuando el agente llama a api.openai.com con clave propia. */
     const OPENAI_BYOK_EMBEDDING_MODEL = 'text-embedding-3-small';
-    const VECTOR_CANDIDATES_LIMIT = 200;
 
     /**
      * Top-K efectivo para RAG según reglas del proyecto (legacy context_chunk_limit o max_chunks_context).
@@ -955,121 +954,111 @@ class Xabia_Brain {
     }
 
     /**
-     * Búsqueda vectorial: usa el vector de la query (o lo genera con OpenAI si no se pasa).
-     * Recupera chunks con vector_data, filtra por umbral y top_k. Doble salto: lista vs desarrollo.
+     * Búsqueda de conocimiento para el chat.
+     * Con Hub: el embedding viaja al Hub y el ranking vectorial ocurre allí.
+     * Sin Hub, o si el Hub no devuelve contexto: solo FULLTEXT/LIKE local. No hay coseno en PHP.
      *
-     * @param float $threshold Umbral de similitud coseno (0.0–1.0). Por debajo se descarta.
-     * @param array|null $query_vector Vector precalculado (p. ej. Vertex/OpenAI según ai_driver). Si null, se usa get_embedding (OpenAI).
+     * @param float $threshold Umbral de similitud que aplica el Hub (0.0–1.0).
+     * @param array|null $query_vector Vector ya calculado. Si el Hub está activo y llega null, se genera aquí (con caché).
      * @param array{catalog_list?: bool, lexical_query_text?: string, keyword_boost_only?: bool, keyword_expansions?: array<string, string>} $hub_opts
-     * @return array{context: string, chunk_count: int, similarity_avg: float|null, total_found?: int|null}
+     * @return array{context: string, chunk_count: int, similarity_avg: float|null, total_found?: int|null, retrieval?: string}
      */
     public static function search_knowledge_vector($project_id, $query, $scope = 'global', $strict_ente = false, $max_chunks = null, $threshold = 0.2, $query_vector = null, array $hub_opts = []) {
-        global $wpdb;
-        $table = Xabia_DB::table('knowledge_vectors');
+        $hub_on = class_exists('Xabia_Hub_Knowledge', false) && Xabia_Hub_Knowledge::is_hub_rag_enabled($project_id);
+        $lexical_query = isset($hub_opts['lexical_query_text']) ? trim((string) $hub_opts['lexical_query_text']) : '';
+        if ($lexical_query === '') {
+            $lexical_query = trim((string) $query);
+        }
 
-        if ($query_vector === null || !is_array($query_vector)) {
+        if (!$hub_on) {
+            return self::lexical_search_as_vector_result($project_id, $lexical_query, (string) $scope, (bool) $strict_ente, $max_chunks, null);
+        }
+
+        if ($query_vector === null || !is_array($query_vector) || $query_vector === []) {
             $query_vector = self::get_embedding($query, $project_id);
         }
-        if ($query_vector === null || !is_array($query_vector)) {
-            return [
-                'context'        => '',
-                'chunk_count'    => 0,
-                'similarity_avg' => null,
-                'total_found'    => null,
-            ];
-        }
-
-        if (class_exists('Xabia_Hub_Knowledge', false) && Xabia_Hub_Knowledge::is_hub_rag_enabled($project_id)) {
-            $threshold = max(0, min(1, (float) $threshold));
-            $max_k = self::resolve_vector_top_k($max_chunks, $hub_opts);
-            $hubRes = Xabia_Hub_Knowledge::search_vector($project_id, $query_vector, $scope, $strict_ente, $max_k, $threshold, $query, $hub_opts);
-            $hub_meta = isset($hubRes['_hub_meta']) && is_array($hubRes['_hub_meta']) ? $hubRes['_hub_meta'] : null;
-            $hub_context = trim((string) ($hubRes['context'] ?? ''));
-            if (($hubRes['chunk_count'] ?? 0) > 0 && $hub_context !== '') {
-                return $hubRes;
-            }
-            if (!empty($hub_opts['keyword_boost_only'])) {
-                return [
-                    'context'        => (string) ($hubRes['context'] ?? ''),
-                    'chunk_count'    => (int) ($hubRes['chunk_count'] ?? 0),
-                    'similarity_avg' => $hubRes['similarity_avg'] ?? null,
-                    'total_found'    => $hubRes['total_found'] ?? null,
-                    'chunks'         => isset($hubRes['chunks']) && is_array($hubRes['chunks']) ? $hubRes['chunks'] : [],
-                    '_hub_meta'      => $hub_meta,
-                ];
-            }
-            if (!apply_filters('xabia_hub_knowledge_fallback_local', true, $project_id)) {
+        if ($query_vector === null || !is_array($query_vector) || $query_vector === []) {
+            if (!empty($hub_opts['keyword_boost_only']) || !apply_filters('xabia_hub_knowledge_fallback_local', true, $project_id)) {
                 return [
                     'context'        => '',
                     'chunk_count'    => 0,
                     'similarity_avg' => null,
                     'total_found'    => null,
-                    '_hub_meta'      => $hub_meta,
+                    'retrieval'      => 'lexical',
                 ];
             }
-            $hub_failover_meta = $hub_meta;
-        } else {
-            $hub_failover_meta = null;
-        }
 
-        $vec_col = class_exists('Xabia_DB', false) ? Xabia_DB::knowledge_vectors_vector_column() : 'vector_data';
-        $has_emb = class_exists('Xabia_DB', false) ? Xabia_DB::knowledge_vectors_sql_has_embedding() : 'vector_data IS NOT NULL';
-
-        $sql = "SELECT id, content_chunk, {$vec_col} AS vector_data FROM $table WHERE project_id = %s AND ({$has_emb})";
-        $args = [$project_id];
-        if ($scope !== 'global' && !empty($scope)) {
-            $sql .= " AND ente_id = %s";
-            $args[] = $scope;
-        }
-        $sql .= " ORDER BY id DESC LIMIT " . (int) self::VECTOR_CANDIDATES_LIMIT;
-
-        $rows = $wpdb->get_results($wpdb->prepare($sql, $args));
-        if (empty($rows)) {
-            return ['context' => '', 'chunk_count' => 0, 'similarity_avg' => null, 'total_found' => null];
+            return self::lexical_search_as_vector_result($project_id, $lexical_query, (string) $scope, (bool) $strict_ente, $max_chunks, null);
         }
 
         $threshold = max(0, min(1, (float) $threshold));
-        $max_chunks = self::resolve_vector_top_k($max_chunks, $hub_opts);
+        $max_k = self::resolve_vector_top_k($max_chunks, $hub_opts);
+        $hubRes = Xabia_Hub_Knowledge::search_vector($project_id, $query_vector, $scope, $strict_ente, $max_k, $threshold, $query, $hub_opts);
+        $hub_meta = isset($hubRes['_hub_meta']) && is_array($hubRes['_hub_meta']) ? $hubRes['_hub_meta'] : null;
+        $hub_context = trim((string) ($hubRes['context'] ?? ''));
+        if (($hubRes['chunk_count'] ?? 0) > 0 && $hub_context !== '') {
+            $hubRes['retrieval'] = 'hub';
 
-        $scored = [];
-        foreach ($rows as $r) {
-            $vec = json_decode($r->vector_data, true);
-            if (!is_array($vec)) continue;
-            $sim = self::cosine_similarity($query_vector, $vec);
-            if ($sim >= $threshold) {
-                $scored[] = [
-                    'id'      => (string) ($r->id ?? ''),
-                    'chunk'   => $r->content_chunk,
-                    'content' => (string) $r->content_chunk,
-                    'score'   => $sim,
-                ];
-            }
+            return $hubRes;
         }
-        usort($scored, function ($a, $b) { return $b['score'] <=> $a['score']; });
-        $total_qualifying = count($scored);
-        $sliced = array_slice($scored, 0, $max_chunks);
+        if (!empty($hub_opts['keyword_boost_only'])) {
+            return [
+                'context'        => (string) ($hubRes['context'] ?? ''),
+                'chunk_count'    => (int) ($hubRes['chunk_count'] ?? 0),
+                'similarity_avg' => $hubRes['similarity_avg'] ?? null,
+                'total_found'    => $hubRes['total_found'] ?? null,
+                'chunks'         => isset($hubRes['chunks']) && is_array($hubRes['chunks']) ? $hubRes['chunks'] : [],
+                '_hub_meta'      => $hub_meta,
+                'retrieval'      => 'hub',
+            ];
+        }
+        if (!apply_filters('xabia_hub_knowledge_fallback_local', true, $project_id)) {
+            return [
+                'context'        => '',
+                'chunk_count'    => 0,
+                'similarity_avg' => null,
+                'total_found'    => null,
+                '_hub_meta'      => $hub_meta,
+                'retrieval'      => 'hub',
+            ];
+        }
 
-        $context = self::format_context_from_rows(array_map(function ($s) { return (object) ['content_chunk' => $s['chunk']]; }, $sliced));
-        $avg = empty($sliced) ? null : array_sum(array_column($sliced, 'score')) / count($sliced);
+        return self::lexical_search_as_vector_result($project_id, $lexical_query, (string) $scope, (bool) $strict_ente, $max_chunks, $hub_meta);
+    }
 
+    /**
+     * Resultado léxico con la misma forma que devolvía la búsqueda vectorial local.
+     *
+     * @param array<string, mixed>|null $hub_meta
+     * @return array{context: string, chunk_count: int, similarity_avg: null, total_found: null, chunks: list<array{id: string, content: string, score: float}>, retrieval: string, _hub_meta?: array<string, mixed>}
+     */
+    private static function lexical_search_as_vector_result($project_id, string $query, string $scope, bool $strict_ente, $max_chunks, ?array $hub_meta): array {
+        $ranked = $query === '' ? [] : self::search_knowledge_ranked($project_id, $query, $scope, $strict_ente, $max_chunks);
+        $chunks = [];
+        foreach ($ranked as $row) {
+            $content = trim((string) ($row['content'] ?? ''));
+            if ($content === '') {
+                continue;
+            }
+            $chunks[] = [
+                'id'      => (string) ($row['id'] ?? ''),
+                'content' => $content,
+                'score'   => (float) ($row['score'] ?? 0),
+            ];
+        }
+        $context = self::format_context_from_rows(array_map(static function ($s) {
+            return (object) ['content_chunk' => $s['content']];
+        }, $chunks));
         $out = [
             'context'        => $context,
-            'chunk_count'    => count($sliced),
-            'similarity_avg' => $avg,
+            'chunk_count'    => count($chunks),
+            'similarity_avg' => null,
             'total_found'    => null,
-            'chunks'         => array_map(static function ($s) {
-                return [
-                    'id'      => (string) ($s['id'] ?? ''),
-                    'content' => (string) ($s['content'] ?? $s['chunk'] ?? ''),
-                    'score'   => (float) ($s['score'] ?? 0),
-                ];
-            }, $sliced),
+            'chunks'         => $chunks,
+            'retrieval'      => 'lexical',
         ];
-        if ($total_qualifying > count($sliced)) {
-            $out['total_found'] = $total_qualifying;
-        }
-        if (isset($hub_failover_meta) && is_array($hub_failover_meta)) {
-            $out['_hub_meta'] = $hub_failover_meta;
+        if (is_array($hub_meta)) {
+            $out['_hub_meta'] = $hub_meta;
         }
 
         return $out;
@@ -1170,26 +1159,6 @@ class Xabia_Brain {
         return isset($body['data'][0]['embedding']) ? $body['data'][0]['embedding'] : null;
     }
 
-    private static function cosine_similarity(array $a, array $b) {
-        if (count($a) !== count($b) || count($a) === 0) return 0;
-        $dot = 0;
-        $norm_a = 0;
-        $norm_b = 0;
-        foreach ($a as $i => $v) {
-            $w = isset($b[$i]) ? (float) $b[$i] : 0;
-            $v = (float) $v;
-            $dot += $v * $w;
-            $norm_a += $v * $v;
-            $norm_b += $w * $w;
-        }
-        $den = sqrt($norm_a) * sqrt($norm_b);
-        return $den > 0 ? $dot / $den : 0;
-    }
-
-    /**
-     * Densifica contexto RAG: mismas entidades/datos, menos tokens de etiquetas y whitespace.
-     * Conserva líneas [Imagen disponible: …].
-     */
     /**
      * Prepara contexto Hub/local para el prompt: UTF-8 válido, troceo por ficha y densificado.
      * Debe ejecutarse ANTES del trim global; si no, substr byte-wise rompe UTF-8 y densify deja el contexto vacío.
@@ -1222,6 +1191,10 @@ class Xabia_Brain {
         return implode("\n\n", $out);
     }
 
+    /**
+     * Densifica contexto RAG: mismas entidades/datos, menos tokens de etiquetas y whitespace.
+     * Conserva líneas [Imagen disponible: …].
+     */
     public static function densify_rag_context(string $context): string {
         $context = self::ensure_valid_utf8(trim($context));
         if ($context === '') {

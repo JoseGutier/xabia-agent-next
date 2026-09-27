@@ -5,7 +5,7 @@ Tags: chatbot, ai, gemini, virtual assistant, rag, wordpress
 Requires at least: 6.0
 Tested up to: 6.9
 Requires PHP: 7.4
-Stable tag: 1.0.318
+Stable tag: 1.0.319
 License: GPLv2 or later
 License URI: http://www.gnu.org/licenses/gpl-2.0.html
 
@@ -25,6 +25,11 @@ Documentación: https://xabia.ai/documentacion/
 4. Cree un agente, sincronice datos y publique con shortcode o modo nativo.
 
 == Changelog ==
+
+= 1.0.319 =
+* Rendimiento: RAG local solo léxico; embeddings con caché; reescritura solo con historial; una sola generación acotada por max_tokens.
+* Chat público en POST /wp-json/xabia/v1/ask con nonce obligatorio. El widget consume SSE y, si el flujo se corta, vuelve al JSON.
+* Log [XABIA_PIPELINE] con nonce, route, rewrite, retrieve, generate, total y first_token.
 
 = 1.0.318 =
 * Chat: fichas de producto/ente ([ACTION:CARD]) con layout responsive (CTA a ancho completo); imágenes de respuesta más compactas; texto del chat sin desbordar el panel.

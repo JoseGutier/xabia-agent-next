@@ -70,4 +70,13 @@ $prep_name = Xabia_Rag_Query_Rewriter::prepare(
 assert(strpos(mb_strtolower($prep_name['embed_text'], 'UTF-8'), 'infantil') === false, 'bad kids expansion is ignored');
 assert(strpos(mb_strtolower($prep_name['lexical_text'], 'UTF-8'), 'norte') !== false, 'original name stays in lexical');
 
+assert(Xabia_Rag_Query_Rewriter::should_invoke_llm(['rules' => ['rag_query_rewrite' => 'on']], false) === false, 'first turn skips rewrite');
+assert(Xabia_Rag_Query_Rewriter::should_invoke_llm(['rules' => ['rag_query_rewrite' => 'on']], true) === true, 'follow-up may rewrite');
+assert(Xabia_Rag_Query_Rewriter::should_invoke_llm(['rules' => ['rag_query_rewrite' => 'off']], true) === false, 'rule off skips rewrite');
+assert(Xabia_Rag_Query_Rewriter::history_has_prior_turns([]) === false, 'empty history is a first turn');
+assert(Xabia_Rag_Query_Rewriter::history_has_prior_turns([
+    ['role' => 'user', 'content' => 'hola'],
+    ['role' => 'assistant', 'content' => 'buenas'],
+]) === true, 'prior user turn counts as history');
+
 echo "OK xabia-rag-query-rewriter tests\n";

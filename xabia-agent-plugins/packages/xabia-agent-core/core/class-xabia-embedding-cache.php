@@ -1,6 +1,8 @@
 <?php
 /**
- * Caché de embeddings de consulta (mismo texto + modelo → mismo vector).
+ * Caché de embeddings de consulta.
+ * Antes de llamar a text-embedding-*, get() lee un transient cuya clave es el hash
+ * del modelo y de la pregunta normalizada. Un acierto no sale a la red.
  */
 if (!defined('ABSPATH')) {
     exit;

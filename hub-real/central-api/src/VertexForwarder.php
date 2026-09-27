@@ -68,6 +68,71 @@ final class VertexForwarder
     }
 
     /**
+     * Chat con stream=true. Si Vertex abre SSE, los deltas ya se han escrito al cliente.
+     *
+     * @param array<string, mixed> $input
+     * @return array{started:bool, http_code:int, usage:array{prompt_tokens:int, completion_tokens:int, total_tokens:int}, finish_reason:string, decoded:?array, raw:string}
+     */
+    public static function streamOpenAiCompatible(array $input, string $vertexTier): array
+    {
+        $blank = self::blankStreamResult();
+        $acc = GoogleServiceAccountAuth::loadServiceAccountJson();
+        if ($acc === null) {
+            $blank['http_code'] = 503;
+            $blank['decoded'] = ['error' => ['message' => 'GOOGLE_APPLICATION_CREDENTIALS o GOOGLE_APPLICATION_CREDENTIALS_JSON no configurado', 'type' => 'xabia_hub_config']];
+
+            return $blank;
+        }
+        $token = GoogleServiceAccountAuth::fetchAccessToken();
+        if ($token === null) {
+            $blank['http_code'] = 503;
+            $blank['decoded'] = ['error' => ['message' => 'No se pudo obtener access_token de Google', 'type' => 'xabia_hub']];
+
+            return $blank;
+        }
+        $vertexProjectId = Env::str('XABIA_VERTEX_PROJECT_ID');
+        if ($vertexProjectId === '') {
+            $vertexProjectId = $acc['project_id'];
+        }
+        $location = trim(Env::str('XABIA_VERTEX_LOCATION', 'europe-west1'));
+        if ($location === '') {
+            $location = 'europe-west1';
+        }
+        $usePro = ($vertexTier === 'pro');
+        $flashModel = Env::str('XABIA_VERTEX_MODEL_FLASH', 'gemini-2.5-flash');
+        $proModel = Env::str('XABIA_VERTEX_MODEL_PRO', 'gemini-2.5-flash');
+        $geminiModel = $usePro ? trim((string) $proModel) : trim((string) $flashModel);
+        if ($geminiModel === '') {
+            $geminiModel = 'gemini-2.5-flash';
+        }
+        if (!isset($input['messages']) || !is_array($input['messages'])) {
+            $blank['http_code'] = 400;
+            $blank['decoded'] = ['error' => ['message' => 'Stream solo admite chat', 'type' => 'invalid_request']];
+
+            return $blank;
+        }
+        $last = $blank;
+        foreach (self::locationCandidates($location) as $loc) {
+            foreach (self::geminiModelCandidates($geminiModel, $usePro) as $model) {
+                $attempt = self::streamChatOnce($vertexProjectId, (string) $loc, $token, (string) $model, $input);
+                if (!empty($attempt['started'])) {
+                    return $attempt;
+                }
+                $last = $attempt;
+                if (!self::shouldRetryVertexFailure([
+                    'http_code' => (int) $attempt['http_code'],
+                    'decoded'   => $attempt['decoded'],
+                    'raw'       => (string) $attempt['raw'],
+                ])) {
+                    return $attempt;
+                }
+            }
+        }
+
+        return $last;
+    }
+
+    /**
      * Resuelve consultas simples de disponibilidad/precios con Avirato sin llamar a Vertex.
      *
      * @param array<string, mixed> $input OpenAI chat completions shape
@@ -329,6 +394,301 @@ final class VertexForwarder
         }
 
         return ['code' => $code > 0 ? $code : 502, 'body' => $body];
+    }
+
+    /**
+     * @return array{started:bool, http_code:int, usage:array{prompt_tokens:int, completion_tokens:int, total_tokens:int}, finish_reason:string, decoded:?array, raw:string}
+     */
+    private static function blankStreamResult(): array
+    {
+        return [
+            'started'       => false,
+            'http_code'     => 0,
+            'usage'         => ['prompt_tokens' => 0, 'completion_tokens' => 0, 'total_tokens' => 0],
+            'finish_reason' => '',
+            'decoded'       => null,
+            'raw'           => '',
+        ];
+    }
+
+    /**
+     * @param array<string, mixed> $input
+     * @return array{started:bool, http_code:int, usage:array{prompt_tokens:int, completion_tokens:int, total_tokens:int}, finish_reason:string, decoded:?array, raw:string}
+     */
+    private static function streamChatOnce(string $projectId, string $location, string $token, string $geminiModel, array $input): array
+    {
+        $out = self::blankStreamResult();
+        $input = self::injectAviratoAvailabilityIfNeeded($input);
+        $body = self::openAiMessagesToGeminiGenerateContent($input);
+        if (($body['contents'] ?? []) === []) {
+            $out['http_code'] = 400;
+            $out['decoded'] = ['error' => ['message' => 'Sin mensajes user/assistant válidos para Gemini', 'type' => 'invalid_request']];
+
+            return $out;
+        }
+        $url = sprintf(
+            'https://%s-aiplatform.googleapis.com/v1/projects/%s/locations/%s/publishers/google/models/%s:streamGenerateContent?alt=sse',
+            $location,
+            rawurlencode($projectId),
+            rawurlencode($location),
+            rawurlencode($geminiModel)
+        );
+        $json = json_encode($body, JSON_UNESCAPED_UNICODE);
+        if ($json === false) {
+            $out['http_code'] = 400;
+            $out['decoded'] = ['error' => ['message' => 'No se pudo serializar la petición Gemini', 'type' => 'invalid_request']];
+
+            return $out;
+        }
+
+        $raw = '';
+        $carry = '';
+        $acc = '';
+        $http = 0;
+        $started = false;
+        $usage = ['prompt_tokens' => 0, 'completion_tokens' => 0, 'total_tokens' => 0];
+        $finish = '';
+        $ch = curl_init($url);
+        curl_setopt_array($ch, [
+            CURLOPT_POST           => true,
+            CURLOPT_POSTFIELDS     => $json,
+            CURLOPT_HTTPHEADER     => [
+                'Content-Type: application/json',
+                'Authorization: Bearer ' . $token,
+            ],
+            CURLOPT_RETURNTRANSFER => false,
+            CURLOPT_TIMEOUT        => 90,
+            CURLOPT_WRITEFUNCTION  => static function ($ch, $chunk) use (&$raw, &$carry, &$acc, &$http, &$started, &$usage, &$finish) {
+                $raw .= $chunk;
+                if ($http === 0) {
+                    $http = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
+                }
+                if ($http !== 200) {
+                    return strlen($chunk);
+                }
+                $carry .= $chunk;
+                while (($pos = strpos($carry, "\n")) !== false) {
+                    $line = rtrim(substr($carry, 0, $pos), "\r");
+                    $carry = substr($carry, $pos + 1);
+                    if ($line === '' || ($line !== '' && $line[0] === ':')) {
+                        continue;
+                    }
+                    if (stripos($line, 'data:') !== 0) {
+                        continue;
+                    }
+                    $data = trim(substr($line, 5));
+                    if ($data === '' || $data === '[DONE]') {
+                        continue;
+                    }
+                    if (!$started) {
+                        $started = true;
+                        self::beginSseResponse();
+                    }
+                    $parsed = self::geminiSsePiece($data, $acc);
+                    $acc = $parsed['text'];
+                    if ($parsed['delta'] !== '') {
+                        self::emitOpenAiContentDelta($parsed['delta']);
+                    }
+                    if ($parsed['finish_reason'] !== '') {
+                        $finish = $parsed['finish_reason'];
+                    }
+                    if ($parsed['usage']['total_tokens'] > 0 || $parsed['usage']['prompt_tokens'] > 0) {
+                        $usage = $parsed['usage'];
+                    }
+                }
+
+                return strlen($chunk);
+            },
+        ]);
+        $exec = curl_exec($ch);
+        $code = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        curl_close($ch);
+        if ($http === 0) {
+            $http = $code;
+        }
+        $out['http_code'] = $http > 0 ? $http : 502;
+        $out['raw'] = $raw;
+        $out['started'] = $started;
+        $out['usage'] = $usage;
+        $out['finish_reason'] = $finish;
+        if ($started) {
+            $tail = [
+                'choices' => [[
+                    'index'         => 0,
+                    'delta'         => new \stdClass(),
+                    'finish_reason' => self::mapGeminiFinish($finish),
+                ]],
+                'usage' => $usage,
+            ];
+            echo 'data: ' . json_encode($tail, JSON_UNESCAPED_UNICODE) . "\n\n";
+            self::flushStream();
+
+            return $out;
+        }
+        $decoded = json_decode($raw, true);
+        if (!is_array($decoded)) {
+            $out['decoded'] = $exec === false
+                ? ['error' => ['message' => 'curl failure', 'type' => 'xabia_vertex']]
+                : null;
+
+            return $out;
+        }
+        $plain = self::geminiBodyToPlainText($decoded);
+        if ($out['http_code'] === 200 && $plain !== '') {
+            $fake = ['candidates' => [['content' => ['parts' => [['text' => $plain]]], 'finishReason' => $finish !== '' ? $finish : 'STOP']]];
+            if ($usage['total_tokens'] > 0) {
+                $fake['usageMetadata'] = [
+                    'promptTokenCount'     => $usage['prompt_tokens'],
+                    'candidatesTokenCount' => $usage['completion_tokens'],
+                    'totalTokenCount'      => $usage['total_tokens'],
+                ];
+            }
+            $out['decoded'] = self::geminiGenerateContentToOpenAiChat($fake, $geminiModel);
+
+            return $out;
+        }
+        $out['decoded'] = $decoded;
+
+        return $out;
+    }
+
+    /**
+     * @param array<string, mixed> $decoded
+     */
+    private static function geminiBodyToPlainText(array $decoded): string
+    {
+        if (isset($decoded['candidates'])) {
+            return self::geminiPieceText($decoded);
+        }
+        $buf = '';
+        foreach ($decoded as $item) {
+            if (is_array($item)) {
+                $buf .= self::geminiPieceText($item);
+            }
+        }
+
+        return $buf;
+    }
+
+    /**
+     * @param array<string, mixed> $data
+     */
+    private static function geminiPieceText(array $data): string
+    {
+        $parts = $data['candidates'][0]['content']['parts'] ?? null;
+        if (!is_array($parts)) {
+            return '';
+        }
+        $buf = '';
+        foreach ($parts as $part) {
+            if (is_array($part) && isset($part['text'])) {
+                $buf .= (string) $part['text'];
+            }
+        }
+
+        return $buf;
+    }
+
+    /**
+     * @return array{delta:string, text:string, finish_reason:string, usage:array{prompt_tokens:int, completion_tokens:int, total_tokens:int}}
+     */
+    private static function geminiSsePiece(string $json, string $accumulated): array
+    {
+        $out = [
+            'delta'         => '',
+            'text'          => $accumulated,
+            'finish_reason' => '',
+            'usage'         => ['prompt_tokens' => 0, 'completion_tokens' => 0, 'total_tokens' => 0],
+        ];
+        $data = json_decode($json, true);
+        if (!is_array($data)) {
+            return $out;
+        }
+        $piece = self::geminiPieceText($data);
+        if ($piece !== '') {
+            if ($accumulated !== '' && str_starts_with($piece, $accumulated)) {
+                $out['delta'] = substr($piece, strlen($accumulated));
+                $out['text'] = $piece;
+            } else {
+                $out['delta'] = $piece;
+                $out['text'] = $accumulated . $piece;
+            }
+        }
+        $finish = $data['candidates'][0]['finishReason'] ?? '';
+        if (is_string($finish) && trim($finish) !== '') {
+            $out['finish_reason'] = strtolower(trim($finish));
+        }
+        $um = $data['usageMetadata'] ?? null;
+        if (is_array($um)) {
+            $pt = (int) ($um['promptTokenCount'] ?? 0);
+            $ct = (int) ($um['candidatesTokenCount'] ?? 0);
+            $tt = (int) ($um['totalTokenCount'] ?? 0);
+            if ($pt > 0 || $ct > 0 || $tt > 0) {
+                $out['usage'] = [
+                    'prompt_tokens'     => $pt,
+                    'completion_tokens' => $ct,
+                    'total_tokens'      => $tt > 0 ? $tt : ($pt + $ct),
+                ];
+            }
+        }
+
+        return $out;
+    }
+
+    private static function mapGeminiFinish(string $reason): string
+    {
+        $fr = strtolower(trim($reason));
+        if ($fr === 'max_tokens' || $fr === 'length') {
+            return 'length';
+        }
+        if ($fr === 'stop' || $fr === 'tool_calls') {
+            return $fr;
+        }
+
+        return $fr !== '' ? $fr : 'stop';
+    }
+
+    private static function emitOpenAiContentDelta(string $text): void
+    {
+        if ($text === '') {
+            return;
+        }
+        $payload = [
+            'choices' => [[
+                'index'         => 0,
+                'delta'         => ['content' => $text],
+                'finish_reason' => null,
+            ]],
+        ];
+        echo 'data: ' . json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) . "\n\n";
+        self::flushStream();
+    }
+
+    private static function beginSseResponse(): void
+    {
+        ignore_user_abort(true);
+        @ini_set('zlib.output_compression', '0');
+        @ini_set('output_buffering', 'off');
+        while (ob_get_level() > 0) {
+            @ob_end_flush();
+        }
+        if (!headers_sent()) {
+            http_response_code(200);
+            header('Content-Type: text/event-stream; charset=utf-8');
+            header('Cache-Control: no-cache, no-transform');
+            header('X-Accel-Buffering: no');
+            header('Connection: keep-alive');
+        }
+        echo ':' . str_repeat(' ', 2048) . "\n\n";
+        self::flushStream();
+    }
+
+    private static function flushStream(): void
+    {
+        if (function_exists('ob_flush')) {
+            @ob_flush();
+        }
+        flush();
     }
 
     /**

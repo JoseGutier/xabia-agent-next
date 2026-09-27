@@ -1427,7 +1427,8 @@ if (!class_exists('Xabia_API')) {
         }
 
         /**
-         * Une una continuación automática cuando el proveedor corta sin declarar finish_reason=length.
+         * La generación es una sola llamada acotada por max_tokens.
+         * Un corte del proveedor no dispara otra petición; el cliente lo verá en truncated/stream.
          *
          * @param array<int, array<string, mixed>> $messages
          * @return array{response:string, continued:bool, finish_reason:string, metrics:array<string, int>|null}
@@ -1442,88 +1443,17 @@ if (!class_exists('Xabia_API')) {
             string $project_id,
             bool $force_premature_continue = false
         ): array {
-            $partial_response = trim($partial_response);
-            $initial_finish_reason = (string) self::$last_generation_finish_reason;
-            $initial_metrics = is_array(self::$last_generation_metrics) ? self::$last_generation_metrics : null;
-
-            if ($partial_response === '') {
-                return [
-                    'response'      => $partial_response,
-                    'continued'     => false,
-                    'finish_reason' => $initial_finish_reason,
-                    'metrics'       => $initial_metrics,
-                ];
-            }
-
-            $continue_messages = $messages;
-            $continue_messages[] = ['role' => 'assistant', 'content' => $partial_response];
-            $continue_messages[] = [
-                'role'    => 'user',
-                'content' => $force_premature_continue
-                    ? 'La respuesta anterior se cortó por un límite técnico del proveedor (MAX_TOKENS). Continúa EXACTAMENTE desde la siguiente palabra, sin repetir nada de lo anterior, sin saludo ni temas nuevos. Escribe solo el resto del texto.'
-                    : 'Continúa exactamente desde donde se cortó la frase anterior (solo si quedó a medias). Empieza por la siguiente palabra, sin repetir lo anterior, sin saludo, sin temas nuevos ni otros eventos. Si la respuesta del asistente ya era completa, responde únicamente: __COMPLETE__',
-            ];
-
-            if ($ai_driver === 'google_cloud' && class_exists('Xabia_Digixop_Client') && Xabia_Digixop_Client::should_use_local_vertex($config)) {
-                $vertex_fed = self::should_use_federation_tools_for_project($project_id);
-                $continuation = self::call_google_vertex($continue_messages, $max_tokens, $config, $temperature, $project_id, $vertex_fed);
-            } elseif (self::should_use_federation_tools_for_project($project_id)) {
-                $continuation = self::call_openai_with_federation_tools($continue_messages, $max_tokens, self::resolve_openai_chat_model($config), $temperature, $project_id, $config);
-            } else {
-                $continuation = self::call_openai($continue_messages, $max_tokens, self::resolve_openai_chat_model($config), $temperature, $project_id, $config);
-            }
-
-            $continuation = trim(self::sanitizeTechnicalFailureForUser((string) $continuation));
-            $continuation_is_complete_token = ($continuation === '__COMPLETE__' || stripos($continuation, '__COMPLETE__') === 0);
-            if ($continuation === '' || $continuation_is_complete_token) {
-                self::$last_generation_finish_reason = $initial_finish_reason;
-                self::$last_generation_metrics = $initial_metrics;
-                return [
-                    'response'      => $partial_response,
-                    'continued'     => false,
-                    'finish_reason' => $initial_finish_reason,
-                    'metrics'       => $initial_metrics,
-                ];
-            }
-
-            $continuation_finish_reason = (string) self::$last_generation_finish_reason;
-            $continuation_metrics = is_array(self::$last_generation_metrics) ? self::$last_generation_metrics : null;
-            $merged_metrics = self::merge_generation_metrics($initial_metrics, $continuation_metrics);
-            self::$last_generation_metrics = $merged_metrics;
+            unset($messages, $ai_driver, $max_tokens, $config, $temperature, $project_id, $force_premature_continue);
 
             return [
-                'response'      => self::merge_chat_response_fragments($partial_response, $continuation),
-                'continued'     => true,
-                'finish_reason' => $continuation_finish_reason,
-                'metrics'       => $merged_metrics,
+                'response'      => $partial_response,
+                'continued'     => false,
+                'finish_reason' => (string) self::$last_generation_finish_reason,
+                'metrics'       => is_array(self::$last_generation_metrics) ? self::$last_generation_metrics : null,
             ];
         }
 
         /**
-         * Une fragmentos de respuesta sin cortar palabras a medias ni duplicar espacios.
-         */
-        private static function merge_chat_response_fragments(string $head, string $tail): string {
-            $head = rtrim((string) $head);
-            $tail = ltrim((string) $tail);
-            if ($head === '') {
-                return $tail;
-            }
-            if ($tail === '') {
-                return $head;
-            }
-            if (preg_match('/\p{L}$/u', $head) && preg_match('/^\p{Ll}/u', $tail)) {
-                return $head . $tail;
-            }
-            if (preg_match('/[\s\-—]$/u', $head) || preg_match('/^[\s\-—,.;:!?¿¡]/u', $tail)) {
-                return rtrim($head) . ltrim($tail);
-            }
-
-            return $head . ' ' . $tail;
-        }
-
-        /**
-         * Auto-continúa en servidor cuando el proveedor declara corte por límite (length / MAX_TOKENS).
-         *
          * @param array<int, array<string, mixed>> $messages
          * @return array{response:string, ran:bool, attempted:bool, finish_reason:string}
          */
@@ -1537,71 +1467,13 @@ if (!class_exists('Xabia_API')) {
             string $project_id,
             bool $is_continue_request
         ): array {
-            if ($is_continue_request) {
-                return [
-                    'response'      => $response,
-                    'ran'           => false,
-                    'attempted'     => false,
-                    'finish_reason' => (string) self::$last_generation_finish_reason,
-                ];
-            }
-
-            $finish_reason = (string) self::$last_generation_finish_reason;
-            $metrics = is_array(self::$last_generation_metrics) ? self::$last_generation_metrics : null;
-            $premature_cut = self::is_premature_length_cut($finish_reason, $metrics, $max_tokens);
-            $ran = false;
-            $attempted = false;
-            $max_attempts = $premature_cut ? 5 : 2;
-
-            for ($attempt = 0; $attempt < $max_attempts; $attempt++) {
-                if (!self::finish_reason_indicates_truncation($finish_reason)) {
-                    break;
-                }
-
-                $attempted = true;
-                $result = self::auto_continue_response_once(
-                    $messages,
-                    (string) $response,
-                    $ai_driver,
-                    $max_tokens,
-                    $config,
-                    $temperature,
-                    $project_id,
-                    $premature_cut
-                );
-                $finish_reason = (string) ($result['finish_reason'] ?? $finish_reason);
-                if (empty($result['continued'])) {
-                    if (!$premature_cut) {
-                        break;
-                    }
-                    continue;
-                }
-
-                $response = (string) $result['response'];
-                $ran = true;
-                $metrics = is_array(self::$last_generation_metrics) ? self::$last_generation_metrics : $metrics;
-                $premature_cut = self::is_premature_length_cut($finish_reason, $metrics, $max_tokens);
-                xabia_trace('[XABIA_CORE] auto-continued truncated LLM response', [
-                    'project_id'    => $project_id,
-                    'attempt'       => $attempt + 1,
-                    'finish_reason' => $finish_reason,
-                    'premature_cut' => $premature_cut,
-                ]);
-            }
-
-            if ($attempted && !$ran && $premature_cut && self::should_log_rag_context_chivato($config)) {
-                error_log(
-                    '[XABIA RAG CHIVATO LLM] auto_continue attempted=yes merged=no project=' . $project_id
-                    . ' finish_reason=' . $finish_reason
-                    . ' completion_tokens=' . (int) ($metrics['completion_tokens'] ?? 0)
-                );
-            }
+            unset($messages, $ai_driver, $max_tokens, $config, $temperature, $project_id, $is_continue_request);
 
             return [
                 'response'      => $response,
-                'ran'           => $ran || ($attempted && self::finish_reason_indicates_truncation($finish_reason)),
-                'attempted'     => $attempted,
-                'finish_reason' => $finish_reason,
+                'ran'           => false,
+                'attempted'     => false,
+                'finish_reason' => (string) self::$last_generation_finish_reason,
             ];
         }
 
@@ -2041,6 +1913,10 @@ if (!class_exists('Xabia_API')) {
 
         public static function handle_chat_request() {
             self::assert_pro_runtime('vector_rag');
+            if (class_exists('Xabia_Chat_Pipeline', false)) {
+                Xabia_Chat_Pipeline::begin();
+                register_shutdown_function([Xabia_Chat_Pipeline::class, 'write_debug_log']);
+            }
             xabia_trace('[XABIA_CORE] xabia_ask_ai entry', [
                 'project_id'  => sanitize_text_field((string) ($_POST['project_id'] ?? '')),
                 'message_len' => strlen((string) wp_unslash($_POST['message'] ?? '')),
@@ -2055,11 +1931,18 @@ if (!class_exists('Xabia_API')) {
                     xabia_trace('[XABIA_CORE] xabia_ask_ai uncaught', ['message' => $e->getMessage()]);
                 }
                 error_log('[XABIA_CORE] xabia_ask_ai uncaught: ' . $e->getMessage());
+                $message = __('Error interno del servidor. Inténtalo de nuevo.', 'xabia-intelligence');
+                if (class_exists('Xabia_Chat_Stream', false) && Xabia_Chat_Stream::is_open()) {
+                    Xabia_Chat_Stream::fail($message);
+                }
                 wp_send_json_error([
-                    'message' => __('Error interno del servidor. Inténtalo de nuevo.', 'xabia-intelligence'),
+                    'message' => $message,
                 ]);
             } finally {
                 remove_filter('xabia_hub_signed_post_args', [__CLASS__, 'filter_hub_signed_post_args_for_chat'], 999);
+                if (class_exists('Xabia_Chat_Pipeline', false)) {
+                    Xabia_Chat_Pipeline::write_debug_log();
+                }
             }
         }
 
@@ -2089,6 +1972,9 @@ if (!class_exists('Xabia_API')) {
                     wp_send_json_error(['message' => __('La comprobación de seguridad falló.', 'xabia-intelligence')]);
                     return;
                 }
+            }
+            if (class_exists('Xabia_Chat_Pipeline', false)) {
+                Xabia_Chat_Pipeline::mark('nonce');
             }
 
             $project_id = sanitize_text_field($_POST['project_id'] ?? 'default');
@@ -2219,6 +2105,9 @@ if (!class_exists('Xabia_API')) {
             $route = class_exists('Xabia_Router')
                 ? Xabia_Router::classify($project_id, $user_msg, $config, $lang_code)
                 : 'ROUTE_KNOWLEDGE';
+            if (class_exists('Xabia_Chat_Pipeline', false)) {
+                Xabia_Chat_Pipeline::mark('route');
+            }
             $cache_hash = class_exists('Xabia_Router')
                 ? Xabia_Router::query_hash($project_id, $user_msg, $route, $lang_code)
                 : '';
@@ -2433,9 +2322,13 @@ if (!class_exists('Xabia_API')) {
             }
             $retrieval_search_term = self::rag_retrieval_search_term($search_term, $user_msg_clean);
 
-            // Query rewrite / expansion (agnóstico; fail-open). Mejora embed + lexical_query al Hub/local.
-            if (class_exists('Xabia_Rag_Query_Rewriter', false)
-                && Xabia_Rag_Query_Rewriter::is_enabled(is_array($config) ? $config : [])) {
+            // Reescritura LLM solo con historial. El primer turno no espera otra llamada al modelo.
+            $rewrite_followup = class_exists('Xabia_Rag_Query_Rewriter', false)
+                && Xabia_Rag_Query_Rewriter::should_invoke_llm(
+                    is_array($config) ? $config : [],
+                    Xabia_Rag_Query_Rewriter::history_has_prior_turns(is_array($history) ? $history : [])
+                );
+            if ($rewrite_followup) {
                 $ymd = gmdate('Y-m-d');
                 $rewrite = Xabia_Rag_Query_Rewriter::prepare(
                     $user_msg_clean !== '' ? $user_msg_clean : $search_term,
@@ -2478,6 +2371,13 @@ if (!class_exists('Xabia_API')) {
                     self::$last_rag_debug['canonical_entities'] = implode(',', array_map('strval', $rewrite['canonical_entities']));
                 }
                 self::$last_rag_debug['query_rewritten'] = !empty($rewrite['rewritten']) ? 'yes' : 'no';
+            } else {
+                $had_prior_turns = class_exists('Xabia_Rag_Query_Rewriter', false)
+                    && Xabia_Rag_Query_Rewriter::history_has_prior_turns(is_array($history) ? $history : []);
+                self::$last_rag_debug['query_rewritten'] = $had_prior_turns ? 'off' : 'skipped_first_turn';
+            }
+            if (class_exists('Xabia_Chat_Pipeline', false)) {
+                Xabia_Chat_Pipeline::mark('rewrite');
             }
 
             $relative_day_labels = self::relative_day_labels_for_rag($user_msg_clean);
@@ -2513,14 +2413,18 @@ if (!class_exists('Xabia_API')) {
             $rag_vector_chunk_count = null;
             if (class_exists('Xabia_Brain')) {
                 if ($use_vector && !$strict_ente) {
-                    $query_vector = self::get_query_embedding($retrieval_search_term, $config, $project_id);
-                    self::digixop_absorb_query_embedding_usage($project_id, $config);
-                    if (class_exists('Xabia_Digixop_Client') && Xabia_Digixop_Client::was_insufficient_balance()) {
-                        wp_send_json_error([
-                            'message'              => Xabia_Digixop_Client::get_insufficient_balance_user_message(),
-                            'digixop_insufficient' => true,
-                        ]);
-                        return;
+                    $hub_rag = self::is_hub_rag_enabled_for_project($project_id);
+                    $query_vector = null;
+                    if ($hub_rag) {
+                        $query_vector = self::get_query_embedding($retrieval_search_term, $config, $project_id);
+                        self::digixop_absorb_query_embedding_usage($project_id, $config);
+                        if (class_exists('Xabia_Digixop_Client') && Xabia_Digixop_Client::was_insufficient_balance()) {
+                            wp_send_json_error([
+                                'message'              => Xabia_Digixop_Client::get_insufficient_balance_user_message(),
+                                'digixop_insufficient' => true,
+                            ]);
+                            return;
+                        }
                     }
                     $out = Xabia_Brain::search_knowledge_vector($project_id, $retrieval_search_term, $ente_scope, false, $rag_fetch_limit, $similarity_threshold, $query_vector, $hub_rag_opts);
                     if (!empty($out['_hub_meta']) && is_array($out['_hub_meta']) && empty($out['_hub_meta']['ok'])) {
@@ -2580,8 +2484,10 @@ if (!class_exists('Xabia_API')) {
                             ? '(none)'
                             : implode(',', array_slice(array_keys($ente_ids), 0, 8));
                     }
-                    // RRF local: fusionar vector + léxico cuando Hub no está activo.
-                    if (!self::is_hub_rag_enabled_for_project($project_id)
+                    // Sin Hub el resultado ya es FULLTEXT. No se fusiona un canal vectorial local.
+                    if (($out['retrieval'] ?? '') === 'lexical') {
+                        self::$last_rag_debug['hybrid_rrf'] = 'lexical_only';
+                    } elseif (!self::is_hub_rag_enabled_for_project($project_id)
                         && class_exists('Xabia_Rag_Hybrid_Ranker', false)
                         && Xabia_Rag_Hybrid_Ranker::is_enabled(is_array($config) ? $config : [])
                         && method_exists('Xabia_Brain', 'search_knowledge_ranked')) {
@@ -3088,41 +2994,49 @@ if (!class_exists('Xabia_API')) {
                 }
             }
             $is_new_conversation = ($user_turns_in_thread === 0 && !$is_continue_request);
+            if (class_exists('Xabia_Chat_Pipeline', false)) {
+                Xabia_Chat_Pipeline::mark('retrieve');
+            }
 
             $response = '';
-            if ($ai_driver === 'google_cloud' && class_exists('Xabia_Digixop_Client') && Xabia_Digixop_Client::should_use_local_vertex($config)) {
-                $vertex_fed = self::should_use_federation_tools_for_project($project_id);
+            $stream_armed = class_exists('Xabia_Chat_Stream', false) && Xabia_Chat_Stream::is_armed();
+            $vertex_local = $ai_driver === 'google_cloud' && class_exists('Xabia_Digixop_Client') && Xabia_Digixop_Client::should_use_local_vertex($config);
+            $vertex_fed = $vertex_local && self::should_use_federation_tools_for_project($project_id);
+            $openai_fed = !$vertex_local && self::should_use_federation_tools_for_project($project_id);
+            $streamed = null;
+            if ($stream_armed && !$vertex_fed && !$openai_fed) {
+                $streamed = $vertex_local
+                    ? self::try_stream_vertex($messages, $max_tokens, $config, $temperature)
+                    : self::try_stream_openai($messages, $max_tokens, self::resolve_openai_chat_model($config), $temperature, $project_id, $config);
+            }
+            if (is_string($streamed)) {
+                $response = $streamed;
+            } elseif ($vertex_local) {
                 $response = self::call_google_vertex($messages, $max_tokens, $config, $temperature, $project_id, $vertex_fed);
-            } elseif (self::should_use_federation_tools_for_project($project_id)) {
+            } elseif ($openai_fed) {
                 $response = self::call_openai_with_federation_tools($messages, $max_tokens, self::resolve_openai_chat_model($config), $temperature, $project_id, $config);
             } else {
                 $response = self::call_openai($messages, $max_tokens, self::resolve_openai_chat_model($config), $temperature, $project_id, $config);
             }
             $response = self::sanitizeTechnicalFailureForUser($response);
+            $finish_reason = strtolower(trim((string) self::$last_generation_finish_reason));
+            self::$last_generation_finish_reason = $finish_reason;
+            if (class_exists('Xabia_Chat_Pipeline', false)) {
+                Xabia_Chat_Pipeline::mark('generate');
+            }
 
             if (class_exists('Xabia_Digixop_Client') && Xabia_Digixop_Client::was_insufficient_balance()) {
+                $balance_message = Xabia_Digixop_Client::get_insufficient_balance_user_message();
+                if (class_exists('Xabia_Chat_Stream', false) && Xabia_Chat_Stream::is_open()) {
+                    Xabia_Chat_Stream::fail($balance_message);
+                }
                 wp_send_json_error([
-                    'message'              => Xabia_Digixop_Client::get_insufficient_balance_user_message(),
+                    'message'              => $balance_message,
                     'digixop_insufficient' => true,
                 ]);
                 return;
             }
 
-            $auto_continue_result = self::maybe_auto_continue_chat_response(
-                $messages,
-                (string) $response,
-                $ai_driver,
-                $max_tokens,
-                $config,
-                $temperature,
-                $project_id,
-                $is_continue_request
-            );
-            $response = (string) $auto_continue_result['response'];
-            $finish_reason = (string) $auto_continue_result['finish_reason'];
-            self::$last_generation_finish_reason = $finish_reason;
-
-            
             $response = self::strip_llm_meta_reasoning_leaks((string) $response);
             $response = self::resolve_action_img_ids_in_response($response, $project_id);
             $response = self::resolve_action_book_tags_in_response($response, $project_id);
@@ -3165,7 +3079,7 @@ if (!class_exists('Xabia_API')) {
                     . ' truncated=' . ($truncated ? 'yes' : 'no')
                     . ' max_output_tokens=' . (int) $max_tokens
                     . ' completion_tokens=' . (int) ($metrics['completion_tokens'] ?? 0)
-                    . ' auto_continue=' . (!empty($auto_continue_result['ran']) ? 'yes' : (!empty($auto_continue_result['attempted']) ? 'attempted' : 'no'))
+                    . ' auto_continue=no'
                 );
             }
 
@@ -3272,10 +3186,22 @@ if (!class_exists('Xabia_API')) {
                 }
             }
 
-            wp_send_json_success([
+            $stream_meta = class_exists('Xabia_Chat_Stream', false)
+                ? Xabia_Chat_Stream::response_meta($truncated, $finish_reason, (int) $max_tokens, Xabia_Chat_Stream::is_open())
+                : [
+                    'protocol'      => 'sse',
+                    'enabled'       => false,
+                    'route'         => '/wp-json/xabia/v1/ask',
+                    'truncated'     => $truncated,
+                    'finish_reason' => $finish_reason,
+                    'max_tokens'    => (int) $max_tokens,
+                ];
+            self::deliver_chat_success([
                 'response' => $response,
                 'finish_reason' => $finish_reason,
                 'truncated' => $truncated,
+                'stream' => $stream_meta,
+                'pipeline' => class_exists('Xabia_Chat_Pipeline', false) ? Xabia_Chat_Pipeline::phase_ms() : [],
             ]);
         }
 
@@ -7603,6 +7529,219 @@ if (!class_exists('Xabia_API')) {
 
             return (string) $r['content'];
         }
+
+        /**
+         * @param array<string, mixed> $data
+         */
+        private static function deliver_chat_success(array $data): void {
+            if (class_exists('Xabia_Chat_Stream', false) && Xabia_Chat_Stream::is_open()) {
+                Xabia_Chat_Stream::complete($data);
+            }
+            wp_send_json_success($data);
+        }
+
+        /**
+         * @param array<string, mixed> $result
+         */
+        private static function remember_stream_metrics(string $model, array $result, bool $via_proxy): void {
+            $finish = strtolower(trim((string) ($result['finish_reason'] ?? '')));
+            self::$last_generation_finish_reason = $finish;
+            $usage = is_array($result['usage'] ?? null) ? $result['usage'] : [];
+            $pt = (int) ($usage['prompt_tokens'] ?? 0);
+            $ct = (int) ($usage['completion_tokens'] ?? 0);
+            if ($ct < 1) {
+                $ct = (int) max(1, floor(strlen((string) ($result['text'] ?? '')) / 4));
+            }
+            if ($pt < 1) {
+                $pt = 1;
+            }
+            $usage['prompt_tokens'] = $pt;
+            $usage['completion_tokens'] = $ct;
+            self::digixop_note_chat_usage($usage, $via_proxy);
+            self::$last_generation_metrics = [
+                'prompt_tokens'     => $pt,
+                'completion_tokens' => $ct,
+                'model'             => $model,
+                'estimated_cost'    => self::estimate_cost_usd($model, $pt, $ct),
+            ];
+        }
+
+        /**
+         * null: Vertex no abrió stream y hay que usar generateContent.
+         *
+         * @param array<int, array<string, mixed>> $messages
+         * @param array<string, mixed> $config
+         */
+        private static function try_stream_vertex(array $messages, $max_tokens, array $config, float $temperature): ?string {
+            if (!class_exists('Xabia_Llm_Stream', false) || !class_exists('Xabia_Chat_Stream', false)) {
+                return null;
+            }
+            $auth = self::get_google_vertex_auth($config);
+            if ($auth === null) {
+                return null;
+            }
+            $max_tokens = self::chat_max_tokens($max_tokens);
+            $model_id = self::resolve_chat_model($config);
+            if (strpos($model_id, 'gemini-') !== 0) {
+                $model_id = self::VERTEX_LOCAL_CHAT_MODEL;
+            }
+            $url = "https://{$auth['location']}-aiplatform.googleapis.com/v1/projects/{$auth['project_id']}/locations/{$auth['location']}/publishers/google/models/{$model_id}:streamGenerateContent?alt=sse";
+            $payload = self::vertex_build_gemini_body_from_openai_messages($messages, $config, [
+                'temperature'     => (float) $temperature,
+                'maxOutputTokens' => (int) $max_tokens,
+                'candidateCount'  => 1,
+            ]);
+            if (empty($payload['contents']) || !is_array($payload['contents'])) {
+                return null;
+            }
+            $body = wp_json_encode($payload);
+            if (!is_string($body)) {
+                return null;
+            }
+            $result = Xabia_Llm_Stream::post($url, [
+                'Authorization' => 'Bearer ' . $auth['access_token'],
+                'Content-Type'  => 'application/json',
+                'Accept'        => 'text/event-stream',
+            ], $body, 'vertex', static function (string $delta): void {
+                Xabia_Chat_Stream::delta($delta);
+            });
+            if (!empty($result['streamed'])) {
+                self::remember_stream_metrics($model_id, $result, false);
+
+                return (string) $result['text'];
+            }
+            $json = is_array($result['json'] ?? null) ? $result['json'] : null;
+            if (is_array($json) && isset($json['error']['message'])) {
+                $code = $json['error']['code'] ?? ($result['http_code'] ?? 0);
+
+                return 'Error Google (' . $code . '): ' . (string) $json['error']['message'];
+            }
+            $buffered = self::vertex_text_from_stream_json($json);
+            if ($buffered !== '') {
+                $result['text'] = $buffered;
+                self::remember_stream_metrics($model_id, $result, false);
+
+                return $buffered;
+            }
+
+            return null;
+        }
+
+        /**
+         * @param array<string, mixed>|null $json
+         */
+        private static function vertex_text_from_stream_json(?array $json): string {
+            if ($json === null) {
+                return '';
+            }
+            if (isset($json['candidates'])) {
+                return self::vertex_extract_text_from_candidate($json);
+            }
+            $text = '';
+            foreach ($json as $item) {
+                if (is_array($item)) {
+                    $text .= self::vertex_extract_text_from_candidate($item);
+                }
+            }
+
+            return $text;
+        }
+
+        /**
+         * null: el proxy o OpenAI no abrieron stream y hay que repetir sin stream.
+         *
+         * @param array<int, array<string, mixed>> $messages
+         * @param array<string, mixed> $config
+         */
+        private static function try_stream_openai(array $messages, $max_tokens, string $model, float $temperature, string $project_id, array $config): ?string {
+            if (!class_exists('Xabia_Llm_Stream', false) || !class_exists('Xabia_Chat_Stream', false) || !class_exists('Xabia_Digixop_Client', false)) {
+                return null;
+            }
+            $max_tokens = self::chat_max_tokens($max_tokens);
+            $token_limits = self::openai_chat_token_limit_fields($max_tokens);
+            $payload = [
+                'model'                 => $model,
+                'messages'              => $messages,
+                'temperature'           => $temperature,
+                'max_tokens'            => $token_limits['max_tokens'],
+                'max_completion_tokens' => $token_limits['max_completion_tokens'],
+                'stream'                => true,
+                'user'                  => 'xabia_user_' . get_current_user_id(),
+            ];
+            $ul = isset($config['_xabia_proxy_user_lang']) ? (string) $config['_xabia_proxy_user_lang'] : '';
+            if ($ul !== '') {
+                $payload['user_lang'] = $ul;
+            }
+            $via_proxy = Xabia_Digixop_Client::should_use_openai_proxy($project_id, $config);
+            if ($via_proxy) {
+                $payload = apply_filters('xabia_digixop_proxy_payload', $payload, $project_id, $config, $messages);
+                if (!is_array($payload)) {
+                    return null;
+                }
+                $payload['stream'] = true;
+                $req = Xabia_Digixop_Client::proxy_openai_http_request($payload, $project_id, $config);
+                $headers = $req['headers'];
+                $headers['Accept'] = 'text/event-stream';
+                $headers['Stream'] = '1';
+                $headers['X-Xabia-Stream'] = '1';
+                $url = $req['url'];
+                $body = $req['body'];
+            } else {
+                $api_key = Xabia_Digixop_Client::get_effective_openai_key($project_id, $config);
+                if ($api_key === '') {
+                    return null;
+                }
+                if (preg_match('/^(o1|o3|o4|gpt-5)/i', $model)) {
+                    unset($payload['max_tokens']);
+                } else {
+                    unset($payload['max_completion_tokens']);
+                }
+                $body = wp_json_encode($payload);
+                if (!is_string($body)) {
+                    return null;
+                }
+                $url = 'https://api.openai.com/v1/chat/completions';
+                $headers = [
+                    'Authorization' => 'Bearer ' . $api_key,
+                    'Content-Type'  => 'application/json',
+                    'Accept'        => 'text/event-stream',
+                ];
+            }
+            $result = Xabia_Llm_Stream::post($url, $headers, $body, 'openai', static function (string $delta): void {
+                Xabia_Chat_Stream::delta($delta);
+            });
+            if (!empty($result['streamed'])) {
+                self::remember_stream_metrics($model, $result, $via_proxy);
+
+                return (string) $result['text'];
+            }
+            $json = is_array($result['json'] ?? null) ? $result['json'] : null;
+            if (is_array($json) && Xabia_Digixop_Client::is_insufficient_proxy_response([
+                'code' => (int) ($result['http_code'] ?? 0),
+                'body' => $json,
+            ])) {
+                Xabia_Digixop_Client::mark_insufficient_balance();
+
+                return Xabia_Digixop_Client::get_insufficient_balance_user_message();
+            }
+            if (is_array($json) && isset($json['error']['message'])) {
+                $prefix = $via_proxy ? 'Error API (proxy): ' : 'Error API: ';
+
+                return $prefix . (string) $json['error']['message'];
+            }
+            $parsed = self::parse_chat_completion_response_full($json);
+            if ($parsed !== null && ($parsed['content'] ?? null) !== null) {
+                $result['text'] = (string) $parsed['content'];
+                $result['finish_reason'] = (string) ($parsed['finish_reason'] ?? '');
+                $result['usage'] = is_array($parsed['usage'] ?? null) ? $parsed['usage'] : [];
+                self::remember_stream_metrics($model, $result, $via_proxy);
+
+                return (string) $parsed['content'];
+            }
+
+            return null;
+        }
+
         /**
          * Resuelve la ruta del JSON de Google Cloud: proyecto tiene prioridad; si está vacía, usa la global.
          */

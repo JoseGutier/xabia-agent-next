@@ -83,7 +83,32 @@ final class ProxyHandler
                 Json::respond(500, ['error' => ['message' => 'GOOGLE_APPLICATION_CREDENTIALS no configurado', 'type' => 'xabia_hub_config']]);
                 return;
             }
-            $up = VertexForwarder::forwardOpenAiCompatible($input, $vertexTier);
+            $wantsStream = $activityType === 'chat'
+                && self::requestWantsStream($input)
+                && !self::inputRequestsFederationTool($input);
+            if ($wantsStream) {
+                $streamed = VertexForwarder::streamOpenAiCompatible($input, $vertexTier);
+                if (!empty($streamed['started'])) {
+                    self::billStreamedChat($billingLicenseId, $sourceUrl, $vertexTier, $streamed);
+                    echo "data: [DONE]\n\n";
+                    flush();
+
+                    return;
+                }
+                if (self::streamResultIsCompletion($streamed)) {
+                    $up = [
+                        'http_code' => (int) $streamed['http_code'],
+                        'decoded'   => $streamed['decoded'],
+                        'raw'       => (string) ($streamed['raw'] ?? ''),
+                    ];
+                } else {
+                    $syncInput = $input;
+                    unset($syncInput['stream']);
+                    $up = VertexForwarder::forwardOpenAiCompatible($syncInput, $vertexTier);
+                }
+            } else {
+                $up = VertexForwarder::forwardOpenAiCompatible($input, $vertexTier);
+            }
         }
         $code = $up['http_code'];
         $decoded = $up['decoded'];
@@ -200,6 +225,54 @@ final class ProxyHandler
     /**
      * Normaliza user_lang del cuerpo JSON (BCP-47 reducido: letras, dígitos, guion).
      */
+    /**
+     * stream=1 en el cuerpo OpenAI o en la cabecera Stream / X-Xabia-Stream.
+     * Sin esa señal, el proxy sigue en generateContent síncrono.
+     *
+     * @param array<string, mixed> $input
+     */
+    private static function requestWantsStream(array $input): bool
+    {
+        if (self::streamFlagOn($input['stream'] ?? null)) {
+            return true;
+        }
+        $header = $_SERVER['HTTP_X_XABIA_STREAM'] ?? $_SERVER['HTTP_STREAM'] ?? '';
+
+        return self::streamFlagOn($header);
+    }
+
+    /**
+     * @param mixed $value
+     */
+    private static function streamFlagOn($value): bool
+    {
+        if (is_bool($value)) {
+            return $value;
+        }
+        if (is_int($value)) {
+            return $value === 1;
+        }
+        if (!is_string($value)) {
+            return false;
+        }
+
+        return in_array(strtolower(trim($value)), ['1', 'true', 'yes', 'on'], true);
+    }
+
+    /**
+     * @param array<string, mixed> $streamed
+     */
+    private static function streamResultIsCompletion(array $streamed): bool
+    {
+        $code = (int) ($streamed['http_code'] ?? 0);
+        if ($code < 200 || $code >= 300) {
+            return false;
+        }
+        $decoded = $streamed['decoded'] ?? null;
+
+        return is_array($decoded) && isset($decoded['choices'][0]);
+    }
+
     /**
      * @param array<string, mixed> $input
      */
@@ -332,5 +405,48 @@ final class ProxyHandler
         $c = (int) ($u['completion_tokens'] ?? 0);
 
         return $p + $c;
+    }
+
+    /**
+     * El texto ya salió por SSE. El descuento ocurre antes de cerrar el stream.
+     *
+     * @param array{usage?:array<string, int>} $streamed
+     */
+    private static function billStreamedChat(int $billingLicenseId, string $sourceUrl, string $vertexTier, array $streamed): void
+    {
+        $usage = is_array($streamed['usage'] ?? null) ? $streamed['usage'] : [];
+        $usageTokens = self::extractUsageTotalTokens(['usage' => $usage]);
+        $code = (int) ($streamed['http_code'] ?? 200);
+        try {
+            if ($usageTokens > 0) {
+                WalletRepository::deduct(
+                    $billingLicenseId,
+                    $usageTokens,
+                    'chat',
+                    $sourceUrl,
+                    null,
+                    [
+                        'vertex_http'  => $code,
+                        'vertex_tier'  => $vertexTier,
+                        'usage_source' => 'google_vertex_stream',
+                    ]
+                );
+
+                return;
+            }
+            WalletRepository::logUsage(
+                $billingLicenseId,
+                'chat',
+                0,
+                $sourceUrl,
+                null,
+                [
+                    'upstream_http' => $code,
+                    'vertex_tier'   => $vertexTier,
+                    'note'          => 'Stream sin usage total_tokens',
+                ]
+            );
+        } catch (\Throwable) {
+        }
     }
 }

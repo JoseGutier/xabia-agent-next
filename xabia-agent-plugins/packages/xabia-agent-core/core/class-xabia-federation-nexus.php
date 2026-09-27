@@ -208,8 +208,9 @@ final class Xabia_Federation_Nexus {
 
         if (class_exists('Xabia_Brain')) {
             if ($use_vector) {
+                $hub_rag = class_exists('Xabia_Hub_Knowledge', false) && Xabia_Hub_Knowledge::is_hub_rag_enabled($project_id);
                 $query_vector = null;
-                if (class_exists('Xabia_API')) {
+                if ($hub_rag && class_exists('Xabia_API')) {
                     $query_vector = Xabia_API::get_query_embedding($search_term, $config, $project_id);
                     Xabia_API::digixop_absorb_embedding_for_federation($project_id, $config);
                     if (class_exists('Xabia_Digixop_Client') && Xabia_Digixop_Client::was_insufficient_balance()) {

@@ -3,7 +3,7 @@
  * Plugin Name: Xabia Agent Core
  * Plugin URI: https://xabia.ai
  * Description: Agente de Inteligencia Artificial de última generación con voz, texto y acciones en la web. Perfecciona la UX mediante interacciones conversacionales inteligentes, hiperpersonalizadas y políglotas. Smart QRs integrados, addons para Woo, MEC, Amelia, etc.
- * Version: 1.0.318
+ * Version: 1.0.319
  * Author: Digixop
  * Author URI: https://digixop.com
  */
@@ -105,6 +105,9 @@ if (Xabia_Features::is_pro()) {
 require_once XABIA_PATH . 'core/class-xabia-embedding-cache.php';
 require_once XABIA_PATH . 'core/class-xabia-brain.php';
 require_once XABIA_PATH . 'core/class-xabia-router.php';
+require_once XABIA_PATH . 'core/class-xabia-chat-pipeline.php';
+require_once XABIA_PATH . 'core/class-xabia-chat-stream.php';
+require_once XABIA_PATH . 'core/class-xabia-llm-stream.php';
 require_once XABIA_PATH . 'core/class-xabia-knowledge-text.php';
 require_once XABIA_PATH . 'core/class-xabia-starter-questions.php';
 require_once XABIA_PATH . 'core/class-xabia-action-card.php';
@@ -126,6 +129,7 @@ require_once XABIA_PATH . 'core/class-xabia-knowledge-train.php';
 require_once XABIA_PATH . 'core/class-xabia-knowledge-orphans.php';
 require_once XABIA_PATH . 'core/class-xabia-auto-sync.php';
 require_once XABIA_PATH . 'core/class-xabia-cloud-cron-rest.php';
+require_once XABIA_PATH . 'core/class-xabia-ask-rest.php';
 require_once XABIA_PATH . 'core/class-xabia-cpt-schema-discovery.php';
 
 if (Xabia_Features::is_pro()) {
@@ -261,6 +265,9 @@ add_action('init', static function (): void {
     }
     if (class_exists('Xabia_Cloud_Cron_Rest', false)) {
         Xabia_Cloud_Cron_Rest::init();
+    }
+    if (class_exists('Xabia_Ask_Rest', false)) {
+        Xabia_Ask_Rest::init();
     }
 }, 25);
 

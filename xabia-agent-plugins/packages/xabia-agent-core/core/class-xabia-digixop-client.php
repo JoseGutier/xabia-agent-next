@@ -712,12 +712,13 @@ final class Xabia_Digixop_Client {
     }
 
     /**
-     * POST JSON al proxy con el cuerpo exacto de OpenAI (chat o embeddings). Respuesta: formato estándar OpenAI (choices, usage, data…).
+     * Cuerpo firmado del proxy, sin enviarlo. El stream lo reutiliza con curl.
      *
      * @param array<string, mixed> $openai_body
-     * @return array{ok: bool, body: array|null, raw: string, code: int, insufficient_balance: bool}
+     * @param array<string, mixed> $config
+     * @return array{url: string, headers: array<string, string>, body: string}
      */
-    public static function proxy_openai_post(array $openai_body, string $project_id, array $config = []): array {
+    public static function proxy_openai_http_request(array $openai_body, string $project_id, array $config = []): array {
         $license = self::get_license_key();
         $url = (string) apply_filters('xabia_digixop_proxy_url', self::default_proxy_url(), $openai_body, $project_id, $config);
         $cred = [
@@ -732,9 +733,25 @@ final class Xabia_Digixop_Client {
         if (!is_array($headers)) {
             $headers = self::default_proxy_headers($license, $cred, $body);
         }
-        $args = [
+
+        return [
+            'url'     => $url,
             'headers' => $headers,
             'body'    => $body,
+        ];
+    }
+
+    /**
+     * POST JSON al proxy con el cuerpo exacto de OpenAI (chat o embeddings).
+     *
+     * @param array<string, mixed> $openai_body
+     * @return array{ok: bool, body: array|null, raw: string, code: int, insufficient_balance: bool}
+     */
+    public static function proxy_openai_post(array $openai_body, string $project_id, array $config = []): array {
+        $req = self::proxy_openai_http_request($openai_body, $project_id, $config);
+        $args = [
+            'headers' => $req['headers'],
+            'body'    => $req['body'],
             'timeout' => 60,
         ];
         $args = apply_filters('xabia_digixop_proxy_http_args', $args, $openai_body, $project_id, $config);

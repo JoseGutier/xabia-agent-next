@@ -395,6 +395,8 @@ function shortcode_xabia_agent_renderer($atts) {
     $images_base_url = !empty($uploads_base['baseurl']) ? rtrim($uploads_base['baseurl'], '/') . '/' : '';
     $container_id = 'xabia-chatbox-' . esc_attr($project_id);
     $ajax_url = esc_url(admin_url('admin-ajax.php'));
+    $ask_url = esc_url(rest_url('xabia/v1/ask'));
+    $ask_nonce = wp_create_nonce('xabia_nonce');
     $totem_reset_json = wp_json_encode(
         [
             'avatar'        => $avatar_name,
@@ -476,7 +478,7 @@ function shortcode_xabia_agent_renderer($atts) {
         }
     </style>
 
-    <div id="<?php echo esc_attr($container_id); ?>" class="<?php echo esc_attr($chatbox_classes); ?>" data-project="<?php echo esc_attr($project_id); ?>" data-presentation-mode="<?php echo esc_attr($presentation_mode); ?>" data-endpoint="<?php echo esc_url($ajax_url); ?>" data-scope="<?php echo esc_attr($current_scope); ?>" data-strict-mode="<?php echo $is_strict_mode ? '1' : '0'; ?>" data-ente-id-raw="<?php echo esc_attr($shortcode_tunnel); ?>" data-ente-id="<?php echo esc_attr($data_ente_attr); ?>" data-qr-auto="<?php echo esc_attr($qr_auto_json); ?>" data-starter-questions="<?php echo esc_attr($starter_questions_json); ?>" data-totem-minutes="<?php echo (int) $totem_minutes; ?>" data-totem-reset="<?php echo esc_attr($totem_reset_json); ?>" data-images-base="<?php echo esc_url($images_base_url); ?>" data-lang="<?php echo esc_attr($current_lang); ?>" data-voice="1" data-tts="<?php echo esc_attr($tts_config_json); ?>" data-avatar-name="<?php echo esc_attr($avatar_name); ?>" data-speaking-avatar="<?php echo (int) $speaking_avatar; ?>">
+    <div id="<?php echo esc_attr($container_id); ?>" class="<?php echo esc_attr($chatbox_classes); ?>" data-project="<?php echo esc_attr($project_id); ?>" data-presentation-mode="<?php echo esc_attr($presentation_mode); ?>" data-endpoint="<?php echo esc_url($ajax_url); ?>" data-ask-endpoint="<?php echo esc_url($ask_url); ?>" data-nonce="<?php echo esc_attr($ask_nonce); ?>" data-scope="<?php echo esc_attr($current_scope); ?>" data-strict-mode="<?php echo $is_strict_mode ? '1' : '0'; ?>" data-ente-id-raw="<?php echo esc_attr($shortcode_tunnel); ?>" data-ente-id="<?php echo esc_attr($data_ente_attr); ?>" data-qr-auto="<?php echo esc_attr($qr_auto_json); ?>" data-starter-questions="<?php echo esc_attr($starter_questions_json); ?>" data-totem-minutes="<?php echo (int) $totem_minutes; ?>" data-totem-reset="<?php echo esc_attr($totem_reset_json); ?>" data-images-base="<?php echo esc_url($images_base_url); ?>" data-lang="<?php echo esc_attr($current_lang); ?>" data-voice="1" data-tts="<?php echo esc_attr($tts_config_json); ?>" data-avatar-name="<?php echo esc_attr($avatar_name); ?>" data-speaking-avatar="<?php echo (int) $speaking_avatar; ?>">
 
         <?php if ($speaking_avatar) : ?>
         <div class="xabia-immersive-avatar-stage" aria-hidden="<?php echo $is_kiosk_presentation ? 'false' : 'true'; ?>">
