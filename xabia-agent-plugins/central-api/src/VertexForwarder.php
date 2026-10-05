@@ -297,7 +297,7 @@ final class VertexForwarder
     private static function forwardChat(string $projectId, string $location, string $token, string $geminiModel, array $input): array
     {
         $input = self::injectAviratoAvailabilityIfNeeded($input);
-        $body = self::openAiMessagesToGeminiGenerateContent($input);
+        $body = self::openAiMessagesToGeminiGenerateContent($input, $geminiModel);
         if (($body['contents'] ?? []) === []) {
             return self::err(400, 'Sin mensajes user/assistant válidos para Gemini');
         }
@@ -419,7 +419,7 @@ final class VertexForwarder
     {
         $out = self::blankStreamResult();
         $input = self::injectAviratoAvailabilityIfNeeded($input);
-        $body = self::openAiMessagesToGeminiGenerateContent($input);
+        $body = self::openAiMessagesToGeminiGenerateContent($input, $geminiModel);
         if (($body['contents'] ?? []) === []) {
             $out['http_code'] = 400;
             $out['decoded'] = ['error' => ['message' => 'Sin mensajes user/assistant válidos para Gemini', 'type' => 'invalid_request']];
@@ -441,11 +441,12 @@ final class VertexForwarder
             return $out;
         }
 
+        self::beginSseResponse();
         $raw = '';
         $carry = '';
         $acc = '';
         $http = 0;
-        $started = false;
+        $started = true;
         $usage = ['prompt_tokens' => 0, 'completion_tokens' => 0, 'total_tokens' => 0];
         $finish = '';
         $ch = curl_init($url);
@@ -670,8 +671,14 @@ final class VertexForwarder
         self::flushStream();
     }
 
+    private static $sseBegun = false;
+
     private static function beginSseResponse(): void
     {
+        if (self::$sseBegun) {
+            return;
+        }
+        self::$sseBegun = true;
         ignore_user_abort(true);
         @ini_set('zlib.output_compression', '0');
         @ini_set('output_buffering', 'off');
@@ -684,8 +691,11 @@ final class VertexForwarder
             header('Cache-Control: no-cache, no-transform');
             header('Connection: keep-alive');
         }
-        echo ':' . str_repeat(' ', 2048) . "\n\n";
-        self::flushStream();
+        // Vaciado inmediato de buffer de red
+        echo ": " . str_repeat(" ", 1024) . "\n\n";
+        echo "event: ping\ndata: {}\n\n";
+        if (ob_get_level()) { ob_end_flush(); }
+        @flush();
     }
 
     private static function discardBuffers(): void
@@ -707,7 +717,7 @@ final class VertexForwarder
      * @param array<string, mixed> $openAi
      * @return array<string, mixed>
      */
-    private static function openAiMessagesToGeminiGenerateContent(array $openAi): array
+    private static function openAiMessagesToGeminiGenerateContent(array $openAi, string $geminiModel = ''): array
     {
         $messages = $openAi['messages'] ?? [];
         if (!is_array($messages)) {
@@ -821,6 +831,11 @@ final class VertexForwarder
             'maxOutputTokens' => $maxOut,
             'candidateCount'  => 1,
         ];
+        if (stripos($geminiModel, 'flash') !== false) {
+            $out['generationConfig']['thinkingConfig'] = [
+                'thinkingBudget' => 0,
+            ];
+        }
 
         $decls = self::openAiToolsToVertexFunctionDeclarations($openAi['tools'] ?? null);
         if ($decls !== []) {

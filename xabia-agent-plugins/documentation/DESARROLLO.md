@@ -1,6 +1,6 @@
 # Guía de desarrollo — Xabia Agent Next
 
-**Versión de la guía:** 1.0.318 (alineada con Xabia Agent Core **v1.0.318** — fichas CARD, Woo cart/cards, catálogo nativo, actualizaciones WP, Polar; UI chat; RAG Hub)
+**Versión de la guía:** 1.0.322 (alineada con Xabia Agent Core **v1.0.322** — sesión PHP lazy / caché CDN; streaming; fichas CARD, Woo cart/cards, catálogo nativo, actualizaciones WP, Polar; UI chat; RAG Hub)
 
 **Manual de usuario canónico:** [manual-usuario-xabia-core.md](./manual-usuario-xabia-core.md)  
 **Despliegue:** [DESPLIEGUE_PRODUCCION_CORE.md](./DESPLIEGUE_PRODUCCION_CORE.md)  
@@ -29,7 +29,7 @@ Esta guía **profundiza en el diseño del software** y complementa [MEMORIA_TECN
 Orden relevante en `xabia-intelligence.php`:
 
 1. Constantes `XABIA_PATH`, `XABIA_URL`, `XABIA_VERSION`.
-2. `init` prioritario: `session_start` si hace falta (memoria de chat).
+2. `init` prioritario: solo **reanuda** sesión si ya existe cookie `PHPSESSID` (no crear sesión en visitas nuevas; rompe caché LiteSpeed/CDN). El chat/API abren sesión al escribir.
 3. `require` de `class-xabia-db.php`, `class-xabia-brain.php`, `class-xabia-db-bridge.php`, `class-xabia-cpt-schema-discovery.php`, `class-xabia-digixop-client.php`.
 4. `require` de `api/class-xabia-api.php` → al final del archivo se llama **`Xabia_API::init()`**, que registra los handlers AJAX del chat, limpieza de sesión y resolución de imágenes.
 5. Definición de **`register_xabia_addon()`** y la global **`$xabia_available_addons`**.

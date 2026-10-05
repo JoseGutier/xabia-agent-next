@@ -7159,7 +7159,7 @@ ORDER BY name ASC";
                         var $row = $('<div class="xabia-chat-msg xabia-from-bot"></div>').attr('data-raw', raw);
                         $row.append($('<b>').text(xabiaPlaygroundBotName + ': ')).append(parseChatVisualTags(raw));
                         if (r.data.truncated) {
-                            $row.append(' ').append($('<button type="button" class="button button-small xabia-playground-continue">Continuar</button>'));
+                            $row.attr('data-truncated', '1');
                         }
                         $('#p-chat-canvas').append($row);
                     } else {
@@ -7177,8 +7177,6 @@ ORDER BY name ASC";
             });
             $(document).on('click', '.xabia-playground-continue', function(e){
                 e.preventDefault();
-                $(this).prop('disabled', true);
-                xabiaPlaygroundSend('Continúa exactamente desde donde lo dejaste, sin repetir lo anterior.');
             });
             $('#p-input').on('keydown', function(e){
                 var isEnter = e.key === 'Enter' || e.which === 13 || e.keyCode === 13;

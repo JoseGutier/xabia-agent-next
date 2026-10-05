@@ -1212,9 +1212,6 @@
 
     function finishBotMessage($box, $history, $botDiv, raw, opts) {
         $botDiv.removeClass('xabia-msg-typing');
-        if (opts.truncated) {
-            $botDiv.append(' ').append(makeContinueButton());
-        }
         attachMsgSpeakButton($box, $botDiv, raw);
         speakText($box, raw);
         scrollMessages($box);
@@ -2840,9 +2837,12 @@
 
         function submitChatMessage($box, options) {
             options = options || {};
+            if (options.forceContinue) {
+                return;
+            }
             var $input = $box.find('.xabia-input-field');
             var $history = messagesStream($box);
-            var continuePrompt = options.forceContinue ? xabiaI18n('continuePrompt', 'Continúa exactamente desde donde lo dejaste, sin repetir lo anterior.') : ($box.data('continuePrompt') || '');
+            var continuePrompt = $box.data('continuePrompt') || '';
             var isContinue = !!continuePrompt;
             var val = $.trim(isContinue ? continuePrompt : enforceInputLimits($input));
             if (!val) return;

@@ -3,7 +3,7 @@
  * Plugin Name: Xabia Agent Core
  * Plugin URI: https://xabia.ai
  * Description: Agente de Inteligencia Artificial de última generación con voz, texto y acciones en la web. Perfecciona la UX mediante interacciones conversacionales inteligentes, hiperpersonalizadas y políglotas. Smart QRs integrados, addons para Woo, MEC, Amelia, etc.
- * Version: 1.0.320
+ * Version: 1.0.322
  * Author: Digixop
  * Author URI: https://digixop.com
  */
@@ -87,8 +87,17 @@ require_once XABIA_PATH . 'core/class-xabia-voice.php';
 require_once XABIA_PATH . 'core/class-xabia-chat-input.php';
 Xabia_I18n::init();
 
-add_action('init', function() {
-    if (!session_id() && !headers_sent()) {
+/**
+ * No arrancar sesión PHP en cada visita: session_start() envía PHPSESSID y
+ * Cache-Control: no-store, y LiteSpeed/CDN no cachean la portada.
+ * Solo reanudamos si el visitante ya trae la cookie (QR, chat previo, etc.).
+ * El chat/API abren sesión al escribir (ver xabia_intercept_keywords / class-xabia-api).
+ */
+add_action('init', function () {
+    if (!isset($_COOKIE[session_name()])) {
+        return;
+    }
+    if (session_status() === PHP_SESSION_NONE && !headers_sent()) {
         session_start();
     }
 }, 1);
@@ -411,23 +420,6 @@ function xabia_intercept_keywords(string $project_id, string $message, array $co
     }
     $meta = $_SESSION['xabia_last_response_meta'][$project_id] ?? [];
     $availability = $_SESSION['xabia_last_availability'][$project_id] ?? [];
-
-    $is_continue = in_array($norm, ['sigue', 'continua', 'continue', 'y', 'y?', 'mas', 'dale'], true);
-    $prev_response = trim((string) ($meta['response'] ?? ''));
-    $looks_cut = $prev_response !== '' && function_exists('xabia_response_looks_truncated')
-        ? xabia_response_looks_truncated($prev_response)
-        : false;
-    if ($is_continue && (!empty($meta['truncated']) || $looks_cut)) {
-        $prev_plain = trim(wp_strip_all_tags($prev_response));
-        if ($prev_plain !== '' && preg_match('/^•\s+/m', $prev_plain)) {
-            return null;
-        }
-        return [
-            'type'       => 'continue',
-            'message'    => 'Continúa exactamente desde donde lo dejaste, sin repetir lo anterior.',
-            'x_continue' => true,
-        ];
-    }
 
     $is_booking = preg_match('/\b(reservar|reserva|reservalo|resérvalo|quiero reservar|hacer reserva|book)\b/u', $msg) === 1;
     $booking_url = '';

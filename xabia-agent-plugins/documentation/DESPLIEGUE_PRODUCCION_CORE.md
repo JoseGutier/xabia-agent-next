@@ -1,6 +1,6 @@
 # Despliegue completo en producción — Xabia Agent Core + Hub
 
-Checklist operativo para publicar **Xabia Agent Core v1.0.318+** (fichas [ACTION:CARD], postproceso Woo, catálogo nativo, URLs RAG, actualizaciones WP, Polar checkout, UI chat, RAG Hub, WPML/DTP) y el **Hub central** en `xabia.ai`.
+Checklist operativo para publicar **Xabia Agent Core v1.0.322+** (sesión PHP lazy / caché LiteSpeed-CDN, streaming, fichas [ACTION:CARD], postproceso Woo, catálogo nativo, URLs RAG, actualizaciones WP, Polar checkout, UI chat, RAG Hub, WPML/DTP) y el **Hub central** en `xabia.ai`.
 
 Use este documento como **lista de verificación** antes de dar por cerrado un despliegue.
 
@@ -30,15 +30,15 @@ ONLY_SLUG=xabia-mec ./scripts/build-plugin-zip.sh
 ONLY_SLUG=xabia-woo ./scripts/build-plugin-zip.sh
 ```
 
-**Salida:** `xabia-agent-plugins/dist/xabia-agent-core-1.0.318.zip` (versión leída de `xabia-intelligence.php`), más ZIPs MEC/Woo.
+**Salida:** `xabia-agent-plugins/dist/xabia-agent-core-1.0.322.zip` (versión leída de `xabia-intelligence.php`), más ZIPs MEC/Woo.
 
 **Atajo (build + producción + docs + Git):**
 
 ```bash
-./xabia-build.sh 1.0.318
+./xabia-build.sh 1.0.322
 ./xabia-build-addons.sh woo 1.0.7
 ./scripts/build-retail-plugin-zips.sh
-./xabia-deploy.sh 1.0.318
+./xabia-deploy.sh 1.0.322
 ./xabia-deploy-addons.sh
 ./scripts/wp-create-manual-pages.sh   # xabia.ai/documentacion/
 ```
@@ -112,8 +112,8 @@ Con licencia y firma HMAC válidas → `{"ok":true,"dtp":true,"translations":{..
 En `.env` del hub, alinear con la versión publicada:
 
 ```env
-XABIA_CORE_LATEST_VERSION=1.0.318
-XABIA_CORE_UPDATE_PACKAGE=https://xabia.ai/downloads/xabia-agent-core-1.0.318.zip
+XABIA_CORE_LATEST_VERSION=1.0.322
+XABIA_CORE_UPDATE_PACKAGE=https://xabia.ai/downloads/xabia-agent-core-1.0.322.zip
 XABIA_MEC_LATEST_VERSION=1.0.3
 XABIA_MEC_UPDATE_PACKAGE=https://xabia.ai/downloads/xabia-mec-1.0.3.zip
 XABIA_WOO_LATEST_VERSION=1.0.7
@@ -287,10 +287,10 @@ El pipeline `./xabia-deploy.sh` publica el ZIP en **xabia.ai/downloads/** (actua
 
 ```bash
 ./scripts/build-retail-plugin-zips.sh
-# → xabia-agent-plugins/dist/retail/xabia-agent-core-1.0.318-retail.zip
+# → xabia-agent-plugins/dist/retail/xabia-agent-core-1.0.322-retail.zip
 ```
 
-Suba ese ZIP en el panel de Polar (producto Core / packs) sustituyendo el archivo descargable anterior. No hay CLI Polar en el Release Engine: la subida es manual o vía API de Polar con token de organización.
+`./xabia-deploy.sh` sube el retail a Polar automáticamente si `.env.local` tiene `POLAR_ACCESS_TOKEN` y `POLAR_CORE_BENEFIT_ID` (script `scripts/polar-upload-retail.py`). Si faltan credenciales, súbalo a mano en el panel de Polar.
 
 **Checkout Polar → Hub:** configure campos personalizados (`client_url` obligatorio en addons; ver [POLAR_CHECKOUT_HUB.md](./POLAR_CHECKOUT_HUB.md)). El parche Hub (ago 2026) evita asignar compras al email equivocado cuando hay varias licencias.
 
@@ -310,23 +310,21 @@ Las opciones `xabia_*` en `wp_options` se conservan entre versiones del Core sal
 
 ---
 
-## Orden recomendado de despliegue (Hub conocimiento + Core 1.0.318)
+## Orden recomendado de despliegue (Hub + Core 1.0.322)
 
 ```
-1. Hub: migraciones 016 + 017 en MySQL
+1. Hub: migraciones 016 + 017 en MySQL (si aún no aplicadas)
 2. Hub: subir KnowledgeSyncHandler, KnowledgeVectorsRepository, VectorizationWorker, cron-vectorizer.php
 3. Hub: activar cron vectorizer (cada 5 min)
-4. Hub: subir handlers DTP si aún no están (Router, DtpEntitlement, …)
+4. Hub: subir handlers DTP / VertexForwarder si cambiaron
 5. curl smoke test DTP → 401/403 (no 404)
-6. Build ZIP Core 1.0.318 (+ MEC 1.0.3 / Woo 1.0.7) y subir a xabia.ai/downloads/
-7. `./scripts/wp-create-manual-pages.sh` → páginas en https://xabia.ai/documentacion/
-7. WordPress: actualizar Core (Plugins → Actualizar o ZIP manual)
-8. Verificar catálogo nativo en Playground (listado + «contacto de la última»)
-9. Entrenar / sincronizar agente si usa RAG vectorial; comprobar contadores locales
-10. Actualizar XABIA_CORE_LATEST_VERSION en .env del hub
-11. Vaciar caché + probar chat (nativo + RAG; repetir pregunta para validar caché)
+6. ./xabia-build.sh 1.0.322 && ./scripts/build-retail-plugin-zips.sh && ./scripts/build-modular-manuals-pdf.sh
+7. ./xabia-deploy.sh 1.0.322   # ZIP downloads + Hub .env + docs + Polar retail + Git tag
+8. WordPress cliente: actualizar Core (Plugins → Actualizar o ZIP manual)
+9. Vaciar caché LiteSpeed/CDN; probar portada en incógnito (sin PHPSESSID → HIT/cacheable)
+10. Probar chat (sesión solo al escribir) + QR si aplica
 ```
 
 ---
 
-*Core v1.0.318 — septiembre 2026 — fichas [ACTION:CARD] + Woo 1.0.7; catálogo nativo; URLs RAG; Polar checkout; UI chat; sync Hub, WPML + DTP.*
+*Core v1.0.322 — octubre 2026 — sesión PHP lazy (caché LiteSpeed/CDN); streaming; Polar retail; fichas [ACTION:CARD]; Woo; catálogo nativo; RAG Hub; WPML + DTP.*

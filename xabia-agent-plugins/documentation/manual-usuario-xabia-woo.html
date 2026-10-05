@@ -406,7 +406,7 @@ img[alt="Xabia"] {
 <li><strong>Sincronizar</strong> productos publicados hacia la <strong>base de conocimiento</strong> del agente (texto y, si lo configura, vectores para búsqueda semántica).</li>
 <li>Responder con <strong>títulos, precios, ofertas, stock, SKU, categorías</strong> y enlaces de ficha tomados de WooCommerce.</li>
 <li>Gestionar <strong>productos variables</strong> (atributos y variaciones con precio/stock en el campo <strong>Resumen</strong> enriquecido).</li>
-<li>Mostrar botones <strong>«Añadir al carrito»</strong> a partir del tag <strong><code>[ACTION:CART:ID]</code></strong>, donde <strong>ID</strong> es el identificador numérico de la fila del producto (columna <strong>ID</strong> del conector).</li>
+<li>Mostrar <strong>fichas de producto</strong> en el chat (imagen, título, meta, precio y CTA) cuando el Core emite <strong><code>[ACTION:CARD:…]</code></strong>, normalmente a partir de <strong><code>[ACTION:CART:ID]</code></strong> (ID = columna <strong>ID</strong> del conector). El visitante ve «Añadir al carrito» / «Comprar ahora» dentro de la ficha, no un botón suelto en medio del texto.</li>
 <li><strong>Sugerir cupones</strong> publicados y vigentes cuando la IA lo considere oportuno (solo códigos reales obtenidos de la tienda; la IA no debe inventarlos).</li>
 <li>Registrar <strong>conversiones</strong> ligadas al chat (cuando el visitante compra tras una recomendación en la misma sesión) en la tabla de conversiones del Core.</li>
 </ul>
@@ -631,7 +631,7 @@ img[alt="Xabia"] {
 <h2>Parte 7 — Experiencia del visitante en el chat</h2>
 <ul>
 <li>La IA recibe <strong>reglas de ventas</strong> y un resumen de productos recientes cuando el proyecto usa <strong>Woo</strong>.  </li>
-<li>Si recomienda un producto con acción de carrito, el frontend muestra un <strong>botón para añadir al carrito</strong> (requiere WooCommerce activo en la página del chat).  </li>
+<li>Si recomienda un producto, el frontend muestra una <strong>ficha</strong> con botón de compra (<strong><code>[ACTION:CARD]</code></strong> / carrito; requiere WooCommerce activo en la página del chat, o enlace remoto si el catálogo es externo).  </li>
 <li><strong>Productos variables:</strong> a veces hace falta elegir variación en la <strong>ficha</strong>; el <strong>Resumen</strong> puede incluir líneas que oriente al visitante.  </li>
 <li>Tras añadir al carrito, el visitante puede completar el pedido en WooCommerce; si la compra sigue a una recomendación en sesión, puede registrarse una conversión interna (véase la siguiente parte).</li>
 <li>Si el catálogo está en una tienda remota, las fichas, carrito y cupones se resuelven en el dominio configurado como <strong>URL pública de la tienda Woo (remoto)</strong>.</li>

@@ -384,11 +384,11 @@ img[alt="Xabia"] {
 <body>
 <h1>Manual de usuario — Xabia Agent Core</h1>
 <blockquote>
-<p><strong>Versión del producto:</strong> Xabia Agent Core <strong>v1.0.320</strong> (septiembre 2026)<br><strong>Índice de manuales:</strong> <a href="https://xabia.ai/docs/">https://xabia.ai/docs/</a><br><strong>PDF en línea:</strong> <a href="https://xabia.ai/docs/manual-usuario-xabia-core.pdf">https://xabia.ai/docs/manual-usuario-xabia-core.pdf</a><br><strong>HTML en línea:</strong> <a href="https://xabia.ai/docs/manual-usuario-xabia-core.html">https://xabia.ai/docs/manual-usuario-xabia-core.html</a></p>
+<p><strong>Versión del producto:</strong> Xabia Agent Core <strong>v1.0.322</strong> (octubre 2026)<br><strong>Índice de manuales:</strong> <a href="https://xabia.ai/docs/">https://xabia.ai/docs/</a><br><strong>PDF en línea:</strong> <a href="https://xabia.ai/docs/manual-usuario-xabia-core.pdf">https://xabia.ai/docs/manual-usuario-xabia-core.pdf</a><br><strong>HTML en línea:</strong> <a href="https://xabia.ai/docs/manual-usuario-xabia-core.html">https://xabia.ai/docs/manual-usuario-xabia-core.html</a></p>
 </blockquote>
 <h2>Guía rápida de instalación</h2>
 <ol>
-<li>Descargue el ZIP de <strong>Xabia Agent Core</strong> (<code>xabia-agent-core-1.0.291.zip</code> o paquete retail equivalente).</li>
+<li>Descargue el ZIP de <strong>Xabia Agent Core</strong> (<code>xabia-agent-core-1.0.322.zip</code> o paquete retail equivalente).</li>
 <li>En WordPress, vaya a <strong>Plugins → Añadir nuevo → Subir plugin</strong>, seleccione el ZIP y pulse <strong>Instalar ahora → Activar</strong>.</li>
 <li>Abra <strong>Xabia Agent</strong> y configure <strong>Conexión a la IA</strong>: pegue la licencia <code>XABIA--…</code>, elija <strong>Xabia Cloud</strong> (recomendado) o <strong>Infraestructura propia</strong>, y guarde.</li>
 <li>Cree un agente desde <strong>Nuevo agente</strong>, escriba nombre, saludo e instrucciones básicas.</li>
@@ -1564,6 +1564,17 @@ img[alt="Xabia"] {
 <h3>¿Hay saldo en la cartera pero el visitante ve “modo mantenimiento”?</h3>
 <p>Mire en <strong>Comportamiento IA</strong> el <strong>tope diario de tokens por agente</strong>. La barra lateral <strong>Tokens hoy</strong> muestra si ya alcanzó ese techo para el día técnico en curso; al día siguiente ese contador vuelve a cero para el agente, aunque su <strong>cartera global</strong> siga teniendo saldo disponible para otros agentes u otros días.</p>
 <h2>Notas de versión (Core)</h2>
+<h3>Core v1.0.322 (octubre 2026)</h3>
+<ul>
+<li><strong>Caché de página (LiteSpeed / CDN):</strong> el Core ya <strong>no</strong> abre sesión PHP en cada visita. Solo reanuda la sesión si el visitante ya trae la cookie <code>PHPSESSID</code> (p. ej. tras escribir en el chat o escanear un QR). Las visitas nuevas, sin esa cookie, pueden servirse desde caché.</li>
+<li>El shortcode del chat <strong>no</strong> arranca sesión al renderizar la página; la sesión se abre al enviar un mensaje (API / Avirato).</li>
+<li>Tras actualizar: vacíe la caché del sitio y pruebe en <strong>incógnito</strong>. Quien ya tenga <code>PHPSESSID</code> puede seguir viendo MISS hasta que caduque o borre la cookie.</li>
+<li>Streaming: la respuesta puede empezar a llegar en cuanto se abre la conexión; margen para terminar la frase en un solo ciclo.</li>
+</ul>
+<h3>Core v1.0.321 (septiembre 2026)</h3>
+<ul>
+<li>La respuesta de una pregunta cabe en un solo ciclo, con margen para terminar la frase. El texto puede empezar a llegar en cuanto se abre la conexión.</li>
+</ul>
 <h3>Core v1.0.320 (septiembre 2026)</h3>
 <ul>
 <li>El primer mensaje de un chat pasa directo a la búsqueda. La respuesta puede ir apareciendo por trozos.</li>

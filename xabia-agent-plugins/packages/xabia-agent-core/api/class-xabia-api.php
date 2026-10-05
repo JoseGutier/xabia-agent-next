@@ -961,7 +961,7 @@ if (!class_exists('Xabia_API')) {
             if ($session_limit > 0) {
                 $session_tokens = self::consumed_tokens_for_visitor($project_id, $visitor_key);
                 if ($session_tokens >= $session_limit) {
-                    wp_send_json_success(['response' => self::session_token_limit_user_message($config)]);
+                    self::send_chat_json_success(['response' => self::session_token_limit_user_message($config)]);
                     return;
                 }
             }
@@ -970,7 +970,7 @@ if (!class_exists('Xabia_API')) {
             if ($daily_limit > 0) {
                 $today_tokens = self::consumed_tokens_today($project_id);
                 if ($today_tokens >= $daily_limit) {
-                    wp_send_json_success(['response' => self::daily_token_limit_user_message($config)]);
+                    self::send_chat_json_success(['response' => self::daily_token_limit_user_message($config)]);
                     return;
                 }
             }
@@ -1214,6 +1214,46 @@ if (!class_exists('Xabia_API')) {
                 $deduped[] = $msg;
             }
             return array_slice($deduped, -12);
+        }
+
+        private static function is_protocol_continuation(string $user_msg, bool $is_continue_request): bool {
+            if ($is_continue_request) {
+                return true;
+            }
+            if (!class_exists('Xabia_Rag_Query_Rewriter', false)) {
+                return false;
+            }
+            if (!Xabia_Rag_Query_Rewriter::is_internal_instruction($user_msg)) {
+                return false;
+            }
+            $fold = mb_strtolower($user_msg, 'UTF-8');
+
+            return mb_strpos($fold, 'desde donde') !== false
+                || mb_strpos($fold, 'sin repetir') !== false
+                || mb_strpos($fold, 'exactly where you left') !== false;
+        }
+
+        /**
+         * Una continuación de protocolo no abre otra generación.
+         */
+        private static function answer_without_secondary_generation(string $project_id): void {
+            if (!session_id() && !headers_sent()) {
+                session_start();
+            }
+            $prev = '';
+            $meta_prev = $_SESSION['xabia_last_response_meta'][$project_id] ?? [];
+            if (is_array($meta_prev)) {
+                $prev = trim((string) ($meta_prev['response'] ?? ''));
+                $_SESSION['xabia_last_response_meta'][$project_id]['truncated'] = false;
+                $_SESSION['xabia_last_response_meta'][$project_id]['finish_reason'] = 'stop';
+            }
+            session_write_close();
+            error_log('[XABIA_CORE] protocol continuation skipped generation project=' . $project_id);
+            self::send_chat_json_success([
+                'response'      => $prev,
+                'finish_reason' => 'stop',
+                'truncated'     => false,
+            ]);
         }
 
         private static function chat_max_tokens($max_tokens): int {
@@ -1935,7 +1975,7 @@ if (!class_exists('Xabia_API')) {
                 if (class_exists('Xabia_Chat_Stream', false) && Xabia_Chat_Stream::is_open()) {
                     Xabia_Chat_Stream::fail($message);
                 }
-                wp_send_json_error([
+                self::send_chat_json_error([
                     'message' => $message,
                 ]);
             } finally {
@@ -1961,7 +2001,7 @@ if (!class_exists('Xabia_API')) {
                 if ($ok_admin) {
                     if (!current_user_can('manage_options')) {
                         xabia_trace('[XABIA_CORE] xabia_ask_ai aborted: admin nonce but user lacks manage_options.');
-                        wp_send_json_error(['message' => __('Permiso denegado.', 'xabia-intelligence')]);
+                        self::send_chat_json_error(['message' => __('Permiso denegado.', 'xabia-intelligence')]);
                         return;
                     }
                     $skip_response_cache = true;
@@ -1969,7 +2009,7 @@ if (!class_exists('Xabia_API')) {
                     
                 } else {
                     xabia_trace('[XABIA_CORE] xabia_ask_ai aborted: nonce check failed (not xabia_admin_nonce nor xabia_nonce).');
-                    wp_send_json_error(['message' => __('La comprobación de seguridad falló.', 'xabia-intelligence')]);
+                    self::send_chat_json_error(['message' => __('La comprobación de seguridad falló.', 'xabia-intelligence')]);
                     return;
                 }
             }
@@ -2019,7 +2059,7 @@ if (!class_exists('Xabia_API')) {
             
             if (empty($user_msg)) {
                 xabia_trace('[XABIA_CORE] xabia_ask_ai empty message, short-circuit success.');
-                wp_send_json_success(['response' => '...']);
+                self::send_chat_json_success(['response' => '...']);
                 return;
             }
 
@@ -2057,7 +2097,7 @@ if (!class_exists('Xabia_API')) {
                         'response' => $fixed_response,
                     ];
                     session_write_close();
-                    wp_send_json_success([
+                    self::send_chat_json_success([
                         'response' => $fixed_response,
                         'finish_reason' => 'php_intercept',
                         'truncated' => false,
@@ -2068,6 +2108,11 @@ if (!class_exists('Xabia_API')) {
                     $user_msg = (string) $keyword_intercept['message'];
                     $is_continue_request = true;
                 }
+            }
+
+            if (self::is_protocol_continuation($user_msg, $is_continue_request)) {
+                self::answer_without_secondary_generation($project_id);
+                return;
             }
 
             
@@ -2097,7 +2142,7 @@ if (!class_exists('Xabia_API')) {
                                 'source_type' => (string) ($early_cached['source_type'] ?? ''),
                             ]);
                         }
-                        wp_send_json_success(['response' => $early_text]);
+                        self::send_chat_json_success(['response' => $early_text]);
                         return;
                     }
                 }
@@ -2114,7 +2159,7 @@ if (!class_exists('Xabia_API')) {
             if (!$skip_response_cache && $cache_hash !== '' && class_exists('Xabia_Router') && $route !== 'ROUTE_ACTION') {
                 $cached = Xabia_Router::get_cached_response($project_id, $cache_hash);
                 if (is_array($cached) && !empty($cached['response'])) {
-                    wp_send_json_success(['response' => (string) $cached['response']]);
+                    self::send_chat_json_success(['response' => (string) $cached['response']]);
                     return;
                 }
             }
@@ -2134,7 +2179,7 @@ if (!class_exists('Xabia_API')) {
                         'response' => $actionResponse,
                     ];
                     session_write_close();
-                    wp_send_json_success([
+                    self::send_chat_json_success([
                         'response' => $actionResponse,
                         'finish_reason' => 'php_action',
                         'truncated' => false,
@@ -2211,7 +2256,7 @@ if (!class_exists('Xabia_API')) {
             session_write_close();
 
             if (class_exists('Xabia_Digixop_Client') && Xabia_Digixop_Client::was_insufficient_balance()) {
-                wp_send_json_error([
+                self::send_chat_json_error([
                     'message'              => Xabia_Digixop_Client::get_insufficient_balance_user_message(),
                     'digixop_insufficient' => true,
                 ]);
@@ -2328,10 +2373,13 @@ if (!class_exists('Xabia_API')) {
             $retrieval_search_term = self::rag_retrieval_search_term($search_term, $user_msg_clean);
 
             // Reescritura LLM solo con historial. El primer turno no espera otra llamada al modelo.
-            $rewrite_followup = class_exists('Xabia_Rag_Query_Rewriter', false)
+            $rewrite_query = $user_msg_clean !== '' ? $user_msg_clean : $search_term;
+            $rewrite_followup = !$is_continue_request
+                && class_exists('Xabia_Rag_Query_Rewriter', false)
                 && Xabia_Rag_Query_Rewriter::should_invoke_llm(
                     is_array($config) ? $config : [],
-                    Xabia_Rag_Query_Rewriter::history_has_prior_turns(is_array($history) ? $history : [])
+                    Xabia_Rag_Query_Rewriter::history_has_prior_turns(is_array($history) ? $history : []),
+                    $rewrite_query
                 );
             if ($rewrite_followup) {
                 $ymd = gmdate('Y-m-d');
@@ -2424,7 +2472,7 @@ if (!class_exists('Xabia_API')) {
                         $query_vector = self::get_query_embedding($retrieval_search_term, $config, $project_id);
                         self::digixop_absorb_query_embedding_usage($project_id, $config);
                         if (class_exists('Xabia_Digixop_Client') && Xabia_Digixop_Client::was_insufficient_balance()) {
-                            wp_send_json_error([
+                            self::send_chat_json_error([
                                 'message'              => Xabia_Digixop_Client::get_insufficient_balance_user_message(),
                                 'digixop_insufficient' => true,
                             ]);
@@ -2926,11 +2974,11 @@ if (!class_exists('Xabia_API')) {
             $config['_xabia_proxy_user_lang'] = $user_lang;
             $temperature = isset($config['rules']['min_score']) ? floatval($config['rules']['min_score']) : 0.2;
             $ai_driver = $config['ai_driver'] ?? 'openai';
-            $max_tokens = self::chat_max_tokens($config['rules']['max_output_tokens'] ?? 300);
+            $max_tokens = self::chat_max_tokens($config['rules']['max_output_tokens'] ?? 1200);
             if (!empty($config['_xabia_temporal_catalog'])) {
                 $max_tokens = max($max_tokens, (int) apply_filters('xabia_temporal_catalog_max_output_tokens', 2500, $project_id, $config));
             } else {
-                $max_tokens = min($max_tokens, 300);
+                $max_tokens = min($max_tokens, 1200);
             }
 
             $ente_display = '';
@@ -3042,7 +3090,7 @@ if (!class_exists('Xabia_API')) {
                 if (class_exists('Xabia_Chat_Stream', false) && Xabia_Chat_Stream::is_open()) {
                     Xabia_Chat_Stream::fail($balance_message);
                 }
-                wp_send_json_error([
+                self::send_chat_json_error([
                     'message'              => $balance_message,
                     'digixop_insufficient' => true,
                 ]);
@@ -7412,7 +7460,7 @@ if (!class_exists('Xabia_API')) {
                 $payload['rag_debug'] = self::$last_rag_debug;
             }
 
-            wp_send_json_success($payload);
+            self::send_chat_json_success($payload);
 
             return true;
         }
@@ -7548,13 +7596,33 @@ if (!class_exists('Xabia_API')) {
         }
 
         /**
+         * Si el REST ya abrió el stream, la salida sigue en SSE. Si no, JSON.
+         *
          * @param array<string, mixed> $data
          */
-        private static function deliver_chat_success(array $data): void {
-            if (class_exists('Xabia_Chat_Stream', false) && Xabia_Chat_Stream::is_open()) {
+        private static function send_chat_json_success(array $data): void {
+            if (class_exists('Xabia_Chat_Stream', false) && (Xabia_Chat_Stream::is_open() || Xabia_Chat_Stream::is_primed())) {
                 Xabia_Chat_Stream::complete($data);
             }
             wp_send_json_success($data);
+        }
+
+        /**
+         * @param array<string, mixed> $data
+         */
+        private static function send_chat_json_error(array $data): void {
+            if (class_exists('Xabia_Chat_Stream', false) && (Xabia_Chat_Stream::is_open() || Xabia_Chat_Stream::is_primed())) {
+                $message = isset($data['message']) ? (string) $data['message'] : 'Error';
+                Xabia_Chat_Stream::fail($message);
+            }
+            wp_send_json_error($data);
+        }
+
+        /**
+         * @param array<string, mixed> $data
+         */
+        private static function deliver_chat_success(array $data): void {
+            self::send_chat_json_success($data);
         }
 
         /**

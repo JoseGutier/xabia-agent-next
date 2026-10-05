@@ -18,6 +18,8 @@ final class Xabia_Chat_Stream {
 
     private static $open = false;
 
+    private static $primed = false;
+
     public static function arm(): void {
         self::$armed = true;
     }
@@ -28,6 +30,30 @@ final class Xabia_Chat_Stream {
 
     public static function is_open(): bool {
         return self::$open;
+    }
+
+    public static function is_primed(): bool {
+        return self::$primed;
+    }
+
+    public static function mark_primed(): void {
+        self::$primed = true;
+    }
+
+    /**
+     * 1 KB de relleno justo tras las cabeceras, para que LiteSpeed/Nginx abran el stream.
+     */
+    public static function prime(): void {
+        if (self::$primed || self::$open) {
+            return;
+        }
+        self::$primed = true;
+        echo ": " . str_repeat(" ", 1024) . "\n\n";
+        echo "event: ping\ndata: {}\n\n";
+        if (ob_get_level()) {
+            @ob_end_flush();
+        }
+        @flush();
     }
 
     /**
@@ -112,8 +138,15 @@ final class Xabia_Chat_Stream {
             header('Cache-Control: no-cache, no-transform');
             header('Connection: keep-alive');
         }
-        echo ':' . str_repeat(' ', 2048) . "\n\n";
-        self::flush_buffers();
+        if (!self::$primed) {
+            self::$primed = true;
+            echo ": " . str_repeat(" ", 1024) . "\n\n";
+            echo "event: ping\ndata: {}\n\n";
+            if (ob_get_level()) {
+                @ob_end_flush();
+            }
+            @flush();
+        }
     }
 
     private static function discard_buffers(): void {

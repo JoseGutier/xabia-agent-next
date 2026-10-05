@@ -228,8 +228,6 @@ function shortcode_xabia_agent_renderer($atts) {
         ? Xabia_Voice::lang_code_to_locale($current_lang_code)
         : $current_lang_code;
 
-    if (session_status() === PHP_SESSION_NONE && !headers_sent()) { session_start(); }
-
     $url_ente_id = isset($_GET['ente_id']) ? wp_unslash($_GET['ente_id']) : null;
     $url_tunnel = ($url_ente_id !== null && $url_ente_id !== '') ? $url_ente_id : null;
     $shortcode_tunnel = !empty($atts['ente_id']) ? sanitize_text_field((string) $atts['ente_id']) : '';

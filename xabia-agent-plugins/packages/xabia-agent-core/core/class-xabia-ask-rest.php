@@ -76,6 +76,12 @@ final class Xabia_Ask_Rest {
                 header('Cache-Control: no-cache, no-transform');
                 header('Connection: keep-alive');
             }
+            // Vaciado inmediato de buffer de red
+            echo ": " . str_repeat(" ", 1024) . "\n\n";
+            echo "event: ping\ndata: {}\n\n";
+            if (ob_get_level()) { ob_end_flush(); }
+            @flush();
+            Xabia_Chat_Stream::mark_primed();
         }
         foreach ($request->get_params() as $key => $value) {
             if (!is_string($key) || $key === '') {

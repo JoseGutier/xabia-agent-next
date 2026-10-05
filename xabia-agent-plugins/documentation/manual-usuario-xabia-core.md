@@ -1,13 +1,13 @@
 # Manual de usuario — Xabia Agent Core
 
-> **Versión del producto:** Xabia Agent Core **v1.0.320** (septiembre 2026)  
+> **Versión del producto:** Xabia Agent Core **v1.0.322** (octubre 2026)  
 > **Índice de manuales:** [https://xabia.ai/docs/](https://xabia.ai/docs/)  
 > **PDF en línea:** [https://xabia.ai/docs/manual-usuario-xabia-core.pdf](https://xabia.ai/docs/manual-usuario-xabia-core.pdf)  
 > **HTML en línea:** [https://xabia.ai/docs/manual-usuario-xabia-core.html](https://xabia.ai/docs/manual-usuario-xabia-core.html)
 
 ## Guía rápida de instalación
 
-1. Descargue el ZIP de **Xabia Agent Core** (`xabia-agent-core-1.0.320.zip` o paquete retail equivalente).
+1. Descargue el ZIP de **Xabia Agent Core** (`xabia-agent-core-1.0.322.zip` o paquete retail equivalente).
 2. En WordPress, vaya a **Plugins → Añadir nuevo → Subir plugin**, seleccione el ZIP y pulse **Instalar ahora → Activar**.
 3. Abra **Xabia Agent** y configure **Conexión a la IA**: pegue la licencia `XABIA--…`, elija **Xabia Cloud** (recomendado) o **Infraestructura propia**, y guarde.
 4. Cree un agente desde **Nuevo agente**, escriba nombre, saludo e instrucciones básicas.
@@ -961,6 +961,15 @@ Depende de **condiciones contractuales**: dos direcciones públicas distintas a 
 Mire en **Comportamiento IA** el **tope diario de tokens por agente**. La barra lateral **Tokens hoy** muestra si ya alcanzó ese techo para el día técnico en curso; al día siguiente ese contador vuelve a cero para el agente, aunque su **cartera global** siga teniendo saldo disponible para otros agentes u otros días.
 
 ## Notas de versión (Core)
+
+### Core v1.0.322 (octubre 2026)
+- **Caché de página (LiteSpeed / CDN):** el Core ya **no** abre sesión PHP en cada visita. Solo reanuda la sesión si el visitante ya trae la cookie `PHPSESSID` (p. ej. tras escribir en el chat o escanear un QR). Las visitas nuevas, sin esa cookie, pueden servirse desde caché.
+- El shortcode del chat **no** arranca sesión al renderizar la página; la sesión se abre al enviar un mensaje (API / Avirato).
+- Tras actualizar: vacíe la caché del sitio y pruebe en **incógnito**. Quien ya tenga `PHPSESSID` puede seguir viendo MISS hasta que caduque o borre la cookie.
+- Streaming: la respuesta puede empezar a llegar en cuanto se abre la conexión; margen para terminar la frase en un solo ciclo.
+
+### Core v1.0.321 (septiembre 2026)
+- La respuesta de una pregunta cabe en un solo ciclo, con margen para terminar la frase. El texto puede empezar a llegar en cuanto se abre la conexión.
 
 ### Core v1.0.320 (septiembre 2026)
 - El primer mensaje de un chat pasa directo a la búsqueda. La respuesta puede ir apareciendo por trozos.

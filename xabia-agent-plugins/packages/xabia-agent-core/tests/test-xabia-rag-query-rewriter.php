@@ -83,4 +83,19 @@ assert(Xabia_Rag_Query_Rewriter::should_invoke_llm(['rules' => ['rag_query_rewri
 $rewriteMs = (microtime(true) - $rewriteStarted) * 1000;
 assert($rewriteMs < 10, 'turn 1 rewrite decision stays under 10ms, got ' . $rewriteMs);
 
+$continue = 'Continúa exactamente desde donde lo dejaste, sin repetir lo anterior.';
+assert(Xabia_Rag_Query_Rewriter::is_internal_instruction($continue) === true, 'continue sentence is internal');
+assert(Xabia_Rag_Query_Rewriter::should_invoke_llm(['rules' => ['rag_query_rewrite' => 'on']], true, $continue) === false, 'continue skips rewrite');
+$called = false;
+$contStarted = microtime(true);
+$prep = Xabia_Rag_Query_Rewriter::prepare($continue, 'Empresas de veleros?', ['rules' => ['rag_query_rewrite' => 'on']], static function () use (&$called) {
+    $called = true;
+    return 'should-not-run';
+});
+$contMs = (microtime(true) - $contStarted) * 1000;
+assert($called === false, 'continue does not call the rewrite model');
+assert($prep['rewritten'] === false, 'continue is not rewritten');
+assert($contMs < 10, 'continue rewrite stays under 10ms, got ' . $contMs);
+assert(Xabia_Rag_Query_Rewriter::should_invoke_llm(['rules' => ['rag_query_rewrite' => 'on']], true, 'Empresas de veleros?') === true, 'a visitor question may still rewrite');
+
 echo "OK xabia-rag-query-rewriter tests\n";

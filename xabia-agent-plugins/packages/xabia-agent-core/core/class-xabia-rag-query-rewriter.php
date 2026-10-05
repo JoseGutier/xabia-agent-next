@@ -32,7 +32,7 @@ class Xabia_Rag_Query_Rewriter {
             'canonical_entities' => [],
         ];
 
-        if ($base === '') {
+        if ($base === '' || self::is_internal_instruction($base)) {
             return $out;
         }
 
@@ -373,9 +373,42 @@ class Xabia_Rag_Query_Rewriter {
     }
 
     /**
+     * Instrucción de protocolo (continuación), no una consulta del visitante.
+     * No debe gastar una llamada al micro-modelo de reescritura.
+     */
+    public static function is_internal_instruction(string $query): bool {
+        $fold = mb_strtolower(trim(wp_strip_all_tags($query)), 'UTF-8');
+        if ($fold === '') {
+            return false;
+        }
+        if (function_exists('remove_accents')) {
+            $fold = remove_accents($fold);
+        }
+        $markers = [
+            'continua exactamente',
+            'desde donde lo dejaste',
+            'sin repetir lo anterior',
+            'continue exactly where you left off',
+        ];
+        foreach ($markers as $marker) {
+            if (mb_strpos($fold, $marker) !== false) {
+                return true;
+            }
+        }
+        $norm = preg_replace('/[^\p{L}\p{N}]+/u', ' ', $fold);
+        $norm = trim((string) preg_replace('/\s+/u', ' ', (string) $norm));
+
+        return in_array($norm, ['sigue', 'continua', 'continue', 'mas', 'dale'], true);
+    }
+
+    /**
      * @param array<string, mixed> $config
      */
-    public static function should_invoke_llm(array $config, bool $has_prior_turns): bool {
+    public static function should_invoke_llm(array $config, bool $has_prior_turns, string $query = ''): bool {
+        if ($query !== '' && self::is_internal_instruction($query)) {
+            return false;
+        }
+
         return $has_prior_turns && self::is_enabled($config);
     }
 
