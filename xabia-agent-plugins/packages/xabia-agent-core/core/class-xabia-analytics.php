@@ -487,8 +487,8 @@ final class Xabia_Analytics {
         }
         ?>
         <div id="tab-analytics" class="xabia-tab-content">
-            <h3 class="xabia-section-title"><?php echo esc_html__('Analítica', 'xabia-intelligence'); ?></h3>
-            <p class="description"><?php echo esc_html__('Rendimiento del agente en este sitio. Los datos se guardan en local (sin PII): visitante anónimo por sesión, idioma, origen QR y tipo de respuesta.', 'xabia-intelligence'); ?></p>
+            <h3 class="xabia-section-title"><?php echo esc_html__('Estadísticas', 'xabia-intelligence'); ?></h3>
+            <p class="description"><?php echo esc_html__('Rendimiento del agente en este sitio: visitantes, conversaciones y dudas no resueltas. Los datos son anónimos.', 'xabia-intelligence'); ?></p>
             <p style="margin:12px 0;">
                 <button type="button" class="button xabia-analytics-range" data-days="7"><?php echo esc_html__('7 días', 'xabia-intelligence'); ?></button>
                 <button type="button" class="button button-primary xabia-analytics-range" data-days="30"><?php echo esc_html__('30 días', 'xabia-intelligence'); ?></button>
@@ -503,13 +503,13 @@ final class Xabia_Analytics {
                     <div class="xabia-panel-muted" style="padding:12px;border-radius:8px;"><strong><?php echo esc_html__('Sin información', 'xabia-intelligence'); ?></strong><div id="xabia-stat-noinfo" style="font-size:1.6rem;margin-top:6px;">—</div><div id="xabia-stat-noinfo-rate" class="description" style="margin-top:4px;"></div></div>
                     <div class="xabia-panel-muted" style="padding:12px;border-radius:8px;"><strong><?php echo esc_html__('Valoraciones +/-', 'xabia-intelligence'); ?></strong><div id="xabia-stat-feedback" style="font-size:1rem;margin-top:6px;">—</div></div>
                     <div class="xabia-panel-muted" style="padding:12px;border-radius:8px;"><strong><?php echo esc_html__('Media msgs/usuario', 'xabia-intelligence'); ?></strong><div id="xabia-stat-avg" style="font-size:1.6rem;margin-top:6px;">—</div></div>
-                    <div class="xabia-panel-muted" style="padding:12px;border-radius:8px;"><strong><?php echo esc_html__('Tokens (periodo)', 'xabia-intelligence'); ?></strong><div id="xabia-stat-tokens" style="font-size:1.2rem;margin-top:6px;">—</div></div>
+                    <div class="xabia-panel-muted" style="padding:12px;border-radius:8px;"><strong><?php echo esc_html__('Uso del periodo', 'xabia-intelligence'); ?></strong><div id="xabia-stat-tokens" style="font-size:1.2rem;margin-top:6px;">—</div></div>
                 </div>
                 <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:18px;margin:20px 0;">
                     <div style="max-width:520px;"><canvas id="xabia-chart-origin" height="220" aria-label="<?php echo esc_attr__('Origen: web vs QR', 'xabia-intelligence'); ?>"></canvas></div>
                     <div style="max-width:520px;"><canvas id="xabia-chart-outcome" height="220" aria-label="<?php echo esc_attr__('Tipo de respuesta', 'xabia-intelligence'); ?>"></canvas></div>
                     <div style="max-width:520px;"><canvas id="xabia-chart-lang" height="220" aria-label="<?php echo esc_attr__('Idioma', 'xabia-intelligence'); ?>"></canvas></div>
-                    <div style="max-width:520px;"><canvas id="xabia-chart-rag" height="220" aria-label="<?php echo esc_attr__('RAG por fuente', 'xabia-intelligence'); ?>"></canvas></div>
+                    <div style="max-width:520px;"><canvas id="xabia-chart-rag" height="220" aria-label="<?php echo esc_attr__('Respuestas por fuente de información', 'xabia-intelligence'); ?>"></canvas></div>
                 </div>
                 <div style="max-width:920px;margin:20px 0;">
                     <canvas id="xabia-chart-daily" height="120" aria-label="<?php echo esc_attr__('Mensajes por día', 'xabia-intelligence'); ?>"></canvas>

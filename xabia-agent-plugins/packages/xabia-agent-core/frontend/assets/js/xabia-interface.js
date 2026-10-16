@@ -9,16 +9,29 @@
         : {};
 
     const PANEL_LAYOUT_CLASS = {
+        drawer: 'layout-drawer',
         right_float: 'layout-right-float',
         left_float: 'layout-left-float',
         centered_modal: 'layout-centered-modal',
         full_screen: 'layout-full-screen',
     };
 
+    const DEFAULT_PANEL_LAYOUT = 'drawer';
+
+    function panelMode(layout) {
+        if (layout === 'drawer') {
+            return 'drawer';
+        }
+        if (layout === 'full_screen') {
+            return 'fullscreen';
+        }
+        return 'floating';
+    }
+
     let lastScrollY = window.scrollY;
 
     function layoutClass(layout) {
-        return PANEL_LAYOUT_CLASS[layout] || PANEL_LAYOUT_CLASS.right_float;
+        return PANEL_LAYOUT_CLASS[layout] || PANEL_LAYOUT_CLASS[DEFAULT_PANEL_LAYOUT];
     }
 
     function projectCfg(el) {
@@ -521,7 +534,7 @@
         const overlay = overlayId ? document.getElementById(overlayId) : null;
         const layout = (projectCfg(trigger).panelLayout)
             || trigger.getAttribute('data-panel-layout')
-            || 'right_float';
+            || DEFAULT_PANEL_LAYOUT;
         const immersive = shouldUseImmersive(true, trigger, panel);
         applyImmersiveState(true, immersive, trigger, panel, overlay, layout, footerBox);
     }
@@ -718,12 +731,13 @@
     function finishBind(trigger, footerBox, panel, overlay) {
 
         const cfg = projectCfg(trigger);
-        const layout = cfg.panelLayout || trigger.getAttribute('data-panel-layout') || 'right_float';
+        const layout = cfg.panelLayout || trigger.getAttribute('data-panel-layout') || DEFAULT_PANEL_LAYOUT;
         const layoutCls = layoutClass(layout);
         const isOverlayLayout = layout === 'centered_modal' || layout === 'full_screen';
 
         portalPanel(panel);
         panel.classList.add('xabia-panel-shell', layoutCls);
+        panel.setAttribute('data-mode', panelMode(layout));
         bindMobilePanelBehavior(trigger, panel);
         try {
             document.dispatchEvent(new CustomEvent('xabia:chatbox:mounted'));

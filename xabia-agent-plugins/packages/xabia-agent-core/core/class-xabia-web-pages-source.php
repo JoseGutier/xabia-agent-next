@@ -300,6 +300,64 @@ class Xabia_Web_Pages_Source {
     }
 
     /**
+     * Código de idioma de un post (WPML / Polylang / vacío).
+     */
+    public static function detect_post_language_code(int $post_id): string {
+        if ($post_id < 1) {
+            return '';
+        }
+        if (function_exists('pll_get_post_language')) {
+            $pll = pll_get_post_language($post_id, 'slug');
+            if (is_string($pll) && $pll !== '') {
+                return strtolower(substr($pll, 0, 5));
+            }
+        }
+        $wpml = apply_filters('wpml_element_language_code', null, [
+            'element_id'   => $post_id,
+            'element_type' => 'post_' . (get_post_type($post_id) ?: 'page'),
+        ]);
+        if (is_string($wpml) && $wpml !== '') {
+            return strtolower(substr($wpml, 0, 5));
+        }
+        $details = apply_filters('wpml_post_language_details', null, $post_id);
+        if (is_array($details) && !empty($details['language_code'])) {
+            return strtolower(substr((string) $details['language_code'], 0, 5));
+        }
+
+        return '';
+    }
+
+    /**
+     * @return array{code: string, label: string, flag: string}
+     */
+    private static function language_ui_meta(string $code): array {
+        $code = strtolower($code);
+        $map = [
+            'es' => ['label' => __('Español', 'xabia-intelligence'), 'flag' => '🇪🇸'],
+            'eu' => ['label' => __('Euskera', 'xabia-intelligence'), 'flag' => '🇪🇺'],
+            'en' => ['label' => __('English', 'xabia-intelligence'), 'flag' => '🇬🇧'],
+            'fr' => ['label' => __('Français', 'xabia-intelligence'), 'flag' => '🇫🇷'],
+            'de' => ['label' => __('Deutsch', 'xabia-intelligence'), 'flag' => '🇩🇪'],
+            'pt' => ['label' => __('Português', 'xabia-intelligence'), 'flag' => '🇵🇹'],
+            'ca' => ['label' => __('Català', 'xabia-intelligence'), 'flag' => '🇪🇸'],
+            'gl' => ['label' => __('Galego', 'xabia-intelligence'), 'flag' => '🇪🇸'],
+        ];
+        if (isset($map[$code])) {
+            return [
+                'code'  => $code,
+                'label' => $map[$code]['label'],
+                'flag'  => $map[$code]['flag'],
+            ];
+        }
+
+        return [
+            'code'  => $code,
+            'label' => strtoupper($code),
+            'flag'  => '🌐',
+        ];
+    }
+
+    /**
      * @param list<int> $selected_ids
      */
     public static function render_page_picker(string $array_field, string $text_field, array $selected_ids, string $legend, string $description = ''): void {
@@ -318,40 +376,93 @@ class Xabia_Web_Pages_Source {
         if (!is_array($posts)) {
             $posts = [];
         }
+        $langs_found = [];
+        $rows = [];
+        foreach ($posts as $p) {
+            if (!($p instanceof WP_Post)) {
+                continue;
+            }
+            $pid = (int) $p->ID;
+            $lang = self::detect_post_language_code($pid);
+            if ($lang !== '') {
+                $langs_found[$lang] = self::language_ui_meta($lang);
+            }
+            $type_obj = get_post_type_object($p->post_type);
+            $type_label = $type_obj && isset($type_obj->labels->singular_name)
+                ? (string) $type_obj->labels->singular_name
+                : $p->post_type;
+            $plink = get_permalink($p);
+            $rows[] = [
+                'id'         => $pid,
+                'title'      => (string) $p->post_title,
+                'lang'       => $lang,
+                'type_label' => $type_label,
+                'link'       => is_string($plink) ? $plink : '',
+            ];
+        }
+        ksort($langs_found);
+        static $picker_seq = 0;
+        ++$picker_seq;
+        $picker_uid = 'xabia-pg-' . substr(md5($array_field . '|' . (string) $picker_seq), 0, 10);
         ?>
-        <fieldset class="xabia-web-pages-picker" style="margin:12px 0;padding:12px;border:1px solid #dcdcde;border-radius:6px;">
+        <fieldset class="xabia-web-pages-picker" id="<?php echo esc_attr($picker_uid); ?>" style="margin:12px 0;padding:12px;border:1px solid #dcdcde;border-radius:6px;">
             <legend style="font-weight:600;padding:0 6px;"><?php echo esc_html($legend); ?></legend>
             <?php if ($description !== '') : ?>
                 <p class="description" style="margin:0 0 10px;"><?php echo esc_html($description); ?></p>
             <?php endif; ?>
-            <?php if ($posts === []) : ?>
+            <?php if ($rows === []) : ?>
                 <p class="description"><?php echo esc_html__('No hay páginas o entradas publicadas.', 'xabia-intelligence'); ?></p>
             <?php else : ?>
-                <div style="max-height:220px;overflow-y:auto;display:flex;flex-direction:column;gap:6px;">
-                <?php foreach ($posts as $p) :
-                    if (!($p instanceof WP_Post)) {
-                        continue;
-                    }
-                    $pid = (int) $p->ID;
-                    $type_obj = get_post_type_object($p->post_type);
-                    $type_label = $type_obj && isset($type_obj->labels->singular_name)
-                        ? (string) $type_obj->labels->singular_name
-                        : $p->post_type;
-                    $plink = get_permalink($p);
+                <?php if ($langs_found !== []) : ?>
+                    <div class="xabia-lang-filter" role="group" aria-label="<?php echo esc_attr__('Filtrar por idioma', 'xabia-intelligence'); ?>" style="display:flex;flex-wrap:wrap;gap:6px;margin:0 0 10px;">
+                        <button type="button" class="button button-small xabia-lang-filter__btn is-active" data-lang=""><?php echo esc_html__('Todos', 'xabia-intelligence'); ?></button>
+                        <?php foreach ($langs_found as $meta) : ?>
+                            <button type="button" class="button button-small xabia-lang-filter__btn" data-lang="<?php echo esc_attr($meta['code']); ?>">
+                                <?php echo esc_html($meta['flag'] . ' ' . $meta['label']); ?>
+                            </button>
+                        <?php endforeach; ?>
+                    </div>
+                <?php endif; ?>
+                <div class="xabia-web-pages-list" style="max-height:220px;overflow-y:auto;display:flex;flex-direction:column;gap:6px;">
+                <?php foreach ($rows as $row) :
+                    $badge = $row['lang'] !== '' ? strtoupper(substr($row['lang'], 0, 2)) : '';
                     ?>
-                    <label style="display:flex;align-items:flex-start;gap:8px;margin:0;">
-                        <input type="checkbox" name="<?php echo esc_attr($array_field); ?>[]" value="<?php echo esc_attr((string) $pid); ?>" <?php checked(in_array($pid, $selected_ids, true)); ?> style="margin-top:3px;">
+                    <label class="xabia-web-page-row" data-lang="<?php echo esc_attr($row['lang']); ?>" style="display:flex;align-items:flex-start;gap:8px;margin:0;">
+                        <input type="checkbox" name="<?php echo esc_attr($array_field); ?>[]" value="<?php echo esc_attr((string) $row['id']); ?>" <?php checked(in_array($row['id'], $selected_ids, true)); ?> style="margin-top:3px;">
                         <span>
-                            <?php echo esc_html($p->post_title); ?>
-                            <code style="font-size:11px;">ID <?php echo (int) $pid; ?></code>
-                            <span style="color:#646970;">(<?php echo esc_html($type_label); ?>)</span>
-                            <?php if (is_string($plink) && $plink !== '') : ?>
-                                <br><span style="font-size:11px;color:#646970;word-break:break-all;"><?php echo esc_html($plink); ?></span>
+                            <?php echo esc_html($row['title']); ?>
+                            <?php if ($badge !== '') : ?>
+                                <span class="xabia-lang-badge" title="<?php echo esc_attr($row['lang']); ?>">[<?php echo esc_html($badge); ?>]</span>
+                            <?php endif; ?>
+                            <code style="font-size:11px;">ID <?php echo (int) $row['id']; ?></code>
+                            <span style="color:#646970;">(<?php echo esc_html($row['type_label']); ?>)</span>
+                            <?php if ($row['link'] !== '') : ?>
+                                <br><span style="font-size:11px;color:#646970;word-break:break-all;"><?php echo esc_html($row['link']); ?></span>
                             <?php endif; ?>
                         </span>
                     </label>
                 <?php endforeach; ?>
                 </div>
+                <?php if ($langs_found !== []) : ?>
+                <script>
+                (function(){
+                    var root = document.getElementById(<?php echo wp_json_encode($picker_uid); ?>);
+                    if (!root) return;
+                    var btns = root.querySelectorAll('.xabia-lang-filter__btn');
+                    var rows = root.querySelectorAll('.xabia-web-page-row');
+                    btns.forEach(function(btn){
+                        btn.addEventListener('click', function(){
+                            var lang = btn.getAttribute('data-lang') || '';
+                            btns.forEach(function(b){ b.classList.toggle('is-active', b === btn); });
+                            rows.forEach(function(row){
+                                var rowLang = row.getAttribute('data-lang') || '';
+                                row.style.display = (!lang || rowLang === lang) ? '' : 'none';
+                            });
+                        });
+                    });
+                })();
+                </script>
+                <?php endif; ?>
             <?php endif; ?>
             <p style="margin:10px 0 4px;font-size:12px;color:#646970;"><?php echo esc_html__('IDs adicionales (comas)', 'xabia-intelligence'); ?></p>
             <input type="text" name="<?php echo esc_attr($text_field); ?>" class="widefat" placeholder="123, 456" value="">

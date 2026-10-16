@@ -461,6 +461,8 @@ function shortcode_xabia_agent_renderer($atts) {
             --xabia-magenta: #c2185b;
             --xabia-primary-color: <?php echo esc_attr($accent_color); ?>;
             --xabia-bg-color: <?php echo esc_attr($bg_color); ?>;
+            --xabia-text-color: #111827;
+            --xabia-border-radius: 16px;
             --xabia-mouth-color: #FFFFFF;
             --xabia-avatar-bg: <?php echo esc_attr($avatar_colors['bg']); ?>;
             --xabia-avatar-shadow: <?php echo esc_attr($avatar_colors['shadow']); ?>;

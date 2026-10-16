@@ -3150,3 +3150,281 @@ body.wp-admin .xabia-curate-empty {
 	margin-top: 10px;
 }
 
+
+/* ——— Controles intuitivos (v1.0.327) ——— */
+.xabia-wrapper.xabia-admin-app .xabia-label-with-tip {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	margin-bottom: 6px;
+}
+
+.xabia-wrapper.xabia-admin-app .xabia-field-stack {
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+	width: 100%;
+}
+
+.xabia-wrapper.xabia-admin-app .xabia-tip {
+	position: relative;
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	width: 20px;
+	height: 20px;
+	margin: 0;
+	padding: 0;
+	border: 0;
+	border-radius: 50%;
+	background: transparent;
+	color: #646970;
+	line-height: 1;
+	cursor: help;
+	vertical-align: middle;
+}
+
+.xabia-wrapper.xabia-admin-app .xabia-tip .dashicons {
+	width: 18px;
+	height: 18px;
+	font-size: 18px;
+	line-height: 1;
+}
+
+.xabia-wrapper.xabia-admin-app .xabia-tip:hover,
+.xabia-wrapper.xabia-admin-app .xabia-tip:focus {
+	color: var(--xabia-green);
+	outline: none;
+}
+
+.xabia-wrapper.xabia-admin-app .xabia-tip[data-tooltip]::after {
+	content: attr(data-tooltip);
+	position: absolute;
+	left: 50%;
+	bottom: calc(100% + 8px);
+	transform: translateX(-50%);
+	z-index: 100000;
+	width: max-content;
+	max-width: 260px;
+	padding: 8px 10px;
+	border-radius: 6px;
+	background: #1d2327;
+	color: #fff;
+	font-size: 12px;
+	font-weight: 400;
+	line-height: 1.4;
+	text-align: left;
+	white-space: normal;
+	opacity: 0;
+	visibility: hidden;
+	pointer-events: none;
+	transition: opacity 0.12s ease, visibility 0.12s ease;
+	box-shadow: 0 4px 14px rgba(0, 0, 0, 0.18);
+}
+
+.xabia-wrapper.xabia-admin-app .xabia-tip[data-tooltip]::before {
+	content: "";
+	position: absolute;
+	left: 50%;
+	bottom: calc(100% + 2px);
+	transform: translateX(-50%);
+	border: 6px solid transparent;
+	border-top-color: #1d2327;
+	opacity: 0;
+	visibility: hidden;
+	transition: opacity 0.12s ease, visibility 0.12s ease;
+}
+
+.xabia-wrapper.xabia-admin-app .xabia-tip[data-tooltip]:hover::after,
+.xabia-wrapper.xabia-admin-app .xabia-tip[data-tooltip]:focus::after,
+.xabia-wrapper.xabia-admin-app .xabia-tip[data-tooltip]:hover::before,
+.xabia-wrapper.xabia-admin-app .xabia-tip[data-tooltip]:focus::before {
+	opacity: 1;
+	visibility: visible;
+}
+
+.xabia-wrapper.xabia-admin-app .xabia-lang-badge {
+	display: inline-block;
+	margin-left: 4px;
+	padding: 1px 5px;
+	border-radius: 3px;
+	background: #f0f0f1;
+	color: #50575e;
+	font-size: 10px;
+	font-weight: 700;
+	letter-spacing: 0.02em;
+	vertical-align: middle;
+}
+
+.xabia-wrapper.xabia-admin-app .xabia-lang-filter__btn.is-active {
+	background: var(--xabia-green-soft, #edfaef);
+	border-color: var(--xabia-green, #00a32a);
+	color: #1d2327;
+	box-shadow: 0 0 0 1px var(--xabia-green, #00a32a);
+}
+
+.xabia-wrapper.xabia-admin-app .xabia-auto-sync-fields {
+	margin-top: 4px;
+}
+
+.xabia-wrapper.xabia-admin-app .xabia-intel-style {
+	width: 100%;
+}
+
+.xabia-wrapper.xabia-admin-app .xabia-segmented {
+	display: grid;
+	grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+	gap: 10px;
+	margin: 8px 0 14px;
+	padding: 0;
+	border: 0;
+}
+
+.xabia-wrapper.xabia-admin-app .xabia-segmented legend {
+	padding: 0;
+	margin: 0 0 10px;
+	font-size: 13px;
+}
+
+.xabia-wrapper.xabia-admin-app .xabia-segmented__option {
+	display: block;
+	margin: 0;
+	cursor: pointer;
+}
+
+.xabia-wrapper.xabia-admin-app .xabia-segmented__option input {
+	position: absolute;
+	opacity: 0;
+	pointer-events: none;
+}
+
+.xabia-wrapper.xabia-admin-app .xabia-segmented__card {
+	display: flex;
+	flex-direction: column;
+	gap: 4px;
+	min-height: 88px;
+	padding: 12px 14px;
+	border: 2px solid var(--xabia-border-subtle);
+	border-radius: var(--xabia-radius-sm);
+	background: #fff;
+	transition: border-color 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
+}
+
+.xabia-wrapper.xabia-admin-app .xabia-segmented__card strong {
+	font-size: 13px;
+	color: var(--xabia-text);
+}
+
+.xabia-wrapper.xabia-admin-app .xabia-segmented__card span:not(.xabia-badge) {
+	font-size: 12px;
+	line-height: 1.4;
+	color: var(--xabia-text-secondary);
+}
+
+.xabia-wrapper.xabia-admin-app .xabia-segmented__option:hover .xabia-segmented__card {
+	border-color: #b7dfc3;
+}
+
+.xabia-wrapper.xabia-admin-app .xabia-segmented__option input:checked + .xabia-segmented__card {
+	border-color: var(--xabia-green);
+	background: var(--xabia-green-soft);
+	box-shadow: 0 0 0 1px var(--xabia-green);
+}
+
+.xabia-wrapper.xabia-admin-app .xabia-advanced-card {
+	margin: 12px 0 0;
+	padding: 10px 14px 12px;
+	border: 1px solid var(--xabia-border-subtle);
+	border-radius: var(--xabia-radius-sm);
+	background: #fafbfc;
+}
+
+.xabia-wrapper.xabia-admin-app .xabia-advanced-card > summary {
+	cursor: pointer;
+	font-weight: 600;
+	font-size: 13px;
+	color: var(--xabia-text-secondary);
+	list-style: none;
+}
+
+.xabia-wrapper.xabia-admin-app .xabia-advanced-card > summary::-webkit-details-marker {
+	display: none;
+}
+
+.xabia-wrapper.xabia-admin-app .xabia-advanced-card > summary::before {
+	content: "▸";
+	display: inline-block;
+	margin-right: 6px;
+	transition: transform 0.15s ease;
+}
+
+.xabia-wrapper.xabia-admin-app .xabia-advanced-card[open] > summary::before {
+	transform: rotate(90deg);
+}
+
+.xabia-wrapper.xabia-admin-app .xabia-advanced-card__grid {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 14px 24px;
+	margin-top: 12px;
+}
+
+.xabia-wrapper.xabia-admin-app .xabia-badge {
+	display: inline-flex;
+	align-items: center;
+	gap: 4px;
+	padding: 3px 10px;
+	border-radius: 999px;
+	font-size: 11px;
+	font-weight: 600;
+	line-height: 1.4;
+	letter-spacing: 0.01em;
+}
+
+.xabia-wrapper.xabia-admin-app .xabia-badge--soft {
+	background: var(--xabia-green-soft);
+	color: var(--xabia-green-hover);
+	width: fit-content;
+}
+
+.xabia-wrapper.xabia-admin-app .xabia-badge--online {
+	background: #e6f4ea;
+	color: #137333;
+}
+
+.xabia-wrapper.xabia-admin-app .xabia-badge--info {
+	background: #e8f0fe;
+	color: #1967d2;
+}
+
+.xabia-wrapper.xabia-admin-app .xabia-badge--warn {
+	background: #fef7e0;
+	color: #b06000;
+}
+
+.xabia-wrapper.xabia-admin-app .xabia-badge--muted {
+	background: #f1f3f4;
+	color: #5f6368;
+}
+
+.xabia-wrapper.xabia-admin-app .xabia-status-badges {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 8px;
+	margin: 0 0 12px;
+}
+
+.xabia-wrapper.xabia-admin-app .xabia-sidebar-cta {
+	width: 100%;
+	justify-content: center;
+	font-size: 14px !important;
+	font-weight: 600 !important;
+	padding: 10px 14px !important;
+	min-height: 44px;
+	border-radius: var(--xabia-radius-sm) !important;
+}
+
+.xabia-wrapper.xabia-admin-app .xabia-sidebar-advanced .xabia-sidebar-action {
+	width: 100%;
+	margin-top: 8px;
+}

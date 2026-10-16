@@ -78,7 +78,7 @@ El servidor central busca la licencia en `xabia_licenses` y usa esa misma clave 
 ## Documentación
 
 - Manual de usuario (embebido legacy): `docs/manual-usuario.md` — preferir el modular.
-- Manual Core modular (**v1.0.242**): [manual-usuario-xabia-core.md](../../documentation/manual-usuario-xabia-core.md)
+- Manual Core modular (**v1.0.329**): [manual-usuario-xabia-core.md](../../documentation/manual-usuario-xabia-core.md)
 - Guía de desarrollo: [DESARROLLO.md](../../documentation/DESARROLLO.md)
 - Despliegue producción: [DESPLIEGUE_PRODUCCION_CORE.md](../../documentation/DESPLIEGUE_PRODUCCION_CORE.md)
 

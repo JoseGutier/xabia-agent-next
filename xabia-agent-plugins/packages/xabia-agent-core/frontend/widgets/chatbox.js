@@ -1134,6 +1134,8 @@
     function renderBotHtml(raw, imagesBase) {
         if (!raw) return '';
         var text = String(raw);
+        /* El modelo a veces emite la secuencia literal \n. Si se pierde la barra queda "nn". */
+        text = text.replace(/\\r\\n/g, '\n').replace(/\\n/g, '\n').replace(/\\r/g, '\n');
         imagesBase = String(imagesBase || '').trim();
         function escAttr(s) {
             return String(s).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/'/g, '&#39;').replace(/</g, '&lt;').replace(/>/g, '&gt;');

@@ -1,18 +1,18 @@
 # Manual de usuario — Xabia Agent Core
 
-> **Versión del producto:** Xabia Agent Core **v1.0.322** (octubre 2026)  
+> **Versión del producto:** Xabia Agent Core **v1.0.329** (octubre 2026)  
 > **Índice de manuales:** [https://xabia.ai/docs/](https://xabia.ai/docs/)  
 > **PDF en línea:** [https://xabia.ai/docs/manual-usuario-xabia-core.pdf](https://xabia.ai/docs/manual-usuario-xabia-core.pdf)  
 > **HTML en línea:** [https://xabia.ai/docs/manual-usuario-xabia-core.html](https://xabia.ai/docs/manual-usuario-xabia-core.html)
 
 ## Guía rápida de instalación
 
-1. Descargue el ZIP de **Xabia Agent Core** (`xabia-agent-core-1.0.322.zip` o paquete retail equivalente).
+1. Descargue el ZIP de **Xabia Agent Core** (`xabia-agent-core-1.0.329.zip` o paquete retail equivalente).
 2. En WordPress, vaya a **Plugins → Añadir nuevo → Subir plugin**, seleccione el ZIP y pulse **Instalar ahora → Activar**.
 3. Abra **Xabia Agent** y configure **Conexión a la IA**: pegue la licencia `XABIA--…`, elija **Xabia Cloud** (recomendado) o **Infraestructura propia**, y guarde.
-4. Cree un agente desde **Nuevo agente**, escriba nombre, saludo e instrucciones básicas.
-5. Elija una **fuente de información** (CSV, SQL, addon o multi-fuente), pulse **Conectar / Mapear** cuando proceda y guarde el agente.
-6. Pulse **Sincronizar datos** y, si usa búsqueda vectorial, **Entrenar IA**.
+4. Cree un agente desde **Nuevo agente**. En **Identidad y Tono** escriba nombre, saludo y personalidad; en **Conocimiento** elija la fuente de información.
+5. Elija una **fuente de información** (CSV, SQL, páginas web, addon o multi-fuente), pulse **Conectar / Mapear** cuando proceda y guarde el agente.
+6. En la barra lateral, pulse **Actualizar conocimiento del agente** (un solo botón: lee el contenido, lo procesa y deja el asistente listo).
 7. Publique el agente con el shortcode `[xabia_agent id="ID_DEL_AGENTE"]` o active la interfaz nativa desde **Apariencia → Mostrar en el sitio sin shortcode**.
 8. Pruebe en **Playground** y en una página real antes de abrirlo al público.
 
@@ -28,16 +28,17 @@ Use esta tabla como **hoja de ruta**. Cada fila indica la pantalla exacta y el o
 |---------|-----------|---------------------|
 | **Instalar Xabia por primera vez** | Plugins → Subir plugin | ZIP Core → Activar → **Conexión a la IA** (licencia + Cloud) → **Nuevo agente** → fuente de datos → **Sincronizar** → shortcode o modo nativo |
 | **Actualizar a una versión nueva** | Plugins → Subir plugin | Subir ZIP (sustituye) → **Enlaces permanentes → Guardar** → vaciar caché del sitio → probar chat en incógnito |
-| **Publicar el chat en una página concreta** | Editar agente → General | Copiar `[xabia_agent id="…"]` → pegar en la página → **desactivar** «Mostrar en el sitio sin shortcode» si no quiere avatar flotante. Esquema: [§2.5](#mapa-shortcodes) |
+| **Publicar el chat en una página concreta** | Editar agente → Identidad y Tono (shortcode) | Copiar `[xabia_agent id="…"]` → pegar en la página → **desactivar** «Mostrar en el sitio sin shortcode» si no quiere avatar flotante. Esquema: [§2.5](#mapa-shortcodes) |
 | **Avatar flotante en todo el sitio** | Editar agente → Apariencia | **Activar** «Mostrar en el sitio sin shortcode» → elegir páginas incluidas/excluidas → **Guardar agente**. Esquema: [§2.5](#mapa-shortcodes) |
 | **Avatar clicable en un hero o columna** | Página / Elementor | Pegar `[xabia_launcher id="…"]` (o `[xabia_avatar]`). Esquema: [§2.5](#mapa-shortcodes) |
 | **Ocultar el chat sin borrarlo** | Listado de agentes | **Pausar** (vuelve con **Activar**) |
 | **Multilingüe con WPML (ES + EU + EN…)** | Ver §10.12 | Saludo en español → guardar agente → comprobar WPML String Translation → vaciar caché |
-| **Saludo distinto por idioma (automático)** | Comportamiento IA + licencia Core activa | Escribir saludo en idioma base → **Guardar agente** (Core llama al Hub si hay WPML; DTP incluido en Core) |
+| **Saludo distinto por idioma (automático)** | Identidad y Tono + licencia Core activa | Escribir saludo en idioma base → **Guardar agente** (Core llama al Hub si hay WPML; DTP incluido en Core) |
 | **Saludo distinto por idioma (manual)** | WPML → String Translation | Contexto **Xabia AI** → cadena `Agent Greeting - su-agente` → traducir a mano |
 | **Placeholder «Escribe aquí…» traducido** | Core ≥ 1.0.72 + WPML | Instalar 1.0.72 → visitar el front una vez → comprobar dominio `xabia-intelligence` en String Translation |
-| **Conectar CSV o Excel** | General → Archivos CSV | Subir CSV → **Explorar/escanear** → mapear columnas → **Sincronizar** → **Entrenar** |
-| **Conectar base de datos remota** | General → SQL remoto | Host, BD, usuario, clave, consulta → **Probar consulta** → mapear → **Sincronizar** |
+| **Conectar CSV o Excel** | Conocimiento → Archivos CSV | Subir CSV → **Explorar/escanear** → mapear columnas → **Actualizar conocimiento del agente** |
+| **Conectar base de datos remota** | Conocimiento → SQL remoto | Host, BD, usuario, clave, consulta → **Probar consulta** → mapear → **Actualizar conocimiento** |
+| **Elegir páginas web por idioma** | Conocimiento → Páginas | Con WPML/Polylang: filtros **Todos / ES / EU / EN…** y badge `[ES]` junto al título |
 | **QR por punto de interés** | Smart QR / Tótems | Sincronizar con columna **ENTE** → página de aterrizaje → **Generar QR** → [manual Smart QR](./manual-usuario-xabia-smart-qr.md) |
 | **Modo quiosco / tótem** | Smart QR / Tótems | Activar **Modo tótem** + minutos de inactividad, o URL `/xabia-box/?x_project=…` |
 | **Recargar tokens** | Cartera / Wallet | Comprobar licencia en Conexión → **Recargar** pack → esperar unos minutos → **Actualizar saldo** |
@@ -46,7 +47,7 @@ Use esta tabla como **hoja de ruta**. Cada fila indica la pantalla exacta y el o
 | **La IA no «ve» mis datos** | Barra lateral del agente | ¿**Sincronizar** tras cambiar CSV/SQL? ¿**Entrenar** si hay vectorial? ¿Bajar umbral de confianza? |
 | **Listado masivo de fichas al instante** | Playground / chat público | Core **≥ 1.0.118**: mapeo con **ENTE** + taxonomía de actividad → preguntas de listado sin depender del Hub (§11) |
 | **Contacto o imagen de «la última» del listado** | Mismo chat, turno siguiente | Tras listado: «¿contacto de la última?» / «¿alguna imagen?» — roles **Teléfono**, **Imagen**, **Logotipo** en mapeo (§7.3, §11). Con SQL remoto: **Sincronizar** tras 1.0.164+ (§11.6) |
-| **Asistente CPT con SQL remoto** | General → Asistente CPT | Core **≥ 1.0.162**: lista solo tipos de la fuente activa (remoto / local / multi / addon); no mezcla CPTs del WordPress del chat (§7.2) |
+| **Asistente CPT con SQL remoto** | Conocimiento → Asistente CPT | Core **≥ 1.0.162**: lista solo tipos de la fuente activa (remoto / local / multi / addon); no mezcla CPTs del WordPress del chat (§7.2) |
 
 ---
 
@@ -101,14 +102,18 @@ En cada tarjeta del listado hay tres acciones: **Editar**, **Pausar** / **Activa
 - **Pausar:** el agente deja de mostrarse en el sitio (no aparece el shortcode ni el disparador flotante). La configuración y la memoria se conservan.
 - Si está pausado, la tarjeta muestra la etiqueta **Pausado** y el botón pasa a **Activar**.
 
-### 2.5 Interfaz del chat por agente (pestañas Apariencia y Comportamiento IA)
+### 2.5 Interfaz del chat por agente (pestañas Apariencia e Identidad y Tono)
 
-Desde la **v1.0.28**, la interfaz se configura **por agente**. En las versiones actuales verá dos pestañas separadas:
+Desde la **v1.0.28**, la interfaz se configura **por agente**. Desde la **v1.0.329** el panel usa lenguaje de negocio (sin jerga técnica):
 
+- **Identidad y Tono:** nombre, saludo, personalidad, extensión de respuesta y límites por visitante.
 - **Apariencia:** diseño visual (modo de presentación, avatar, burbuja, voz).
-- **Comportamiento IA:** saludo, instrucciones, RAG, sinónimos y límites.
 
-En **Apariencia**, el bloque principal es **«¿Dónde se verá el agente?»**: una **cuadrícula de tarjetas visuales** (con mini‑esquema) para elegir el perfil de presentación sin tener que interpretar nombres técnicos.
+En **Apariencia**, el bloque principal es **«¿Dónde se verá el agente?»**:
+
+- **Burbuja flotante:** se abre en la esquina inferior derecha (ideal para escritorio).
+- **Panel lateral deslizable:** ocupa el lateral derecho sin tapar la web (ideal para catálogos y reservas).
+- En **móvil**, el chat pasa siempre a pantalla completa de forma automática.
 
 Desde la **v1.0.57** hay modos claramente separados; desde la **v1.0.192+** existe además el **lanzador incrustable**. El mapa siguiente resume **qué pegar** y **qué verá el visitante**.
 
@@ -117,7 +122,7 @@ Desde la **v1.0.57** hay modos claramente separados; desde la **v1.0.192+** exis
 <div class="xabia-sc-guide" id="mapa-shortcodes">
 <p class="xabia-sc-callout"><strong>Regla de oro:</strong> el shortcode <code>[xabia_agent]</code> es el enchufe. La pestaña <strong>Apariencia</strong> es el molde. El mismo shortcode produce un chat embebido, un tótem o una pantalla dedicada según la tarjeta que elija. El lanzador <code>[xabia_launcher]</code> es otra pieza: solo el avatar/botón; el panel se abre al hacer clic.</p>
 <div class="xabia-sc-path">
-<div class="xabia-sc-step"><h4><span class="n">1</span> Burbuja en todo el sitio</h4><p>Sin shortcode. Apariencia → <strong>Web adaptable</strong> → activar «Mostrar en el sitio sin shortcode».</p></div>
+<div class="xabia-sc-step"><h4><span class="n">1</span> Burbuja en todo el sitio</h4><p>Sin shortcode. Apariencia → <strong>Burbuja flotante</strong> → activar «Mostrar en el sitio sin shortcode».</p></div>
 <div class="xabia-sc-step"><h4><span class="n">2</span> Chat en una página</h4><p>Pegue <code>[xabia_agent id="…"]</code> en el editor (o un widget Shortcode de Elementor).</p></div>
 <div class="xabia-sc-step"><h4><span class="n">3</span> Avatar en el hero</h4><p>Pegue <code>[xabia_launcher id="…"]</code> (alias: <code>[xabia_avatar]</code>). Al clic, abre el panel.</p></div>
 <div class="xabia-sc-step"><h4><span class="n">4</span> Tótem / quiosco</h4><p>Elija tótem o pantalla en Apariencia y use el mismo <code>[xabia_agent]</code> o la URL <code>/xabia-box/</code>.</p></div>
@@ -142,7 +147,7 @@ Desde la **v1.0.57** hay modos claramente separados; desde la **v1.0.192+** exis
 <circle cx="281.5" cy="136.5" r="1.4" fill="#ff9966"/><circle cx="291.5" cy="136.5" r="1.4" fill="#ff9966"/>
 </svg>
 <div class="xabia-sc-body">
-<p><strong>Apariencia:</strong> Web adaptable + «Mostrar en el sitio sin shortcode».</p>
+<p><strong>Apariencia:</strong> Burbuja flotante + «Mostrar en el sitio sin shortcode».</p>
 <p class="xabia-sc-result">Resultado: avatar fijo en una esquina. Al clic, se abre el panel (flotante, modal o pantalla completa, según el ajuste del panel).</p>
 </div>
 </article>
@@ -383,21 +388,24 @@ Solo verá esto si tiene instalado el addon **Federación Nexus**.
 
 ## 4. Editor de un agente: vista general
 
-Al pulsar **Editar** o **Nuevo agente**, el formulario usa pestañas. Las predeterminadas del Core son:
+Al pulsar **Editar** o **Nuevo agente**, el formulario usa pestañas orientadas a negocio (Core **≥ 1.0.329**):
 
-1. **General** — datos básicos, motor de IA solo si usa **infraestructura propia**, fuentes (CSV/SQL…) y cómo etiquetar columnas para el bot.
-2. **Smart QR / Tótems** *(Core)* — página de aterrizaje, URLs de túnel, generador de QR por ente, modo kiosko. [Manual detallado Smart QR](./manual-usuario-xabia-smart-qr.md).
-3. **Apariencia** — modo de presentación (cuadrícula visual), avatar, burbuja web y voz.
-4. **Comportamiento IA** — saludo, preguntas sugeridas, prompt maestro, RAG/sinónimos/relaciones y límites.
-5. **Registro de conversaciones** — historial reciente guardado si lo tiene habilitado.
+1. **Identidad y Tono** — nombre del agente, saludo, preguntas sugeridas, personalidad, extensión de respuesta (Corta / Equilibrada / Detallada) y límite de mensajes por visitante.
+2. **Conocimiento** — base de información: fuentes (CSV/SQL/páginas web…), idioma del contenido, estilo de inteligencia (Rápido y Dinámico / Analítico Avanzado) y mapeo de columnas.
+3. **Apariencia** — burbuja flotante o panel lateral, avatar y voz.
+4. **Estadísticas** — conversaciones, uso y dudas no resueltas.
+5. **Conversaciones** — historial reciente de preguntas y respuestas.
+6. **Smart QR / Tótems** *(Core)* — página de aterrizaje, URLs de túnel, generador de QR por ente, modo kiosko. [Manual detallado Smart QR](./manual-usuario-xabia-smart-qr.md).
 
-Los addons pueden añadir **pestañas extra** dentro del mismo agente (por ejemplo **Avirato**).
+Los addons pueden añadir **pestañas extra** (por ejemplo **Reservas** con Avirato).
 
 Pulse **Guardar agente** al final para aplicar cambios; hasta entonces solo hay borradores en pantalla.
 
+Los iconos **?** junto a los campos muestran una explicación al pasar el ratón.
+
 ---
 
-## 5. Pestaña «General»
+## 5. Pestaña «Identidad y Tono» (y Conocimiento)
 
 ### 5.1 Nombre del agente
 
@@ -486,7 +494,7 @@ El plugin le recordará en pantalla que **los addons activos pueden aportar info
 - **Explorar / escanear CSV** detecta columnas y prepara el **mapeo** (qué significa cada columna para el bot).
 - Por lo general distingue si las columnas van separadas por coma o por punto y coma.
 
-**Recuerde:** hasta que pulse **Sincronizar datos** —y, si usa búsqueda por similitud semántica, **Entrenar**— el asistente puede no “ver” bien esas filas en las respuestas.
+**Recuerde:** hasta que pulse **Actualizar conocimiento del agente**, el asistente puede no “ver” bien esas filas en las respuestas.
 
 ### 6.2 Base de datos de WordPress (SQL local)
 
@@ -625,21 +633,23 @@ La columna derecha (memoria + Playground) **hace scroll con la página** (Core �
 
 ### 9.1 Memoria del agente (cifras de la barra lateral)
 
-- **Registros sincronizados:** líneas incorporadas tras la última **Sincronizar datos**.
-- **Listos para búsqueda inteligente:** cuántos trozos ya llevan preparada la parte “semántica” si usa esa función.
-- **Tokens hoy:** cuántos ha gastado ese agente hoy comparado con su **tope diario** (véase más abajo en Comportamiento IA).
+- **Contenido cargado / memoria lista:** fichas incorporadas tras la última actualización de conocimiento.
+- **Saldo de licencia** y **uso hoy:** consumo del día respecto a su licencia / tope.
+- Badges de estado (**En línea**, **Motor de reservas conectado**, etc.) cuando aplica.
 
-### 9.2 Botón «1. Sincronizar datos»
+### 9.2 Botón «Actualizar conocimiento del agente»
 
-Vuelve a leer su CSV/SQL/multi‑fuente o conector según lo que configuró en **General**. Hágalo después de cambiar archivos fuente o la consulta.
+Un único botón destacado en la barra lateral. Encadena automáticamente: **leer contenido → procesar información → asistente actualizado**, con indicador de progreso amigable.
 
-### 9.3 Botón «2. Entrenar» (cuando aplique vectorización)
+Hágalo después de cambiar páginas, CSV, SQL o el catálogo. En uso diario **no** necesita los pasos manuales numerados.
 
-Prepara los fragmentos de texto para la **búsqueda por similitud**. Si algo falla (permiso de Google, falta de saldo Cloud, etc.) el sistema mostrará un mensaje claro para corregirlo.
+### 9.3 Sincronización automática
 
-### 9.4 «Borrar memoria vectorial»
+Si marca **Actualizar datos automáticamente**, se despliegan el intervalo (p. ej. una vez al día) y las opciones de procesar/publicar solos. Si la casilla está desmarcada, esos campos permanecen ocultos.
 
-Limpia la memoria matemática asociada a este agente (no borra necesariamente el CSV en disco). Úselo cuando quiera empezar de cero después de mover muchos datos.
+### 9.4 Herramientas avanzadas (diagnóstico)
+
+Dentro de un bloque plegado: pasos manuales (leer / procesar / publicar), vista previa del conocimiento y borrar memoria. Solo para soporte o depuración.
 
 ### 9.5 Zona de pruebas («Playground»)
 
@@ -649,10 +659,16 @@ Cuando la respuesta incluye `[ACTION:IMG:…]`, el Playground muestra la etiquet
 
 ---
 
-## 10. Pestaña «Comportamiento IA»
+## 10. Pestaña «Identidad y Tono»
 
 Aquí define el estilo de respuesta del asistente y cómo usa su base de conocimiento.  
 La parte visual (modo de presentación, avatar y burbuja) está en la pestaña **Apariencia**.
+
+**Extensión de respuesta:** Corta (1–2 frases), Equilibrada (párrafo conversacional) o Detallada (explicaciones y listas).
+
+**Límite de mensajes por visitante:** máximo de preguntas que un usuario puede hacer para proteger su cuenta (0 = sin límite).
+
+**Si no encuentra información en la web:** responda amablemente invitando a contactar, o escriba un **mensaje personalizado** (solo entonces aparece el cuadro de texto).
 
 ### 10.1 Nombre del asistente (en los mensajes)
 
@@ -899,8 +915,8 @@ El **ZIP** del instalador y el contrato siguen llegando por el canal comercial o
 1. Modalidad **Cloud** vs **infra propia**, licencia y saldo (pantalla principal).  
 2. **Crear agente** — nombre identificativo y copiar shortcode.  
 3. Elegir **fuente** de datos — mapear con calma; pruebas en staging si existe.  
-4. **Sincronizar datos** → revisar barra lateral → si usa búsqueda inteligente, **Entrenar**.  
-5. Ajustar **Apariencia** (perfil de presentación) y **Comportamiento IA** → probar Playground → publicar → vigilar gasto en Wallet.
+4. **Actualizar conocimiento del agente** → revisar barra lateral (estado En línea).
+5. Ajustar **Apariencia** (burbuja / panel) e **Identidad y Tono** → probar Playground → publicar → vigilar gasto en Wallet.
 
 ---
 

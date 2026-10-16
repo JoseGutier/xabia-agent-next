@@ -38,7 +38,7 @@ ONLY_SLUG=xabia-woo ./scripts/build-plugin-zip.sh
 ./xabia-build.sh 1.0.322
 ./xabia-build-addons.sh woo 1.0.7
 ./scripts/build-retail-plugin-zips.sh
-./xabia-deploy.sh 1.0.322
+./xabia-deploy.sh 1.0.329
 ./xabia-deploy-addons.sh
 ./scripts/wp-create-manual-pages.sh   # xabia.ai/documentacion/
 ```
@@ -310,7 +310,7 @@ Las opciones `xabia_*` en `wp_options` se conservan entre versiones del Core sal
 
 ---
 
-## Orden recomendado de despliegue (Hub + Core 1.0.322)
+## Orden recomendado de despliegue (Hub + Core 1.0.329)
 
 ```
 1. Hub: migraciones 016 + 017 en MySQL (si aún no aplicadas)
@@ -318,13 +318,14 @@ Las opciones `xabia_*` en `wp_options` se conservan entre versiones del Core sal
 3. Hub: activar cron vectorizer (cada 5 min)
 4. Hub: subir handlers DTP / VertexForwarder si cambiaron
 5. curl smoke test DTP → 401/403 (no 404)
-6. ./xabia-build.sh 1.0.322 && ./scripts/build-retail-plugin-zips.sh && ./scripts/build-modular-manuals-pdf.sh
-7. ./xabia-deploy.sh 1.0.322   # ZIP downloads + Hub .env + docs + Polar retail + Git tag
-8. WordPress cliente: actualizar Core (Plugins → Actualizar o ZIP manual)
-9. Vaciar caché LiteSpeed/CDN; probar portada en incógnito (sin PHPSESSID → HIT/cacheable)
-10. Probar chat (sesión solo al escribir) + QR si aplica
+6. ./xabia-build.sh 1.0.329 && ./xabia-build-addons.sh && ./scripts/build-retail-plugin-zips.sh && ./scripts/build-modular-manuals-pdf.sh
+7. ./xabia-deploy.sh 1.0.329   # ZIP downloads + Hub .env + docs + Polar retail + Git tag
+8. ./xabia-deploy-addons.sh    # Avirato/MEC/Woo a downloads + Hub .env
+9. WordPress cliente: actualizar Core (Plugins → Actualizar o ZIP manual)
+10. Vaciar caché LiteSpeed/CDN; probar portada en incógnito (sin PHPSESSID → HIT/cacheable)
+11. Probar chat (sesión solo al escribir) + Reservas/QR si aplica
 ```
 
 ---
 
-*Core v1.0.322 — octubre 2026 — sesión PHP lazy (caché LiteSpeed/CDN); streaming; Polar retail; fichas [ACTION:CARD]; Woo; catálogo nativo; RAG Hub; WPML + DTP.*
+*Core v1.0.329 / Avirato 1.0.27 — octubre 2026 — panel admin de negocio (Identidad/Conocimiento/Reservas); CTA actualizar conocimiento; Polar retail; sesión lazy; RAG Hub; WPML.*

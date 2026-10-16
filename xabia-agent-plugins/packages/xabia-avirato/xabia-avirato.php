@@ -2,8 +2,8 @@
 /**
  * Plugin Name: Xabia Avirato
  * Plugin URI: https://xabia.ai
- * Description: Addon modular de scraping y disponibilidad Avirato para Xabia Agent Core.
- * Version: 1.0.19
+ * Description: Addon de reservas y disponibilidad Avirato para Xabia Agent Core.
+ * Version: 1.0.27
  * Author: Digixop
  * Author URI: https://digixop.com
  */
@@ -667,7 +667,7 @@ add_filter('xabia_agent_admin_tabs', static function ($tabs) {
     }
     $tabs[] = [
         'id'    => 'tab-avirato',
-        'label' => __('Avirato', 'xabia-intelligence'),
+        'label' => __('Reservas', 'xabia-intelligence'),
     ];
 
     return $tabs;
@@ -684,38 +684,50 @@ add_action('xabia_agent_admin_extra_tabs_content', static function ($edit_id) {
     $settings = xabia_avirato_get_settings();
     ?>
     <div id="tab-avirato" class="xabia-tab-content">
-        <h3 class="xabia-section-title"><?php echo esc_html__('Avirato', 'xabia-intelligence'); ?></h3>
-        <p class="description"><?php echo esc_html__('Configuración de scraping público para disponibilidad hotelera.', 'xabia-intelligence'); ?></p>
-        <p>
-            <label for="xabia-avirato-establishment"><strong><?php echo esc_html__('ID de Establecimiento', 'xabia-intelligence'); ?></strong></label>
-            <input type="text" id="xabia-avirato-establishment" name="xabia_avirato_establishment_id" class="widefat" value="<?php echo esc_attr($settings['establishment_id']); ?>" placeholder="Webcode del establecimiento">
-        </p>
-        <p>
-            <label for="xabia-avirato-label"><strong><?php echo esc_html__('Nombre público del alojamiento', 'xabia-intelligence'); ?></strong></label>
-            <input type="text" id="xabia-avirato-label" name="xabia_avirato_availability_label" class="widefat" value="<?php echo esc_attr($settings['availability_label']); ?>" placeholder="Nombre que debe usar el asistente al hablar de disponibilidad">
-            <span class="description"><?php echo esc_html__('Si se deja vacío, se usa el filtro de inclusión.', 'xabia-intelligence'); ?></span>
-        </p>
-        <p>
-            <label for="xabia-avirato-inclusion"><strong><?php echo esc_html__('Filtro de Inclusión', 'xabia-intelligence'); ?></strong></label>
-            <input type="text" id="xabia-avirato-inclusion" name="xabia_avirato_inclusion_filter" class="widefat" value="<?php echo esc_attr($settings['inclusion_filter']); ?>" placeholder="Texto que deben contener los alojamientos incluidos">
-        </p>
-        <p>
-            <label for="xabia-avirato-room-ids"><strong><?php echo esc_html__('IDs de habitación/casa (opcional)', 'xabia-intelligence'); ?></strong></label>
-            <input type="text" id="xabia-avirato-room-ids" name="xabia_avirato_id_habitacion" class="widefat" value="<?php echo esc_attr($settings['id_habitacion']); ?>" placeholder="Se autocompleta desde Avirato Calendar usando el filtro de inclusión">
-        </p>
-        <p>
-            <label for="xabia-avirato-exclusion"><strong><?php echo esc_html__('Lista de Exclusión', 'xabia-intelligence'); ?></strong></label>
-            <textarea id="xabia-avirato-exclusion" name="xabia_avirato_exclusion_list" class="widefat" rows="4" placeholder="Palabras separadas por coma que se deben excluir"><?php echo esc_textarea($settings['exclusion_list']); ?></textarea>
-        </p>
-        <p>
-            <label for="xabia-avirato-promo"><strong><?php echo esc_html__('Código promocional (opcional)', 'xabia-intelligence'); ?></strong></label>
-            <input type="text" id="xabia-avirato-promo" name="xabia_avirato_cod_promocional" class="widefat" value="<?php echo esc_attr($settings['cod_promocional']); ?>">
-        </p>
-        <p>
-            <label for="xabia-avirato-engine-url"><strong><?php echo esc_html__('URL del Motor', 'xabia-intelligence'); ?></strong></label>
-            <input type="url" id="xabia-avirato-engine-url" name="xabia_avirato_engine_url" class="widefat" value="<?php echo esc_attr($settings['engine_url']); ?>" placeholder="https://booking.avirato.com/">
-        </p>
-        <p class="description"><?php echo esc_html__('La configuración Avirato se guarda al pulsar «Guardar agente».', 'xabia-intelligence'); ?></p>
+        <div class="xabia-admin-section">
+            <div class="xabia-admin-section__head">
+                <h3 class="xabia-admin-section__title"><?php echo esc_html__('Conexión con el motor de reservas', 'xabia-intelligence'); ?></h3>
+                <p class="description"><?php echo esc_html__('Conecta el motor de reservas para que el asistente consulte disponibilidad en tiempo real.', 'xabia-intelligence'); ?></p>
+            </div>
+            <?php if (trim((string) ($settings['establishment_id'] ?? '')) !== '') : ?>
+                <p><span class="xabia-badge xabia-badge--info"><?php echo esc_html__('Motor de reservas conectado', 'xabia-intelligence'); ?></span></p>
+            <?php endif; ?>
+            <p>
+                <label for="xabia-avirato-establishment" class="xabia-label-with-tip"><strong><?php echo esc_html__('Código del establecimiento', 'xabia-intelligence'); ?></strong>
+                <button type="button" class="xabia-tip" data-tooltip="<?php echo esc_attr__('Código que te proporciona tu motor de reservas para el alojamiento.', 'xabia-intelligence'); ?>" title="<?php echo esc_attr__('Código que te proporciona tu motor de reservas para el alojamiento.', 'xabia-intelligence'); ?>" aria-label="<?php echo esc_attr__('Código que te proporciona tu motor de reservas para el alojamiento.', 'xabia-intelligence'); ?>"><span class="dashicons dashicons-editor-help" aria-hidden="true"></span></button></label>
+                <input type="text" id="xabia-avirato-establishment" name="xabia_avirato_establishment_id" class="widefat" value="<?php echo esc_attr($settings['establishment_id']); ?>" placeholder="Webcode del establecimiento">
+            </p>
+            <p>
+                <label for="xabia-avirato-label" class="xabia-label-with-tip"><strong><?php echo esc_html__('Nombre que usará el asistente', 'xabia-intelligence'); ?></strong>
+                <button type="button" class="xabia-tip" data-tooltip="<?php echo esc_attr__('Cómo debe llamar el chat a tu alojamiento al hablar de disponibilidad.', 'xabia-intelligence'); ?>" title="<?php echo esc_attr__('Cómo debe llamar el chat a tu alojamiento al hablar de disponibilidad.', 'xabia-intelligence'); ?>" aria-label="<?php echo esc_attr__('Cómo debe llamar el chat a tu alojamiento al hablar de disponibilidad.', 'xabia-intelligence'); ?>"><span class="dashicons dashicons-editor-help" aria-hidden="true"></span></button></label>
+                <input type="text" id="xabia-avirato-label" name="xabia_avirato_availability_label" class="widefat" value="<?php echo esc_attr($settings['availability_label']); ?>" placeholder="Ej. Casas rurales Astei">
+            </p>
+            <p>
+                <label for="xabia-avirato-engine-url"><strong><?php echo esc_html__('Enlace del motor de reservas', 'xabia-intelligence'); ?></strong></label>
+                <input type="url" id="xabia-avirato-engine-url" name="xabia_avirato_engine_url" class="widefat" value="<?php echo esc_attr($settings['engine_url']); ?>" placeholder="https://booking.avirato.com/">
+            </p>
+            <details class="xabia-advanced-card">
+                <summary><?php echo esc_html__('Filtros avanzados de casas (técnico)', 'xabia-intelligence'); ?></summary>
+                <p class="description"><?php echo esc_html__('Solo si necesitas incluir o excluir tipologías concretas del motor Avirato.', 'xabia-intelligence'); ?></p>
+                <p>
+                    <label for="xabia-avirato-inclusion"><strong><?php echo esc_html__('Filtro de inclusión', 'xabia-intelligence'); ?></strong></label>
+                    <input type="text" id="xabia-avirato-inclusion" name="xabia_avirato_inclusion_filter" class="widefat" value="<?php echo esc_attr($settings['inclusion_filter']); ?>" placeholder="Texto que deben contener los alojamientos incluidos">
+                </p>
+                <p>
+                    <label for="xabia-avirato-room-ids"><strong><?php echo esc_html__('IDs de habitación/casa', 'xabia-intelligence'); ?></strong></label>
+                    <input type="text" id="xabia-avirato-room-ids" name="xabia_avirato_id_habitacion" class="widefat" value="<?php echo esc_attr($settings['id_habitacion']); ?>" placeholder="Opcional · se puede autocompletar desde Avirato">
+                </p>
+                <p>
+                    <label for="xabia-avirato-exclusion"><strong><?php echo esc_html__('Lista de exclusión', 'xabia-intelligence'); ?></strong></label>
+                    <textarea id="xabia-avirato-exclusion" name="xabia_avirato_exclusion_list" class="widefat" rows="3" placeholder="Palabras separadas por coma"><?php echo esc_textarea($settings['exclusion_list']); ?></textarea>
+                </p>
+                <p>
+                    <label for="xabia-avirato-promo"><strong><?php echo esc_html__('Código promocional', 'xabia-intelligence'); ?></strong></label>
+                    <input type="text" id="xabia-avirato-promo" name="xabia_avirato_cod_promocional" class="widefat" value="<?php echo esc_attr($settings['cod_promocional']); ?>">
+                </p>
+            </details>
+            <p class="description"><?php echo esc_html__('Se guarda al pulsar «Guardar agente».', 'xabia-intelligence'); ?></p>
+        </div>
     </div>
     <?php
 }, 10, 1);
@@ -871,11 +883,33 @@ function xabia_avirato_extract_dates(string $text): array
     }
 
     
-    if (str_contains($normalized, 'la semana que viene')) {
-        $start = new DateTimeImmutable('monday next week');
-        $end = new DateTimeImmutable('sunday next week');
+    // Fines de semana ANTES que «semana que viene» (evita colisión con la subcadena «semana que viene»).
+    if (preg_match('/\b(?:el\s+)?fin\s+de\s+semana\s+que\s+viene\b|\b(?:el\s+)?pr[oó]ximo\s+fin\s+de\s+semana\b|\beste\s+fin\s+de\s+semana\s+pr[oó]ximo\b/u', $normalized) === 1) {
+        $a = xabia_avirato_relative_date_anchors($today);
 
-        return ['checkin' => $start->format('Y-m-d'), 'checkout' => $end->format('Y-m-d'), 'label' => 'LA SEMANA QUE VIENE'];
+        return [
+            'checkin'  => $a['coming_weekend_in'],
+            'checkout' => $a['coming_weekend_out'],
+            'label'    => 'EL FIN DE SEMANA QUE VIENE',
+        ];
+    }
+    if (str_contains($normalized, 'este fin de semana') || preg_match('/\bel\s+fin\s+de\s+semana\b/u', $normalized) === 1) {
+        $a = xabia_avirato_relative_date_anchors($today);
+
+        return [
+            'checkin'  => $a['this_weekend_in'],
+            'checkout' => $a['this_weekend_out'],
+            'label'    => 'ESTE FIN DE SEMANA',
+        ];
+    }
+    if (str_contains($normalized, 'semana que viene') || str_contains($normalized, 'proxima semana') || str_contains($normalized, 'próxima semana')) {
+        $a = xabia_avirato_relative_date_anchors($today);
+
+        return [
+            'checkin'  => $a['next_week_in'],
+            'checkout' => $a['next_week_out'],
+            'label'    => 'LA SEMANA QUE VIENE',
+        ];
     }
     if (str_contains($normalized, 'esta semana')) {
         $end = new DateTimeImmutable('sunday this week');
@@ -887,13 +921,6 @@ function xabia_avirato_extract_dates(string $text): array
         $end = new DateTimeImmutable('last day of next month');
 
         return ['checkin' => $start->format('Y-m-d'), 'checkout' => $end->format('Y-m-d'), 'label' => 'EL MES QUE VIENE'];
-    }
-    if (str_contains($normalized, 'este fin de semana')) {
-        $weekDay = (int) $today->format('N');
-        $start = $weekDay <= 5 ? new DateTimeImmutable('friday this week') : new DateTimeImmutable('friday next week');
-        $end = $weekDay <= 5 ? new DateTimeImmutable('sunday this week') : new DateTimeImmutable('sunday next week');
-
-        return ['checkin' => $start->format('Y-m-d'), 'checkout' => $end->format('Y-m-d'), 'label' => 'ESTE FIN DE SEMANA'];
     }
 
     $resolveYearForMonth = static function (int $monthNum, DateTimeImmutable $ref): int {
@@ -1426,12 +1453,22 @@ function xabia_avirato_api_request_headers(string $webcode): array
     ];
 }
 
+/** Timeout efectivo de scrape (auto-inyección usa 8s vía $GLOBALS['xabia_avirato_scrape_timeout']). */
+function xabia_avirato_effective_timeout(int $fallback = 25): int
+{
+    if (isset($GLOBALS['xabia_avirato_scrape_timeout'])) {
+        return max(3, (int) $GLOBALS['xabia_avirato_scrape_timeout']);
+    }
+
+    return max(3, $fallback);
+}
+
 function xabia_avirato_api_json(string $url, string $webcode, array $opts = []): ?array
 {
-    $retries = max(1, (int) ($opts['retries'] ?? 2));
     $preferCurl = !empty($opts['prefer_curl']);
     $wpOnly = !empty($opts['wp_only']);
-    $timeout = max(10, (int) ($opts['timeout'] ?? 25));
+    $timeout = max(3, (int) ($opts['timeout'] ?? xabia_avirato_effective_timeout(25)));
+    $retries = max(1, (int) ($opts['retries'] ?? ($timeout <= 10 ? 1 : 2)));
     $cacheKey = 'xabia_avirato_api_' . md5($url . '|' . $webcode);
     if (empty($opts['no_cache'])) {
         $cached = get_transient($cacheKey);
@@ -1576,12 +1613,30 @@ function xabia_avirato_api_json_multi(array $urls, string $webcode): array
         return $results;
     }
 
+    $timeout = xabia_avirato_effective_timeout(25);
+    $budgetEnd = microtime(true) + max(3, $timeout);
+    // En modo rápido (auto-scrape ≤8s) no insertar sleeps entre habitaciones.
+    $paceUs = $timeout <= 10 ? 0 : 1200000;
+
     // En hosting compartido wp_remote_get suelto funciona mejor que ráfagas curl_multi.
     foreach ($urls as $index => $url) {
-        if ($index > 0) {
-            usleep(1200000);
+        if (microtime(true) >= $budgetEnd) {
+            xabia_trace('[XABIA_AVIRATO] api_json_multi budget exhausted', [
+                'done'  => $index,
+                'total' => count($urls),
+            ]);
+            break;
         }
-        $results[$url] = xabia_avirato_api_json($url, $webcode, ['retries' => 1, 'timeout' => 25, 'wp_only' => true]);
+        if ($index > 0 && $paceUs > 0) {
+            usleep($paceUs);
+        }
+        $remaining = max(2, (int) ceil($budgetEnd - microtime(true)));
+        $results[$url] = xabia_avirato_api_json($url, $webcode, [
+            'retries'  => 1,
+            'timeout'  => min($timeout, $remaining),
+            'wp_only'  => true,
+            'no_cache' => $timeout <= 10,
+        ]);
     }
 
     return $results;
@@ -1642,7 +1697,10 @@ function xabia_avirato_scrape_rooms_bookingapi(string $checkin, string $checkout
     if ($subtypes === []) {
         usleep(200000);
         $subtypesUrl = $apiBase . '/v1/spaces/subtypes?' . http_build_query(['hotelId' => $hotelId], '', '&', PHP_QUERY_RFC3986);
-        $subtypesPayload = xabia_avirato_api_json($subtypesUrl, $webcode, ['retries' => 2, 'timeout' => 45]);
+        $subtypesPayload = xabia_avirato_api_json($subtypesUrl, $webcode, [
+            'retries' => 1,
+            'timeout' => xabia_avirato_effective_timeout(45),
+        ]);
         $subtypes = xabia_avirato_resolve_booking_subtypes($webcode, $subtypesPayload);
     }
     if ($subtypes === []) {
@@ -1917,7 +1975,8 @@ function xabia_avirato_looks_like_intent(string $text): bool
     foreach ([
         'disponibilidad', 'disponible', 'libre', 'dormir', 'reserva', 'alojamiento',
         'que tienes', 'qué tienes', 'que hay', 'qué hay', 'busco sitio', 'queremos ir',
-        'esta semana', 'la semana que viene', 'el mes que viene', 'este fin de semana',
+        'esta semana', 'la semana que viene', 'semana que viene', 'el mes que viene', 'este fin de semana',
+        'fin de semana que viene', 'proximo fin de semana', 'próximo fin de semana',
         'primera quincena', 'segunda quincena', 'mediados de', 'verano', 'semana santa', 'puente de mayo',
         'primera semana', 'segunda semana', 'tercera semana', 'cuarta semana', 'quinta semana',
         'una semana', 'una noche', 'varias noches', 'estancia', 'días', 'dias', 'noches',
@@ -1970,7 +2029,7 @@ function xabia_avirato_should_attempt_injection(string $combined): bool
  *
  * @param string $bookingLang Código ISO de 2 letras para el parámetro lang (p. ej. es, en, eu).
  */
-function xabia_avirato_scrape_rooms(string $checkin, string $checkout, string $bookingLang = 'es', string $roomIdOverride = '', string $requestedRoomName = ''): array
+function xabia_avirato_scrape_rooms(string $checkin, string $checkout, string $bookingLang = 'es', string $roomIdOverride = '', string $requestedRoomName = '', int $guests = 1): array
 {
     $settings = xabia_avirato_resolve_settings();
     $establishmentId = trim((string) $settings['establishment_id']);
@@ -1989,6 +2048,9 @@ function xabia_avirato_scrape_rooms(string $checkin, string $checkout, string $b
         'startDate' => $startDm,
         'endDate'   => $endDm,
         'lang'      => $lang,
+        'adults'    => max(1, $guests),
+        'children'  => 0,
+        'rooms'     => 1,
     ];
     $idHabitacion = trim($roomIdOverride) !== '' ? trim($roomIdOverride) : trim((string) ($settings['id_habitacion'] ?? ''));
     $codPromo = trim((string) ($settings['cod_promocional'] ?? ''));
@@ -2045,7 +2107,8 @@ function xabia_avirato_scrape_rooms(string $checkin, string $checkout, string $b
         CURLOPT_USERAGENT      => 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
         CURLOPT_ENCODING       => '',
         CURLOPT_RETURNTRANSFER => true,
-        CURLOPT_TIMEOUT        => 25,
+        CURLOPT_TIMEOUT        => xabia_avirato_effective_timeout(25),
+        CURLOPT_CONNECTTIMEOUT => min(5, xabia_avirato_effective_timeout(25)),
     ]);
     $dates = $startDm . ' → ' . $endDm . ' (entrada/salida: ' . $checkin . ' / ' . $checkout . ')';
     error_log('Xabia Avirato: Consultando disponibilidad para ID ' . $establishmentId . ' en las fechas ' . $dates);
@@ -2597,191 +2660,610 @@ function xabia_avirato_filter_rooms_by_name_hint(string $userNow, array $rooms, 
     return $rooms;
 }
 
-add_filter('xabia_router_action_response', static function ($response, $project_id, $message, $config, $request) {
-    if (is_string($response) && trim($response) !== '') {
-        return $response;
-    }
-    if (!xabia_avirato_subscription_active() && xabia_avirato_should_attempt_injection((string) $message)) {
-        if (function_exists('xabia_trace')) {
-            xabia_trace('[XABIA_AVIRATO] Public fallback: subscription inactive; suppressed technical message for visitor.');
+function xabia_avirato_room_capacity(array $room): ?int
+{
+    foreach ([
+        'capacidad', 'capacity', 'maxOccupancy', 'maxPersons', 'maxPeople',
+        'plazas', 'pax', 'numPersonas', 'adultsMax', 'maxAdults',
+    ] as $key) {
+        if (isset($room[$key]) && is_numeric($room[$key]) && (int) $room[$key] > 0) {
+            return (int) $room[$key];
         }
-        error_log('[XABIA_AVIRATO] availability_intent_with_inactive_subscription: user receives public fallback only.');
+    }
 
-        return xabia_avirato_public_availability_fallback_message();
-    }
-    $projectId = (string) $project_id;
-    $request = is_array($request) ? $request : [];
-    $request['user_message'] = (string) $message;
-    if (empty($request['date_context'])) {
-        $request['date_context'] = (string) $message;
-    }
-    $payload = xabia_avirato_build_structured_availability($projectId, is_array($config) ? $config : [], $request);
-    if (!is_array($payload)) {
-        return $response;
-    }
-    $stateBookingUrl = (string) ($payload['booking_url'] ?? '');
-    if ($stateBookingUrl === '' && !empty($payload['alternative_booking_url'])) {
-        $stateBookingUrl = (string) $payload['alternative_booking_url'];
-    }
-    if ($stateBookingUrl === '' && !empty($payload['next_available']) && is_array($payload['next_available']) && !empty($payload['next_available']['booking_url'])) {
-        $stateBookingUrl = (string) $payload['next_available']['booking_url'];
-    }
-    xabia_avirato_store_last_availability($projectId, [
-        'dates' => $payload['dates'] ?? [],
-        'ids_disponibles' => $payload['room_names'] ?? [],
-        'rooms' => $payload['room_names'] ?? [],
-        'requested_room' => (string) ($payload['requested_room'] ?? ''),
-        'requested_unavailable' => !empty($payload['requested_unavailable']),
-        'alternative_rooms' => $payload['alternative_room_names'] ?? [],
-        'next_available' => $payload['next_available'] ?? null,
-        'booking_url' => $stateBookingUrl,
-        'urls_reserva' => array_filter([$stateBookingUrl]),
-        'created_at' => time(),
-    ]);
+    return null;
+}
 
-    return xabia_avirato_template_response($payload);
-}, 20, 5);
+/**
+ * Empaqueta entidades disponibles como datos crudos para el LLM (sin redacción).
+ *
+ * @param array<int, array<string, mixed>> $rooms
+ * @param array<string, mixed> $bookingParts
+ * @return list<array<string, mixed>>
+ */
+function xabia_avirato_pack_rooms_for_tool(array $rooms, int $nights, string $bookingBase = '', array $bookingParts = [], int $limit = 40): array
+{
+    $out = [];
+    foreach ($rooms as $room) {
+        if (!is_array($room)) {
+            continue;
+        }
+        $name = xabia_avirato_display_room_name(xabia_avirato_room_name($room));
+        if ($name === '') {
+            $name = 'Casa';
+        }
+        $prices = xabia_avirato_price_breakdown($room, $nights);
+        $bookingUrl = '';
+        if ($bookingBase !== '' && $bookingParts !== []) {
+            $bookingUrl = xabia_avirato_booking_url_for_room_ids($bookingBase, $bookingParts, [$room]);
+        }
+        $row = [
+            'name'            => $name,
+            'price_per_night' => $prices['price_per_night'],
+            'total_price'     => $prices['total_price'],
+            'currency'        => $prices['currency'],
+            'capacity'        => xabia_avirato_room_capacity($room),
+            'booking_url'     => $bookingUrl,
+        ];
+        $out[] = $row;
+        if (count($out) >= $limit) {
+            break;
+        }
+    }
 
-add_filter('xabia_agent_context_injection', static function ($context, $project_id, $config, $request) {
-    xabia_trace('[XABIA_AVIRATO] context_injection filter invoked', ['project_id' => $project_id]);
-    if (class_exists('Xabia_Addons', false) && !Xabia_Addons::is_active('avirato')) {
-        return is_string($context) ? $context : '';
-    }
-    if (!xabia_avirato_subscription_active()) {
-        return is_string($context) ? $context : '';
-    }
-    $projectId = (string) $project_id;
-    $context = is_string($context) ? $context : '';
-    $userText = '';
-    $dateContext = '';
-    if (is_array($request)) {
-        $userText = isset($request['user_message']) ? trim((string) $request['user_message']) : '';
-        $dateContext = isset($request['date_context']) ? trim((string) $request['date_context']) : '';
-    }
-    if ($dateContext === '') {
-        $dateContext = $userText;
-    }
-    if ($userText === '' && $dateContext === '') {
-        xabia_trace('[XABIA_AVIRATO] injection skip: empty user_message and date_context');
+    return $out;
+}
 
-        return $context;
+function xabia_avirato_recall_stay(string $projectId): array
+{
+    if (!session_id() && !headers_sent()) {
+        session_start();
     }
-    $combinedForTrigger = trim($dateContext . ' ' . $userText);
-    if (!xabia_avirato_should_attempt_injection($combinedForTrigger)) {
-        xabia_trace('[XABIA_AVIRATO] injection skip: no date/availability signal', ['snippet' => substr($combinedForTrigger, 0, 200)]);
+    $all = $_SESSION['xabia_avirato_stay'] ?? [];
+    $row = (is_array($all) && isset($all[$projectId]) && is_array($all[$projectId])) ? $all[$projectId] : [];
+    $checkIn = isset($row['check_in']) ? (string) $row['check_in'] : '';
+    $checkOut = isset($row['check_out']) ? (string) $row['check_out'] : '';
+    $guests = isset($row['guests']) ? (int) $row['guests'] : 0;
 
-        return $context;
-    }
-    xabia_trace('[XABIA_AVIRATO] processing injection after intent', ['date_context' => substr($dateContext, 0, 300)]);
-    $settings = xabia_avirato_resolve_settings();
-    if (trim((string) $settings['establishment_id']) === '') {
-        xabia_trace('[XABIA_AVIRATO] injection skip: establishment_id empty (settings + avc_establishment)');
+    return [
+        'check_in'  => preg_match('/^\d{4}-\d{2}-\d{2}$/', $checkIn) ? $checkIn : '',
+        'check_out' => preg_match('/^\d{4}-\d{2}-\d{2}$/', $checkOut) ? $checkOut : '',
+        'guests'    => $guests > 0 ? $guests : 0,
+    ];
+}
 
-        return $context;
+function xabia_avirato_remember_stay(string $projectId, string $checkIn, string $checkOut, int $guests): void
+{
+    if ($projectId === '') {
+        return;
     }
-    $dates = xabia_avirato_extract_dates($dateContext !== '' ? $dateContext : $combinedForTrigger);
-    $dn = xabia_avirato_normalize_text($dateContext !== '' ? $dateContext : $combinedForTrigger);
-    if (str_contains($dn, 'una semana') || str_contains($dn, '1 semana') || preg_match('/\b\d+\s*noch/', $dn) === 1) {
-        $ci = DateTimeImmutable::createFromFormat('Y-m-d', $dates['checkin'] ?? '');
-        $co = DateTimeImmutable::createFromFormat('Y-m-d', $dates['checkout'] ?? '');
-        if ($ci instanceof DateTimeImmutable && $co instanceof DateTimeImmutable && $co > $ci) {
-            $span = (int) $ci->diff($co)->format('%a');
-            if ($span > 7 && (str_contains($dn, 'una semana') || str_contains($dn, '1 semana'))) {
-                $dates['checkout'] = $ci->modify('+7 days')->format('Y-m-d');
+    if (!session_id() && !headers_sent()) {
+        session_start();
+    }
+    if (!isset($_SESSION['xabia_avirato_stay']) || !is_array($_SESSION['xabia_avirato_stay'])) {
+        $_SESSION['xabia_avirato_stay'] = [];
+    }
+    $prev = xabia_avirato_recall_stay($projectId);
+    if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $checkIn)) {
+        $prev['check_in'] = $checkIn;
+    }
+    if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $checkOut)) {
+        $prev['check_out'] = $checkOut;
+    }
+    if ($guests > 0) {
+        $prev['guests'] = $guests;
+    }
+    $_SESSION['xabia_avirato_stay'][$projectId] = $prev;
+}
+
+function xabia_avirato_extract_guests_from_text(string $text): int
+{
+    $t = xabia_avirato_normalize_text($text);
+    $map = [
+        'una' => 1, 'uno' => 1, 'dos' => 2, 'tres' => 3, 'cuatro' => 4, 'cinco' => 5,
+        'seis' => 6, 'siete' => 7, 'ocho' => 8, 'nueve' => 9, 'diez' => 10,
+    ];
+    if (preg_match('/\b(?:somos|seremos|para|de)\s+(\d{1,2})\s*(?:personas?|pax|adultos?)?\b/u', $t, $m) === 1) {
+        return min(30, max(1, (int) $m[1]));
+    }
+    if (preg_match('/\b(\d{1,2})\s*(?:personas?|pax|adultos?)\b/u', $t, $m2) === 1) {
+        return min(30, max(1, (int) $m2[1]));
+    }
+    foreach ($map as $word => $n) {
+        if (preg_match('/\b(?:somos|seremos|para|de)\s+' . $word . '\b/u', $t) === 1) {
+            return $n;
+        }
+    }
+
+    return 0;
+}
+
+/**
+ * Resuelve un nombre de casa mencionado en el mensaje contra el catálogo canónico del Core (sin fuzzy PHP).
+ * Coincidencia por contención normalizada del display o del ente_id.
+ *
+ * @return array{ente_id: string, display: string}|null
+ */
+function xabia_avirato_match_canonical_entity_from_text(string $projectId, string $userText): ?array
+{
+    if ($projectId === '' || !class_exists('Xabia_DB', false) || !method_exists('Xabia_DB', 'get_project_canonical_entities')) {
+        return null;
+    }
+    $needle = xabia_avirato_normalize_text($userText);
+    if ($needle === '') {
+        return null;
+    }
+    $entities = Xabia_DB::get_project_canonical_entities($projectId);
+    $best = null;
+    $bestLen = 0;
+    foreach ($entities as $e) {
+        if (!is_array($e)) {
+            continue;
+        }
+        $display = trim((string) ($e['display'] ?? ''));
+        $id = trim((string) ($e['ente_id'] ?? ''));
+        foreach ([$display, $id] as $label) {
+            $norm = xabia_avirato_normalize_text($label);
+            if ($norm === '' || (function_exists('mb_strlen') ? mb_strlen($norm) : strlen($norm)) < 4) {
+                continue;
+            }
+            if (str_contains($needle, $norm) || str_contains($norm, $needle)) {
+                $len = function_exists('mb_strlen') ? mb_strlen($norm) : strlen($norm);
+                if ($len > $bestLen) {
+                    $bestLen = $len;
+                    $best = ['ente_id' => $id, 'display' => $display !== '' ? $display : $id];
+                }
             }
         }
     }
-    $dates = xabia_avirato_refine_dates_with_duration($dn, $dates);
+
+    return $best;
+}
+
+/**
+ * Directiva comercial + respuesta en un solo turno (sin function calling / sin «Un momento»).
+ */
+function xabia_avirato_response_directive_block(bool $guestsAssumed, string $checkIn, string $checkOut): string
+{
+    $lines = [
+        'DIRECTIVA ESTRICTA DE RESPUESTA (1 TURNO — AVIRATO / MODO COMERCIAL):',
+        '— Respuesta inmediata: prohibido «Un momento», «Voy a comprobarlo», «Dejadme mirar». Los datos YA están en [DISPONIBILIDAD EN TIEMPO REAL - AVIRATO].',
+        '— OCULTACIÓN DE PRECIOS EN DESCUBRIMIENTO: si la consulta es inspiracional o abierta («busco casita romántica», «qué tenéis disponible», «cuéntame de Garay se / GARAIXE», «opciones para el finde»), NO muestres importes en euros ni totales ni €/noche. Destaca 2 o 3 casas libres por atmósfera, estilo y rasgos del conocimiento/catálogo (intimidad para parejas, vistas, silencio, luz, madera…). Los precios del bloque son SOLO referencia interna.',
+        '— PRECIOS SOLO BAJO DEMANDA: incluye importes (€, total o por noche) únicamente si el usuario pregunta expresamente por precio («cuánto cuesta», «qué precio», «tarifas», «presupuesto», «cuánto sale», «por noche»).',
+        '— FASE DE RESERVA: si pide reservar («ayúdame a reservarla», «quiero reservar», «me quedo con esta», «reservarla»), da de inmediato y con cordialidad el enlace de reserva (URL del bloque) de la casa elegida. No repreguntes datos ya conocidos.',
+        '— Discriminación: casa concreta («Garay se» → GARAIXE vía catálogo canónico) → responde solo sobre esa (libre/ocupada + eslogan; precio solo si lo piden). Consulta abierta → 2–3 opciones atmosféricas, no el tarifario completo.',
+        '— Alojamientos no listados en el bloque = OCUPADOS esas fechas; dilo y ofrece 1–2 alternativas del listado (sin precios salvo que los pidan).',
+    ];
+    if ($guestsAssumed && $checkIn !== '' && $checkOut !== '') {
+        $lines[] = '— Huéspedes asumidos: puedes indicar con naturalidad que miras para 2 personas del ' . $checkIn . ' al ' . $checkOut . ' (sin listar precios).';
+    }
+
+    return implode("\n", $lines);
+}
+
+/**
+ * Auto-scrape síncrono + bloque de datos crudos para el LLM (sin tools / function calling).
+ */
+function xabia_avirato_build_live_availability_block(string $projectId, string $userText, string $dateContext = ''): string
+{
+    $combined = trim($dateContext . ' ' . $userText);
+    if (!xabia_avirato_should_attempt_injection($combined)) {
+        return '';
+    }
+    if (!xabia_avirato_subscription_active()) {
+        return '';
+    }
+    $settings = xabia_avirato_resolve_settings();
+    if (trim((string) ($settings['establishment_id'] ?? '')) === '') {
+        return '';
+    }
+
+    $remembered = xabia_avirato_recall_stay($projectId);
+    $dateSource = $dateContext !== '' ? $dateContext : $combined;
+    $dates = xabia_avirato_extract_dates($dateSource);
+    $dates = xabia_avirato_refine_checkout_until_weekday(xabia_avirato_normalize_text($dateSource), $dates);
     $dates = xabia_avirato_enforce_min_stay($dates);
-    xabia_trace('[XABIA_AVIRATO] calculated dates', [
-        'checkin_ymd'  => $dates['checkin'] ?? '',
-        'checkout_ymd' => $dates['checkout'] ?? '',
-        'checkin_dm'   => isset($dates['checkin']) ? xabia_avirato_to_booking_date($dates['checkin']) : '',
-        'checkout_dm'  => isset($dates['checkout']) ? xabia_avirato_to_booking_date($dates['checkout']) : '',
-    ]);
-    $bookingLang = 'es';
-    if (is_array($config)) {
-        $ul = isset($config['_xabia_proxy_user_lang']) ? (string) $config['_xabia_proxy_user_lang'] : '';
-        if ($ul !== '') {
-            $bookingLang = strtolower(substr(preg_replace('/[^a-zA-Z]/', '', $ul), 0, 2)) ?: 'es';
+    $checkIn = (string) ($dates['checkin'] ?? '');
+    $checkOut = (string) ($dates['checkout'] ?? '');
+    if ($checkIn === '' || $checkOut === '') {
+        return "[DISPONIBILIDAD EN TIEMPO REAL - AVIRATO]\nok: false\nerror: missing_dates\nmessage: No se pudieron resolver fechas ISO desde el mensaje. Usa la fecha de hoy del sistema y la expresión del usuario; no inventes ocupación.";
+    }
+
+    $guests = xabia_avirato_extract_guests_from_text($combined);
+    $guestsAssumed = false;
+    if ($guests < 1) {
+        $guests = (int) $remembered['guests'];
+    }
+    if ($guests < 1) {
+        $guests = 2;
+        $guestsAssumed = true;
+    }
+    $guests = min(30, $guests);
+    xabia_avirato_remember_stay($projectId, $checkIn, $checkOut, $guests);
+
+    $matched = xabia_avirato_match_canonical_entity_from_text($projectId, $combined);
+    $requestedName = is_array($matched) ? (string) $matched['display'] : '';
+
+    $nights = xabia_avirato_stay_nights(['checkin' => $checkIn, 'checkout' => $checkOut]);
+    $prevTimeout = $GLOBALS['xabia_avirato_scrape_timeout'] ?? null;
+    $GLOBALS['xabia_avirato_scrape_timeout'] = 8;
+    try {
+        $result = xabia_avirato_scrape_rooms($checkIn, $checkOut, 'es', '', $requestedName, $guests);
+    } finally {
+        if ($prevTimeout === null) {
+            unset($GLOBALS['xabia_avirato_scrape_timeout']);
+        } else {
+            $GLOBALS['xabia_avirato_scrape_timeout'] = $prevTimeout;
         }
     }
-    if (is_array($request) && isset($request['lang_code']) && (string) $request['lang_code'] !== '') {
-        $bookingLang = strtolower(substr(preg_replace('/[^a-zA-Z]/', '', (string) $request['lang_code']), 0, 2)) ?: $bookingLang;
-    }
-    $requestedRoom = xabia_avirato_resolve_requested_room_from_calendar(
-        (string) ($settings['establishment_id'] ?? ''),
-        $settings,
-        $combinedForTrigger
-    );
-    if ($requestedRoom === null) {
-        $requestedRoom = xabia_avirato_resolve_requested_room_from_knowledge($projectId, $combinedForTrigger);
-    }
-    $requestedRoomId = is_array($requestedRoom) ? (string) ($requestedRoom['id'] ?? '') : '';
-    $requestedRoomName = is_array($requestedRoom) ? (string) ($requestedRoom['name'] ?? '') : '';
-    $result = xabia_avirato_scrape_rooms($dates['checkin'], $dates['checkout'], $bookingLang, $requestedRoomId, $requestedRoomName);
-    $availabilityLabel = xabia_avirato_availability_label($settings);
-    $emptyAvailabilitySystem = "\n\nSISTEMA: El usuario ha preguntado por disponibilidad y el motor Avirato ha respondido correctamente, pero no ha devuelto alojamientos disponibles para esas fechas. Dile que para esas fechas no te aparece disponibilidad.";
-    if ($requestedRoomName !== '') {
-        $emptyAvailabilitySystem = "\n\nSISTEMA: El usuario ha preguntado por la disponibilidad de un alojamiento concreto: " . $requestedRoomName . ". El catálogo del proyecto reconoce ese alojamiento, pero el motor no lo devuelve como disponible para esas fechas. Dile claramente que " . $requestedRoomName . " no te aparece disponible para esas fechas. No digas que no lo reconoces ni que no sabes qué alojamiento es.";
-    }
-    $filteredOutSystem = "\n\nSISTEMA: El usuario ha preguntado por disponibilidad y el motor Avirato sí devolvió alojamientos, pero todos fueron descartados por los filtros configurados en administración (inclusión/exclusión). Respeta esos filtros: NO menciones alojamientos excluidos ni alternativas fuera del filtro. Dile que para esas fechas no te aparece disponibilidad en " . $availabilityLabel . ".";
-    $technicalFailureSystem = "\n\nSISTEMA: El usuario ha preguntado por disponibilidad, pero no se ha podido leer correctamente el motor Avirato en esta consulta. NO digas que está todo completo. Pide probar con otras fechas o revisar la disponibilidad en el motor de reservas.";
-    if (!($result['ok'] ?? false)) {
-        xabia_trace('[XABIA_AVIRATO] scrape result (pre name-hint)', [
-            'ok'  => (bool) ($result['ok'] ?? false),
-            'msg' => (string) ($result['message'] ?? ''),
-            'rooms' => isset($result['rooms']) && is_array($result['rooms']) ? count($result['rooms']) : 0,
-        ]);
 
-        return $context . $technicalFailureSystem;
-    }
-    $roomsForResponse = isset($result['rooms']) && is_array($result['rooms']) ? (array) $result['rooms'] : [];
-    $usingRawFallback = false;
-    if ($roomsForResponse === [] && !empty($result['raw_rooms']) && is_array($result['raw_rooms']) && empty($result['filter_active'])) {
-        $roomsForResponse = (array) $result['raw_rooms'];
-        $usingRawFallback = true;
-        xabia_trace('[XABIA_AVIRATO] using raw rooms fallback without active filters', [
-            'raw_room_count' => count($roomsForResponse),
-        ]);
-    }
-    if ($roomsForResponse === []) {
-        xabia_trace('[XABIA_AVIRATO] scrape result empty availability', [
-            'raw_room_count' => (int) ($result['raw_room_count'] ?? 0),
-            'filter_active'  => (bool) ($result['filter_active'] ?? false),
-        ]);
-
-        if (!empty($result['filter_active']) && (int) ($result['raw_room_count'] ?? 0) > 0) {
-            return $context . $filteredOutSystem;
+    $rooms = isset($result['rooms']) && is_array($result['rooms']) ? $result['rooms'] : [];
+    if ($requestedName !== '' && $rooms !== []) {
+        $filtered = xabia_avirato_filter_rooms_by_name_hint($requestedName, $rooms, '');
+        if ($filtered !== [] && count($filtered) < count($rooms)) {
+            $rooms = $filtered;
         }
-
-        return $context . $emptyAvailabilitySystem;
     }
-    $confirmedRoom = xabia_avirato_confirm_requested_room(
-        $requestedRoomName !== '' ? ['id' => $requestedRoomId, 'name' => $requestedRoomName] : null,
-        $roomsForResponse,
-        (string) ($settings['establishment_id'] ?? '')
-    );
-    $requestedRoomName = is_array($confirmedRoom) ? (string) ($confirmedRoom['name'] ?? '') : '';
-    $rooms = $requestedRoomName !== '' ? $roomsForResponse : xabia_avirato_filter_rooms_by_name_hint($userText, $roomsForResponse, $dateContext);
-    $roomsText = xabia_avirato_rooms_to_text($rooms, ['lang' => 'es', 'max' => 8]);
-    if ($roomsText === '') {
-        xabia_trace('[XABIA_AVIRATO] rooms list empty after name hint / price formatting');
+    $bookingBase = trim((string) ($result['booking_base'] ?? ''));
+    $bookingParts = isset($result['booking_parts']) && is_array($result['booking_parts']) ? $result['booking_parts'] : [];
+    if ($bookingBase === '') {
+        $bookingBase = rtrim((string) ($settings['engine_url'] ?? ''), '/');
+    }
+    if ($bookingParts !== [] && empty($bookingParts['adults'])) {
+        $bookingParts['adults'] = $guests;
+    }
+    $packed = xabia_avirato_pack_rooms_for_tool($rooms, $nights, $bookingBase, $bookingParts, 40);
 
-        return $context . $emptyAvailabilitySystem;
+    $lines = [
+        '[DISPONIBILIDAD EN TIEMPO REAL - AVIRATO]',
+        'Fechas comprobadas: ' . $checkIn . ' a ' . $checkOut . ' (' . $nights . ' noches) para ' . $guests . ' personas'
+            . ($guestsAssumed ? ' (guests_assumed=true)' : '') . '.',
+    ];
+    if ($requestedName !== '') {
+        $lines[] = 'Alojamiento mencionado (catálogo canónico): ' . $requestedName . '.';
+    }
+    $lines[] = 'ok: ' . (!empty($result['ok']) ? 'true' : 'false');
+    if (empty($result['ok'])) {
+        $lines[] = 'error: ' . trim((string) ($result['message'] ?? 'availability_error'));
+    }
+    if ($packed === []) {
+        $lines[] = 'Alojamientos disponibles: (ninguno — rooms[] vacío; considera ocupado / sin disponibilidad para estas fechas).';
+    } else {
+        $lines[] = 'Alojamientos disponibles:';
+        foreach ($packed as $room) {
+            $name = (string) ($room['name'] ?? 'Casa');
+            $total = $room['total_price'] ?? null;
+            $per = $room['price_per_night'] ?? null;
+            $cap = $room['capacity'] ?? null;
+            $url = trim((string) ($room['booking_url'] ?? ''));
+            $priceBits = [];
+            if ($total !== null && is_numeric($total)) {
+                $priceBits[] = 'Total ' . $total . '€';
+            }
+            if ($per !== null && is_numeric($per)) {
+                $priceBits[] = $per . '€/noche';
+            }
+            $capBit = ($cap !== null && is_numeric($cap)) ? (' Capacidad: ' . (int) $cap . '.') : '';
+            $urlBit = $url !== '' ? (' URL reserva: ' . $url) : '';
+            $lines[] = '- ' . $name . ': ' . ($priceBits !== [] ? implode(' ', $priceBits) . '.' : 'precio no informado.') . $capBit . $urlBit;
+        }
+    }
+    $lines[] = '(Cualquier alojamiento no listado aquí se considera OCUPADO para estas fechas).';
+    $lines[] = '(Los importes € son referencia interna: no los cites en descubrimiento; solo si el usuario pregunta precio o al cerrar la reserva.)';
+    $lines[] = '';
+    $lines[] = xabia_avirato_response_directive_block($guestsAssumed, $checkIn, $checkOut);
+
+    return implode("\n", $lines);
+}
+
+function xabia_avirato_append_stay_memory(string $context, string $projectId): string
+{
+    $stay = xabia_avirato_recall_stay($projectId);
+    $lines = [
+        'MEMORIA DE ESTANCIA (sesión): no vuelvas a preguntar un dato que ya figure aquí o en el historial.',
+    ];
+    $lines[] = $stay['check_in'] !== '' ? ('check_in: ' . $stay['check_in']) : 'check_in: (aún no indicado)';
+    $lines[] = $stay['check_out'] !== '' ? ('check_out: ' . $stay['check_out']) : 'check_out: (aún no indicado)';
+    $lines[] = $stay['guests'] > 0 ? ('guests: ' . $stay['guests']) : 'guests: (aún no indicado)';
+    $block = implode("\n", $lines);
+    $context = trim($context);
+
+    return $context === '' ? $block : ($context . "\n\n" . $block);
+}
+
+/**
+ * @param array<string, mixed> $room
+ * @return array{min_price:?float,price_per_night:?float,total_price:?float,currency:string,price_basis:string}
+ */
+function xabia_avirato_price_breakdown(array $room, int $nights): array
+{
+    $min = xabia_avirato_room_price_value($room);
+    $per = null;
+    $total = null;
+    foreach (['pricePerNight', 'precioNoche', 'nightlyPrice'] as $key) {
+        if (isset($room[$key]) && is_numeric($room[$key])) {
+            $per = (float) $room[$key];
+            break;
+        }
+    }
+    foreach (['totalPrice', 'precioTotal', 'importeTotal', 'amount'] as $key) {
+        if (isset($room[$key]) && is_numeric($room[$key])) {
+            $total = (float) $room[$key];
+            break;
+        }
+    }
+    $basis = 'provided';
+    if ($per === null && $total === null && $min !== null) {
+        $per = $min;
+        $total = $nights > 0 ? round($min * $nights, 2) : $min;
+        $basis = 'min_price_as_nightly';
+    } elseif ($per === null && $total !== null && $nights > 0) {
+        $per = round($total / $nights, 2);
+        $basis = 'total_divided_by_nights';
+    } elseif ($total === null && $per !== null) {
+        $total = $nights > 0 ? round($per * $nights, 2) : $per;
+        $basis = 'nightly_times_nights';
     }
 
-    $label = isset($dates['label']) && is_string($dates['label']) && trim($dates['label']) !== '' ? $dates['label'] : 'ESTAS FECHAS';
-    $range = xabia_avirato_format_availability_range($dates, 'es');
+    return [
+        'min_price'       => $min,
+        'price_per_night' => $per,
+        'total_price'     => $total,
+        'currency'        => (string) ($room['currency'] ?? 'EUR'),
+        'price_basis'     => $basis,
+    ];
+}
 
-    $filterNote = $usingRawFallback ? "\nNOTA: No hay filtros de inclusión/exclusión activos; se muestran las habitaciones reales devueltas por Avirato." : '';
-    $specificNote = $requestedRoomName !== '' ? "\nCASA SOLICITADA: " . $requestedRoomName . ". Si aparece en la lista, responde solo sobre esta casa." : '';
-    $bookingUrl = isset($result['booking_url']) ? trim((string) $result['booking_url']) : '';
-    $bookingLine = $bookingUrl !== '' ? "\nENLACE DE RESERVA: [ACTION:URL:" . $bookingUrl . "]" : '';
-    $injected = $context . "\n\nSISTEMA: El bloque siguiente es la disponibilidad y precios reales devueltos por el motor Avirato. Es la fuente de verdad: debes basarte en él. NO digas que no tienes información en tiempo real ni que solo puedes remitir a la web si ya aparecen habitaciones o precios aquí. Si el usuario pide reservar, responde con el enlace de reserva indicado. Si el usuario pide una casa concreta y esa casa no aparece en el listado, di que esa casa concreta no te aparece disponible y ofrece las alternativas listadas.\n\nDISPONIBILIDAD REAL PARA " . $label . ' (' . $range . "):\n" . $roomsText . $specificNote . $filterNote . $bookingLine . "\nDile al usuario que puede reservar ahora mismo.";
-    xabia_trace('[XABIA_AVIRATO] context injection success', ['injected_len' => strlen($injected), 'rooms_in_text' => count($rooms)]);
+/**
+ * @param array<string, mixed> $args
+ */
+function xabia_avirato_execute_availability_tool(array $args, string $projectId): string
+{
+    $remembered = xabia_avirato_recall_stay($projectId);
+    $checkIn = isset($args['check_in']) ? trim((string) $args['check_in']) : '';
+    $checkOut = isset($args['check_out']) ? trim((string) $args['check_out']) : '';
+    $guestsProvided = array_key_exists('guests', $args) && $args['guests'] !== null && $args['guests'] !== '';
+    $guests = $guestsProvided ? (int) $args['guests'] : 0;
+    $guestsAssumed = false;
+    if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $checkIn)) {
+        $checkIn = $remembered['check_in'];
+    }
+    if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $checkOut)) {
+        $checkOut = $remembered['check_out'];
+    }
+    if ($guests < 1) {
+        $guests = (int) $remembered['guests'];
+    }
+    if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $checkIn) || !preg_match('/^\d{4}-\d{2}-\d{2}$/', $checkOut)) {
+        $today = (new DateTimeImmutable('today'))->format('Y-m-d');
 
-    return $injected;
+        return (string) wp_json_encode([
+            'ok'         => false,
+            'error'      => 'missing_dates',
+            'message'    => 'Faltan check_in o check_out en YYYY-MM-DD. Calcula las fechas a partir de la expresión del usuario y la fecha actual del sistema (' . $today . ') y vuelve a invocar la herramienta. No preguntes al usuario.',
+            'today'      => $today,
+            'remembered' => $remembered,
+        ], JSON_UNESCAPED_UNICODE);
+    }
+    if ($guests < 1) {
+        $guests = 2;
+        $guestsAssumed = true;
+    }
+    $guests = min(30, $guests);
+    xabia_avirato_remember_stay($projectId, $checkIn, $checkOut, $guests);
+
+    if (!xabia_avirato_subscription_active()) {
+        return (string) wp_json_encode([
+            'ok'      => false,
+            'error'   => 'unavailable',
+            'message' => 'La consulta de disponibilidad no está activa.',
+        ], JSON_UNESCAPED_UNICODE);
+    }
+
+    $queried = xabia_avirato_enforce_min_stay(['checkin' => $checkIn, 'checkout' => $checkOut]);
+    $queryIn = (string) ($queried['checkin'] ?? $checkIn);
+    $queryOut = (string) ($queried['checkout'] ?? $checkOut);
+    $nights = xabia_avirato_stay_nights(['checkin' => $queryIn, 'checkout' => $queryOut]);
+    $result = xabia_avirato_scrape_rooms($queryIn, $queryOut, 'es', '', '', $guests);
+    $rooms = isset($result['rooms']) && is_array($result['rooms']) ? $result['rooms'] : [];
+    $bookingBase = trim((string) ($result['booking_base'] ?? ''));
+    $bookingParts = isset($result['booking_parts']) && is_array($result['booking_parts']) ? $result['booking_parts'] : [];
+    if ($bookingBase === '') {
+        $settings = xabia_avirato_resolve_settings();
+        $bookingBase = rtrim((string) ($settings['engine_url'] ?? ''), '/');
+        if ($bookingParts === [] && $bookingBase !== '') {
+            $bookingParts = [
+                'code'      => trim((string) ($settings['establishment_id'] ?? '')),
+                'startDate' => xabia_avirato_to_booking_date($queryIn),
+                'endDate'   => xabia_avirato_to_booking_date($queryOut),
+                'lang'      => 'es',
+                'adults'    => $guests,
+                'children'  => 0,
+                'rooms'     => 1,
+            ];
+        }
+    }
+    if ($bookingParts !== [] && empty($bookingParts['adults'])) {
+        $bookingParts['adults'] = $guests;
+    }
+    $roomsOut = xabia_avirato_pack_rooms_for_tool($rooms, $nights, $bookingBase, $bookingParts);
+
+    return (string) wp_json_encode([
+        'ok'              => (bool) ($result['ok'] ?? false),
+        'check_in'        => $queryIn,
+        'check_out'       => $queryOut,
+        'nights'          => $nights,
+        'guests'          => $guests,
+        'guests_assumed'  => $guestsAssumed,
+        'rooms'           => $roomsOut,
+        'error'           => ($result['ok'] ?? false) ? null : (string) ($result['message'] ?? 'availability_error'),
+    ], JSON_UNESCAPED_UNICODE);
+}
+
+/**
+ * Fechas ISO de ejemplo para anclar expresiones relativas a «hoy».
+ *
+ * @return array{today:string,this_weekend_in:string,this_weekend_out:string,next_weekend_in:string,next_weekend_out:string,next_week_in:string,next_week_out:string,coming_weekend_in:string,coming_weekend_out:string}
+ */
+function xabia_avirato_relative_date_anchors(?DateTimeImmutable $today = null): array
+{
+    $today = $today ?? new DateTimeImmutable('today');
+    $dow = (int) $today->format('N'); // 1=lun … 7=dom
+    // Viernes del finde actual o inminente (lun–vie → este viernes; sáb–dom → viernes pasado)
+    if ($dow <= 5) {
+        $thisFri = $today->modify('+' . (5 - $dow) . ' days');
+    } else {
+        $thisFri = $today->modify('-' . ($dow - 5) . ' days');
+    }
+    // Fin de semana típico: llegada viernes, salida domingo (2 noches). No sumar el lunes salvo que el usuario lo pida.
+    $thisOut = $thisFri->modify('+2 days');
+    $nextFri = $thisFri->modify('+7 days');
+    $nextOut = $thisOut->modify('+7 days');
+    // «el fin de semana que viene»: lun–jue = el inminente; vie–dom = el siguiente
+    if ($dow <= 4) {
+        $comingIn = $thisFri;
+        $comingOut = $thisOut;
+    } else {
+        $comingIn = $nextFri;
+        $comingOut = $nextOut;
+    }
+    $nextMon = $today->modify('next monday');
+    if ($dow === 1) {
+        $nextMon = $today->modify('+7 days');
+    }
+
+    return [
+        'today'              => $today->format('Y-m-d'),
+        'this_weekend_in'    => $thisFri->format('Y-m-d'),
+        'this_weekend_out'   => $thisOut->format('Y-m-d'),
+        'next_weekend_in'    => $nextFri->format('Y-m-d'),
+        'next_weekend_out'   => $nextOut->format('Y-m-d'),
+        'coming_weekend_in'  => $comingIn->format('Y-m-d'),
+        'coming_weekend_out' => $comingOut->format('Y-m-d'),
+        'next_week_in'       => $nextMon->format('Y-m-d'),
+        'next_week_out'      => $nextMon->modify('+7 days')->format('Y-m-d'),
+    ];
+}
+
+/**
+ * «hasta el domingo» / «hasta el sábado»: el día nombrado es el de salida (checkout),
+ * no se añade un día extra (p. ej. viernes→domingo = 2 noches, no checkout lunes).
+ *
+ * @param array{checkin?: string, checkout?: string, label?: string} $dates
+ * @return array{checkin: string, checkout: string, label?: string}
+ */
+function xabia_avirato_refine_checkout_until_weekday(string $normalized, array $dates): array
+{
+    $ci = DateTimeImmutable::createFromFormat('Y-m-d', (string) ($dates['checkin'] ?? ''));
+    if (!$ci instanceof DateTimeImmutable) {
+        return $dates;
+    }
+    $map = [
+        'lunes'     => 1,
+        'martes'    => 2,
+        'miercoles' => 3,
+        'miércoles' => 3,
+        'jueves'    => 4,
+        'viernes'   => 5,
+        'sabado'    => 6,
+        'sábado'    => 6,
+        'domingo'   => 7,
+    ];
+    if (preg_match('/\bhasta\s+(?:el\s+)?(lunes|martes|miercoles|miércoles|jueves|viernes|sabado|sábado|domingo)\b/u', $normalized, $m) !== 1) {
+        return $dates;
+    }
+    $targetDow = (int) ($map[$m[1]] ?? 0);
+    if ($targetDow < 1) {
+        return $dates;
+    }
+    $cursor = $ci;
+    for ($i = 0; $i < 8; $i++) {
+        if ((int) $cursor->format('N') === $targetDow) {
+            // Si «hasta el domingo» cae el mismo día que la llegada, ir al siguiente de esa semana.
+            if ($cursor <= $ci) {
+                $cursor = $cursor->modify('+7 days');
+            }
+            $dates['checkout'] = $cursor->format('Y-m-d');
+
+            return $dates;
+        }
+        $cursor = $cursor->modify('+1 day');
+    }
+
+    return $dates;
+}
+
+function xabia_avirato_relative_date_guide(?DateTimeImmutable $today = null): string
+{
+    $a = xabia_avirato_relative_date_anchors($today);
+
+    return 'Hoy del sistema: ' . $a['today']
+        . '. Resolución relativa (ancla = hoy): '
+        . '«este fin de semana» / «el fin de semana» → check_in=' . $a['this_weekend_in'] . ' (viernes), check_out=' . $a['this_weekend_out'] . ' (domingo, día de salida; 2 noches). '
+        . '«hasta el domingo» = checkout ese domingo (no sumar el lunes). '
+        . '«el fin de semana que viene» / «el próximo fin de semana» / «este fin de semana próximo» → check_in=' . $a['coming_weekend_in'] . ', check_out=' . $a['coming_weekend_out'] . '. '
+        . '«la próxima semana» / «la semana que viene» → check_in=' . $a['next_week_in'] . ' (lunes), check_out=' . $a['next_week_out'] . ' (lunes siguiente), salvo que el usuario precise otros días. '
+        . '«mañana» = hoy+1. Nunca preguntes las fechas ISO al usuario: calcúlalas y llama a la tool.';
+}
+
+function xabia_avirato_tool_definition(): array
+{
+    $dateGuide = xabia_avirato_relative_date_guide();
+
+    return [
+        'type'     => 'function',
+        'function' => [
+            'name'        => 'get_avirato_availability',
+            'description' => 'Devuelve datos crudos de disponibilidad Avirato (rooms[] con name, price_per_night, total_price, capacity, booking_url). Prioridad absoluta frente a RAG ante consultas de disponibilidad. No redacta respuestas. guests es opcional (default 2). No pidas de nuevo datos ya presentes en memoria o historial. ' . $dateGuide,
+            'parameters'  => [
+                'type'       => 'object',
+                'properties' => [
+                    'check_in' => [
+                        'type'        => 'string',
+                        'description' => 'Fecha de llegada YYYY-MM-DD. Resuelve expresiones relativas respecto a la fecha de hoy del sistema. ' . $dateGuide,
+                    ],
+                    'check_out' => [
+                        'type'        => 'string',
+                        'description' => 'Fecha de salida YYYY-MM-DD (el día en que se van, no la última noche). Para un fin de semana típico vie–dom: salida = lunes.',
+                    ],
+                    'guests' => [
+                        'type'        => 'integer',
+                        'description' => 'Número de personas. Opcional: si el usuario no lo indica, omítelo o pasa 2 (la tool asumirá 2).',
+                    ],
+                ],
+                'required' => ['check_in', 'check_out'],
+            ],
+        ],
+    ];
+}
+
+/**
+ * Auto-scrape Avirato en el servidor (Turno 1) — sin function calling / tools.
+ * Inyecta [DISPONIBILIDAD EN TIEMPO REAL] + directiva de respuesta inmediata.
+ */
+add_filter('xabia_agent_context_injection', static function ($context, $project_id, $config, $request) {
+    unset($config);
+    $context = is_string($context) ? $context : '';
+    if (class_exists('Xabia_Addons', false) && !Xabia_Addons::is_active('avirato')) {
+        return $context;
+    }
+    if (!xabia_avirato_subscription_active()) {
+        return $context;
+    }
+    $projectId = (string) $project_id;
+    $request = is_array($request) ? $request : [];
+    $userText = isset($request['user_message']) ? trim((string) $request['user_message']) : '';
+    $dateContext = isset($request['date_context']) ? trim((string) $request['date_context']) : '';
+    if ($dateContext === '') {
+        $dateContext = $userText;
+    }
+    $live = xabia_avirato_build_live_availability_block($projectId, $userText, $dateContext);
+    $withMemory = xabia_avirato_append_stay_memory($context, $projectId);
+    if ($live === '') {
+        return $withMemory;
+    }
+
+    return $withMemory === '' ? $live : ($withMemory . "\n\n" . $live);
 }, 99, 4);
 
 add_filter('xabia_digixop_proxy_payload', static function ($payload, $project_id, $config, $messages) {

@@ -1866,3 +1866,206 @@ body.xabia-keyboard-open.xabia-mobile-chat-stack .xabia-chatbox.xabia-panel-shel
         display: none !important;
     }
 }
+
+/* ============================================================
+   Panel lateral (drawer) — modo web por defecto
+   Alto de ventana, ~440px, sin halo ni orbe de voz.
+   --xabia-inset-bottom deja libre una barra fija del anfitrión.
+   ============================================================ */
+
+@keyframes xabiaDrawerIn {
+    from { transform: translateX(100%); }
+    to { transform: translateX(0); }
+}
+
+.xabia-chatbox.xabia-ui-modern.xabia-panel-shell.layout-drawer,
+.xabia-chatbox.xabia-ui-modern.xabia-panel-shell.layout-drawer.is-active {
+    position: fixed !important;
+    top: 0 !important;
+    right: 0 !important;
+    bottom: var(--xabia-inset-bottom, 0px) !important;
+    left: auto !important;
+    width: min(440px, 100vw) !important;
+    width: min(440px, 100dvw) !important;
+    max-width: min(440px, 100vw) !important;
+    max-width: min(440px, 100dvw) !important;
+    height: auto !important;
+    max-height: none !important;
+    min-height: 0 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    border: none !important;
+    border-left: 1px solid rgba(15, 23, 42, 0.08) !important;
+    border-radius: 0 !important;
+    box-shadow: -18px 0 48px rgba(15, 23, 42, 0.16) !important;
+    background: var(--xabia-bg-color, #ffffff) !important;
+    color: var(--xabia-text-color, #111827) !important;
+    font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif !important;
+    overflow: hidden !important;
+    transform: none !important;
+    animation: none !important;
+    z-index: 99994 !important;
+}
+
+.xabia-chatbox.xabia-ui-modern.xabia-panel-shell.layout-drawer.is-active {
+    animation: xabiaDrawerIn 0.34s cubic-bezier(0.22, 1, 0.36, 1) !important;
+}
+
+.xabia-chatbox.xabia-ui-modern.xabia-panel-shell.layout-drawer > .xabia-immersive-panel,
+.xabia-chatbox.xabia-ui-modern.xabia-panel-shell.layout-drawer .xabia-immersive-panel {
+    display: flex !important;
+    flex-direction: column !important;
+    flex: 1 1 auto !important;
+    width: 100% !important;
+    height: 100% !important;
+    min-height: 0 !important;
+    background: var(--xabia-bg-color, #ffffff) !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+}
+
+.xabia-chatbox.xabia-ui-modern.layout-drawer .xabia-voice-hero {
+    display: none !important;
+    flex: 0 0 0 !important;
+    min-height: 0 !important;
+    max-height: 0 !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    overflow: hidden !important;
+}
+
+.xabia-chatbox.xabia-ui-modern.layout-drawer .xabia-chat-header {
+    background: var(--xabia-bg-color, #ffffff) !important;
+    border-bottom: 1px solid rgba(15, 23, 42, 0.06) !important;
+}
+
+.xabia-chatbox.xabia-ui-modern.layout-drawer .xabia-messages-stream {
+    align-items: flex-start;
+    gap: 10px;
+}
+
+.xabia-chatbox.xabia-ui-modern.layout-drawer .xabia-msg.user,
+.xabia-chatbox.xabia-ui-modern.layout-drawer .xabia-msg.bot:not(.xabia-msg-greeting) {
+    width: auto !important;
+    max-width: min(88%, 360px) !important;
+    align-self: flex-start !important;
+    margin: 0 !important;
+    padding: 10px 14px !important;
+    border: none !important;
+    border-radius: var(--xabia-border-radius, 16px) !important;
+    box-shadow: none !important;
+    text-align: left !important;
+    font-weight: 400 !important;
+    line-height: 1.45 !important;
+}
+
+.xabia-chatbox.xabia-ui-modern.layout-drawer .xabia-msg.user {
+    align-self: flex-end !important;
+    background: var(--xabia-primary-color, var(--xabia-accent, #111827)) !important;
+    color: #ffffff !important;
+    border-bottom-right-radius: 4px !important;
+}
+
+.xabia-chatbox.xabia-ui-modern.layout-drawer .xabia-msg.user .xabia-msg-content {
+    color: #ffffff !important;
+    font-weight: 500 !important;
+    text-align: left !important;
+}
+
+.xabia-chatbox.xabia-ui-modern.layout-drawer .xabia-msg.bot:not(.xabia-msg-greeting) {
+    background: #f3f4f6 !important;
+    color: var(--xabia-text-color, #111827) !important;
+    border-bottom-left-radius: 4px !important;
+}
+
+.xabia-chatbox.xabia-ui-modern.layout-drawer .xabia-msg.bot:not(.xabia-msg-greeting) .xabia-msg-content {
+    color: var(--xabia-text-color, #111827) !important;
+    text-align: left !important;
+    font-weight: 400 !important;
+}
+
+.xabia-chatbox.xabia-ui-modern.layout-drawer .xabia-starter-suggestions {
+    display: flex !important;
+    flex-wrap: nowrap !important;
+    justify-content: flex-start !important;
+    align-items: center !important;
+    gap: 8px !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    margin: 0 !important;
+    padding: 4px 16px 14px !important;
+    overflow-x: auto !important;
+    overflow-y: hidden !important;
+    box-sizing: border-box !important;
+    scrollbar-width: none;
+}
+
+.xabia-chatbox.xabia-ui-modern.layout-drawer .xabia-starter-suggestions::-webkit-scrollbar {
+    display: none;
+}
+
+.xabia-chatbox.xabia-ui-modern.layout-drawer .xabia-starter-chip {
+    flex: 0 0 auto !important;
+    white-space: nowrap !important;
+    max-width: none !important;
+    border-radius: 999px !important;
+    border: 1px solid rgba(15, 23, 42, 0.1) !important;
+    background: #ffffff !important;
+    color: var(--xabia-text-color, #374151) !important;
+}
+
+.xabia-chatbox.xabia-ui-modern.layout-drawer .xabia-compose-area {
+    padding: 8px 16px 6px !important;
+}
+
+.xabia-chatbox.xabia-ui-modern.xabia-panel-shell.layout-drawer .xabia-compose-area .xabia-input-field,
+.xabia-chatbox.xabia-ui-modern.xabia-panel-shell.layout-drawer.is-active .xabia-compose-area .xabia-input-field,
+.xabia-chatbox.xabia-ui-modern.xabia-panel-shell.layout-drawer .xabia-compose-area .xabia-input-field:focus,
+.xabia-chatbox.xabia-ui-modern.xabia-panel-shell.layout-drawer.is-active .xabia-compose-area .xabia-input-field:focus {
+    display: block !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    min-height: 44px !important;
+    margin: 0 !important;
+    padding: 10px 14px !important;
+    border: 1px solid rgba(15, 23, 42, 0.12) !important;
+    border-radius: 12px !important;
+    background: #f9fafb !important;
+    box-shadow: none !important;
+    color: var(--xabia-text-color, #111827) !important;
+    overflow-y: hidden !important;
+}
+
+.xabia-chatbox.xabia-ui-modern.xabia-panel-shell.layout-drawer .xabia-compose-area .xabia-input-field:focus,
+.xabia-chatbox.xabia-ui-modern.xabia-panel-shell.layout-drawer.is-active .xabia-compose-area .xabia-input-field:focus {
+    border-color: var(--xabia-primary-color, var(--xabia-accent, #111827)) !important;
+    background: #ffffff !important;
+}
+
+.xabia-chatbox.xabia-ui-modern.xabia-panel-shell.layout-drawer .xabia-compose-area .xabia-input-field::placeholder,
+.xabia-chatbox.xabia-ui-modern.xabia-panel-shell.layout-drawer.is-active .xabia-compose-area .xabia-input-field::placeholder {
+    color: #9ca3af !important;
+    opacity: 1 !important;
+}
+
+.xabia-chatbox.xabia-ui-modern.layout-drawer .xabia-input-area {
+    padding: 4px 16px calc(env(safe-area-inset-bottom, 0px) + 12px) !important;
+    background: var(--xabia-bg-color, #ffffff) !important;
+}
+
+@media (max-width: 768px) {
+    .xabia-chatbox.xabia-ui-modern.xabia-panel-shell.layout-drawer,
+    .xabia-chatbox.xabia-ui-modern.xabia-panel-shell.layout-drawer.is-active {
+        width: 100vw !important;
+        width: 100dvw !important;
+        max-width: none !important;
+        border-left: none !important;
+        box-shadow: none !important;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .xabia-chatbox.xabia-ui-modern.xabia-panel-shell.layout-drawer.is-active {
+        animation: none !important;
+    }
+}

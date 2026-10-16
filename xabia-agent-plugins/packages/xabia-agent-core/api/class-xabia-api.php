@@ -826,19 +826,27 @@ if (!class_exists('Xabia_API')) {
         }
 
         /**
-         * Límite de tokens por visitante/sesión. Ausente → 15000; 0 → desactivado.
+         * Límite de tokens por visitante/sesión. Ausente → 45000 (~15–20 turnos); 0 → desactivado.
+         * El valor legado 15000 se migra a 45000 para no cortar conversaciones de reserva.
          *
          * @param array<string, mixed> $config
          */
         private static function max_tokens_per_session_for_project(array $config): int {
+            $legacy_default = 15000;
+            $new_default = 45000;
             $rules = is_array($config['rules'] ?? null) ? $config['rules'] : [];
             if (!array_key_exists('max_tokens_per_session', $rules)) {
-                return max(0, (int) apply_filters('xabia_max_tokens_per_session_default', 15000, $config));
+                return max(0, (int) apply_filters('xabia_max_tokens_per_session_default', $new_default, $config));
             }
             $limit = (int) $rules['max_tokens_per_session'];
             if ($limit < 0) {
                 $limit = 0;
             }
+            // Agentes guardados con el default antiguo: subir techo sin tocar límites custom bajos/altos.
+            if ($limit === $legacy_default) {
+                $limit = $new_default;
+            }
+
             return $limit;
         }
 
@@ -3061,10 +3069,9 @@ if (!class_exists('Xabia_API')) {
             $response = '';
             $stream_armed = class_exists('Xabia_Chat_Stream', false) && Xabia_Chat_Stream::is_armed();
             $vertex_local = $ai_driver === 'google_cloud' && class_exists('Xabia_Digixop_Client') && Xabia_Digixop_Client::should_use_local_vertex($config);
-            $vertex_fed = $vertex_local && self::should_use_federation_tools_for_project($project_id);
-            $openai_fed = !$vertex_local && self::should_use_federation_tools_for_project($project_id);
+            $use_tool_loop = self::merged_chat_tools($project_id) !== [];
             $streamed = null;
-            if ($stream_armed && !$vertex_fed && !$openai_fed) {
+            if ($stream_armed && !$use_tool_loop) {
                 $streamed = $vertex_local
                     ? self::try_stream_vertex($messages, $max_tokens, $config, $temperature)
                     : self::try_stream_openai($messages, $max_tokens, self::resolve_openai_chat_model($config), $temperature, $project_id, $config);
@@ -3072,8 +3079,8 @@ if (!class_exists('Xabia_API')) {
             if (is_string($streamed)) {
                 $response = $streamed;
             } elseif ($vertex_local) {
-                $response = self::call_google_vertex($messages, $max_tokens, $config, $temperature, $project_id, $vertex_fed);
-            } elseif ($openai_fed) {
+                $response = self::call_google_vertex($messages, $max_tokens, $config, $temperature, $project_id, $use_tool_loop);
+            } elseif ($use_tool_loop) {
                 $response = self::call_openai_with_federation_tools($messages, $max_tokens, self::resolve_openai_chat_model($config), $temperature, $project_id, $config);
             } else {
                 $response = self::call_openai($messages, $max_tokens, self::resolve_openai_chat_model($config), $temperature, $project_id, $config);
@@ -3097,6 +3104,7 @@ if (!class_exists('Xabia_API')) {
                 return;
             }
 
+            $response = self::restore_literal_escaped_newlines((string) $response);
             $response = self::strip_llm_meta_reasoning_leaks((string) $response);
             $response = self::resolve_action_img_ids_in_response($response, $project_id);
             $response = self::resolve_action_book_tags_in_response($response, $project_id);
@@ -4688,15 +4696,90 @@ if (!class_exists('Xabia_API')) {
         }
 
         /**
-         * Chat OpenAI con function calling (ask_federated_node).
+         * Herramientas de chat: federación más las que registren los addons (Avirato, etc.).
+         *
+         * @return list<array<string, mixed>>
+         */
+        private static function merged_chat_tools(string $project_id): array {
+            $tools = [];
+            if (class_exists('Xabia_Federation_Nexus', false)) {
+                $fed = Xabia_Federation_Nexus::federation_tool_definitions();
+                if (is_array($fed)) {
+                    $tools = $fed;
+                }
+            }
+            $extra = apply_filters('xabia_chat_tool_definitions', [], $project_id);
+            if (is_array($extra)) {
+                foreach ($extra as $tool) {
+                    if (is_array($tool)) {
+                        $tools[] = $tool;
+                    }
+                }
+            }
+
+            return $tools;
+        }
+
+        /**
+         * @param array<string, mixed> $args
+         */
+        private static function dispatch_chat_tool(string $name, array $args, string $project_id, array $config): string {
+            if ($name === 'ask_federated_node') {
+                $node = sanitize_title((string) ($args['node'] ?? ''));
+                $q = sanitize_text_field((string) ($args['query'] ?? ''));
+                if ($node !== '' && $q !== '') {
+                    return function_exists('xabia_federation_ask_node')
+                        ? xabia_federation_ask_node($node, $q, $project_id)
+                        : (class_exists('Xabia_Federation_Nexus', false)
+                            ? Xabia_Federation_Nexus::ask_federated_node($node, $q, $project_id)
+                            : __('Federación no disponible.', 'xabia-intelligence'));
+                }
+
+                return __('Parámetros node o query vacíos en ask_federated_node.', 'xabia-intelligence');
+            }
+            $out = apply_filters('xabia_chat_tool_call', '', $name, $args, $project_id, $config);
+
+            return is_string($out) && $out !== '' ? $out : __('Función no reconocida.', 'xabia-intelligence');
+        }
+
+        private static function chat_tool_instruction_block(string $project_id): string {
+            $parts = [];
+            if (class_exists('Xabia_Federation_Nexus', false)) {
+                $fed = Xabia_Federation_Nexus::federation_tool_instruction_block();
+                if (is_string($fed) && trim($fed) !== '') {
+                    $parts[] = trim($fed);
+                }
+            }
+            $extra = apply_filters('xabia_chat_tool_instructions', '', $project_id);
+            if (is_string($extra) && trim($extra) !== '') {
+                $parts[] = trim($extra);
+            }
+
+            return implode("\n\n", $parts);
+        }
+
+        /**
+         * Si el modelo escribe la secuencia literal \n, conviértela en salto real
+         * antes de que un saneado de barras la deje como "nn".
+         */
+        private static function restore_literal_escaped_newlines(string $text): string {
+            if ($text === '' || strpos($text, '\\n') === false && strpos($text, '\\r') === false) {
+                return $text;
+            }
+
+            return str_replace(["\\r\\n", "\\n", "\\r"], ["\n", "\n", "\n"], $text);
+        }
+
+        /**
+         * Chat OpenAI con function calling (ask_federated_node y herramientas de addons).
          */
         private static function call_openai_with_federation_tools(array $messages, $max_tokens, $model, $temperature, $project_id, $config) {
-            $tools = Xabia_Federation_Nexus::federation_tool_definitions();
-            $extra = Xabia_Federation_Nexus::federation_tool_instruction_block();
+            $tools = self::merged_chat_tools((string) $project_id);
+            $extra = self::chat_tool_instruction_block((string) $project_id);
             if ($extra !== '' && isset($messages[0]) && ($messages[0]['role'] ?? '') === 'system') {
-                $messages[0]['content'] = ($messages[0]['content'] ?? '')
-                    . "\n\n" . $extra
-                    . "\n\n" . __('Herramienta disponible: ask_federated_node. Úsala solo si el contexto local no cubre la pregunta sobre un lugar o servicio que un nodo federado podría conocer mejor.', 'xabia-intelligence');
+                $messages[0]['content'] = ($messages[0]['content'] ?? '') . "\n\n" . $extra;
+            } elseif ($extra !== '') {
+                array_unshift($messages, ['role' => 'system', 'content' => $extra]);
             }
             $max_steps = 3;
             for ($step = 0; $step < $max_steps; $step++) {
@@ -4725,17 +4808,12 @@ if (!class_exists('Xabia_API')) {
                         $args_raw = $tc['function']['arguments'] ?? '{}';
                         $args = json_decode((string) $args_raw, true);
                         $tid = $tc['id'] ?? '';
-                        if ($fn === 'ask_federated_node' && is_array($args)) {
-                            $node = sanitize_title((string) ($args['node'] ?? ''));
-                            $q = sanitize_text_field((string) ($args['query'] ?? ''));
-                            $tool_text = $node !== '' && $q !== ''
-                                ? (function_exists('xabia_federation_ask_node')
-                                    ? xabia_federation_ask_node($node, $q, $project_id)
-                                    : Xabia_Federation_Nexus::ask_federated_node($node, $q, $project_id))
-                                : __('Parámetros node o query vacíos en ask_federated_node.', 'xabia-intelligence');
-                        } else {
-                            $tool_text = __('Función no reconocida.', 'xabia-intelligence');
-                        }
+                        $tool_text = self::dispatch_chat_tool(
+                            (string) $fn,
+                            is_array($args) ? $args : [],
+                            (string) $project_id,
+                            is_array($config) ? $config : []
+                        );
                         $messages[] = [
                             'role'         => 'tool',
                             'tool_call_id' => (string) $tid,
@@ -7851,7 +7929,7 @@ if (!class_exists('Xabia_API')) {
         private static function call_google_vertex($messages, $max_tokens, $config, $temperature, $wp_project_id = '', $enable_vertex_federation_tools = false) {
             self::$last_generation_finish_reason = '';
             $max_tokens = self::chat_max_tokens($max_tokens);
-            if ($enable_vertex_federation_tools && class_exists('Xabia_Federation_Nexus', false) && Xabia_Federation_Nexus::get_friend_nodes() !== []) {
+            if ($enable_vertex_federation_tools && self::merged_chat_tools((string) $wp_project_id) !== []) {
                 return self::call_google_vertex_federation_tool_loop($messages, (int) $max_tokens, $config, (float) $temperature, (string) $wp_project_id);
             }
 
@@ -8112,7 +8190,7 @@ if (!class_exists('Xabia_API')) {
 
             $msgs = array_values($messages);
             $conscious = class_exists('Xabia_Federation_Nexus', false) ? Xabia_Federation_Nexus::federation_vertex_consciousness_block() : '';
-            $instr = class_exists('Xabia_Federation_Nexus', false) ? Xabia_Federation_Nexus::federation_tool_instruction_block() : '';
+            $instr = self::chat_tool_instruction_block($wp_project_id);
             $extra = [];
             if ($conscious !== '') {
                 $extra[] = $conscious;
@@ -8142,7 +8220,7 @@ if (!class_exists('Xabia_API')) {
             }
             $url = "https://{$auth['location']}-aiplatform.googleapis.com/v1/projects/{$auth['project_id']}/locations/{$auth['location']}/publishers/google/models/{$model}:generateContent";
 
-            $tools_ai = class_exists('Xabia_Federation_Nexus', false) ? Xabia_Federation_Nexus::federation_tool_definitions() : [];
+            $tools_ai = self::merged_chat_tools($wp_project_id);
             $decls = self::vertex_openai_tools_to_declarations($tools_ai);
             $tool_block = [];
             if ($decls !== []) {
@@ -8217,20 +8295,7 @@ if (!class_exists('Xabia_API')) {
                 foreach ($calls as $fc) {
                     $name = $fc['name'];
                     $args = $fc['args'];
-                    $tool_text = '';
-                    if ($name === 'ask_federated_node') {
-                        $node = sanitize_title((string) ($args['node'] ?? ''));
-                        $q = sanitize_text_field((string) ($args['query'] ?? ''));
-                        if ($node !== '' && $q !== '' && function_exists('xabia_federation_ask_node')) {
-                            $tool_text = xabia_federation_ask_node($node, $q, $wp_project_id);
-                        } elseif ($node !== '' && $q !== '' && class_exists('Xabia_Federation_Nexus', false)) {
-                            $tool_text = Xabia_Federation_Nexus::ask_federated_node($node, $q, $wp_project_id);
-                        } else {
-                            $tool_text = __('Parámetros node o query vacíos.', 'xabia-intelligence');
-                        }
-                    } else {
-                        $tool_text = __('Función no reconocida.', 'xabia-intelligence');
-                    }
+                    $tool_text = self::dispatch_chat_tool($name, is_array($args) ? $args : [], $wp_project_id, $config);
                     $fr_parts[] = [
                         'functionResponse' => [
                             'name'     => $name,

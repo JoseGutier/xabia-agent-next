@@ -74,9 +74,9 @@ class Xabia_Interface {
             'web_adaptive' => [
                 'group'       => 'web',
                 'group_label' => __('Sitio web', 'xabia-intelligence'),
-                'title'       => __('Web adaptable', 'xabia-intelligence'),
-                'summary'     => __('Burbuja flotante o chat embebido en una página', 'xabia-intelligence'),
-                'hint'        => __('[xabia_agent] · launcher automático', 'xabia-intelligence'),
+                'title'       => __('Burbuja flotante', 'xabia-intelligence'),
+                'summary'     => __('Se abre en la esquina inferior derecha. Ideal para escritorio.', 'xabia-intelligence'),
+                'hint'        => __('En móvil pasa a pantalla completa automáticamente', 'xabia-intelligence'),
                 'thumb'       => 'web',
             ],
             'totem_transparent_vertical' => [
@@ -399,7 +399,7 @@ class Xabia_Interface {
             self::OPT_TRIGGER_POSITION          => 'bottom_right',
             self::OPT_TRIGGER_MARGIN_X          => '24px',
             self::OPT_TRIGGER_MARGIN_Y          => '24px',
-            self::OPT_PANEL_LAYOUT              => 'right_float',
+            self::OPT_PANEL_LAYOUT              => 'drawer',
             self::OPT_EXCLUDE_POST_TYPES        => [],
             self::OPT_EXCLUDE_IDS               => [],
             self::OPT_EXCLUDE_WOO_CART_CHECKOUT => 1,
@@ -409,6 +409,16 @@ class Xabia_Interface {
             self::OPT_SPEAKING_AVATAR            => 1,
             self::OPT_PRESENTATION_MODE          => 'web_adaptive',
         ];
+    }
+
+    /** @return list<string> */
+    public static function panel_layout_keys(): array {
+        return ['drawer', 'right_float', 'left_float', 'centered_modal', 'full_screen'];
+    }
+
+    public static function sanitize_panel_layout(string $value): string {
+        $value = sanitize_key($value);
+        return in_array($value, self::panel_layout_keys(), true) ? $value : 'drawer';
     }
 
     public static function sanitize_mobile_preset(string $value): string {
@@ -521,10 +531,7 @@ class Xabia_Interface {
             $position = 'bottom_right';
         }
 
-        $layout = sanitize_key((string) ($raw[self::OPT_PANEL_LAYOUT] ?? $defaults[self::OPT_PANEL_LAYOUT]));
-        if (!in_array($layout, ['right_float', 'left_float', 'centered_modal', 'full_screen'], true)) {
-            $layout = 'right_float';
-        }
+        $layout = self::sanitize_panel_layout((string) ($raw[self::OPT_PANEL_LAYOUT] ?? $defaults[self::OPT_PANEL_LAYOUT]));
 
         $excluded_types = [];
         if (!empty($raw[self::OPT_EXCLUDE_POST_TYPES]) && is_array($raw[self::OPT_EXCLUDE_POST_TYPES])) {
@@ -988,10 +995,7 @@ class Xabia_Interface {
             $position = 'bottom_right';
         }
 
-        $layout = sanitize_key((string) ($post['xabia_panel_layout'] ?? $defaults[self::OPT_PANEL_LAYOUT]));
-        if (!in_array($layout, ['right_float', 'left_float', 'centered_modal', 'full_screen'], true)) {
-            $layout = 'right_float';
-        }
+        $layout = self::sanitize_panel_layout((string) ($post['xabia_panel_layout'] ?? $defaults[self::OPT_PANEL_LAYOUT]));
 
         $excluded_types = [];
         if (!empty($post['xabia_exclude_post_types']) && is_array($post['xabia_exclude_post_types'])) {
@@ -1378,7 +1382,7 @@ class Xabia_Interface {
         <div class="xabia-admin-section xabia-presentation-section">
             <div class="xabia-admin-section__head">
                 <h3 class="xabia-admin-section__title"><?php echo esc_html__('¿Dónde se verá el agente?', 'xabia-intelligence'); ?></h3>
-                <p class="description"><?php echo esc_html__('Elige el formato según el soporte: web normal, tótem con cristal transparente o pantalla a pantalla completa. Solo cambian el fondo y la posición del avatar.', 'xabia-intelligence'); ?></p>
+                <p class="description"><?php echo esc_html__('Burbuja flotante para la web, o modos de pantalla dedicada (tótem). En móvil el chat pasa siempre a pantalla completa.', 'xabia-intelligence'); ?></p>
             </div>
             <input type="hidden" name="xabia_presentation_mode" id="xabia_presentation_mode" value="<?php echo esc_attr($presentation_mode); ?>">
             <?php foreach ($groups as $group_key => $group) :
@@ -1420,8 +1424,8 @@ class Xabia_Interface {
                 <p><code>[xabia_agent id="<?php echo esc_html($edit_id); ?>"]</code> · <code>/xabia-box/?x_project=<?php echo esc_html($edit_id); ?></code></p>
             </div>
             <div class="xabia-presentation-detail xabia-presentation-web-note" style="<?php echo $presentation_mode === 'web_adaptive' ? '' : 'display:none;'; ?>">
-                <strong><?php echo esc_html__('Sitio web', 'xabia-intelligence'); ?></strong>
-                <p><?php echo esc_html__('Puedes activar la burbuja flotante en todo el sitio o insertar el chat solo donde quieras con el shortcode.', 'xabia-intelligence'); ?></p>
+                <strong><?php echo esc_html__('Burbuja flotante', 'xabia-intelligence'); ?></strong>
+                <p><?php echo esc_html__('El chat se abre desde la esquina inferior derecha sin tapar toda la web. En dispositivos móviles se adapta siempre a pantalla completa de forma automática.', 'xabia-intelligence'); ?></p>
             </div>
         </div>
         <?php
@@ -1585,14 +1589,15 @@ class Xabia_Interface {
         </select>
 
         <hr style="margin:16px 0;">
-        <label for="xabia_panel_layout"><strong><?php echo esc_html__('Panel al abrir el chat', 'xabia-intelligence'); ?></strong></label>
+        <label for="xabia_panel_layout"><strong><?php echo esc_html__('Formato del chat al abrirse', 'xabia-intelligence'); ?></strong></label>
         <select name="xabia_panel_layout" id="xabia_panel_layout" class="widefat" style="max-width:400px;">
-            <option value="right_float" <?php selected($layout, 'right_float'); ?>><?php echo esc_html__('Flotante a la derecha', 'xabia-intelligence'); ?></option>
-            <option value="left_float" <?php selected($layout, 'left_float'); ?>><?php echo esc_html__('Flotante a la izquierda', 'xabia-intelligence'); ?></option>
+            <option value="drawer" <?php selected($layout, 'drawer'); ?>><?php echo esc_html__('Panel lateral deslizable (recomendado)', 'xabia-intelligence'); ?></option>
+            <option value="right_float" <?php selected($layout, 'right_float'); ?>><?php echo esc_html__('Burbuja / ventana flotante (derecha)', 'xabia-intelligence'); ?></option>
+            <option value="left_float" <?php selected($layout, 'left_float'); ?>><?php echo esc_html__('Ventana flotante (izquierda)', 'xabia-intelligence'); ?></option>
             <option value="centered_modal" <?php selected($layout, 'centered_modal'); ?>><?php echo esc_html__('Ventana centrada', 'xabia-intelligence'); ?></option>
             <option value="full_screen" <?php selected($layout, 'full_screen'); ?>><?php echo esc_html__('Pantalla amplia (avatar + chat)', 'xabia-intelligence'); ?></option>
         </select>
-        <p class="description"><?php echo esc_html__('Solo afecta al chat en web. Los modos de tótem/pantalla usan su propio diseño a pantalla completa.', 'xabia-intelligence'); ?></p>
+        <p class="description"><?php echo esc_html__('Panel lateral deslizable: ocupa el lateral derecho completo sin tapar la web (ideal para catálogos y reservas). Burbuja flotante: chat compacto en esquina. En móvil el chat pasa siempre a pantalla completa.', 'xabia-intelligence'); ?></p>
         </div>
         </div>
 

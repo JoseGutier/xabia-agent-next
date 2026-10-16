@@ -3,7 +3,7 @@
 **Versión del producto:** **v1.0.0** (lanzamiento comercial inicial)  
 **Fecha:** Abril 2026  
 **Autor:** Xabia Intelligence Center  
-**Última revisión:** Documentación alineada a **v1.0.168** (julio 2026). Histórico: **v1.0.166** (CPT por fuente, anexo remoto); **v1.0.57**; arquitectura modular **`addons/`**, idioma políglota (`lang`/`user_lang` como fallback/UI), shortcode embebido con halo/overlay, MEC remoto por addon/SQL, consola de curación CPT (modal admin, `mapping_hints`, badge «Con datos»), motor `xabia_discover_cpt_fields` y `xabia_get_deep_schema`. Referencias: [§17](#17-documentación-complementaria-manual-y-desarrollo), Playground [§7.1](#71-endpoints-ajax-admin), ZIP [§16](#16-distribución-paquete-zip-e-instalación-en-wordpress), panel [§14](#14-panel-de-administración-desarrollo-y-diseño).
+**Última revisión:** Documentación alineada a **v1.0.329** (octubre 2026) — panel admin orientado a negocio. Histórico: **v1.0.168** (latencia/caché); **v1.0.166** (CPT por fuente, anexo remoto); **v1.0.57**; arquitectura modular **`addons/`**. Referencias: [§17](#17-documentación-complementaria-manual-y-desarrollo), Playground [§7.1](#71-endpoints-ajax-admin), ZIP [§16](#16-distribución-paquete-zip-e-instalación-en-wordpress), panel [§14](#14-panel-de-administración-desarrollo-y-diseño).
 
 ---
 
@@ -635,6 +635,8 @@ Con esto se consigue: archivos en carpetas normales de WP, CSV con rutas relativ
 
 ## 12. CHANGELOG / Cambios recientes
 
+- **v1.0.329 (octubre 2026) — Panel de control para no técnicos:** pestañas **Identidad y Tono**, **Conocimiento**, **Apariencia**, **Estadísticas**, **Conversaciones**, **Reservas** (Avirato). Modelos de chat como tarjetas de propósito (Rápido y Dinámico / Analítico Avanzado). Tokens → extensión de respuesta + límite de mensajes por visitante. CTA único **Actualizar conocimiento del agente** (cadena sync→train→cloud) con progreso amigable; pasos manuales en herramientas avanzadas. Tooltips (`dashicons-editor-help` + `data-tooltip`). Filtro de idioma WPML/Polylang en el picker de páginas (`Xabia_Web_Pages_Source`). Apariencia: copy «Burbuja flotante» / «Panel lateral deslizable». Avirato **1.0.27**. Manuales Core/Avirato actualizados.
+- **v1.0.322–1.0.328:** sesión PHP lazy (caché LiteSpeed); sync CTA; límites de sesión; auto-scrape Avirato / catálogo canónico; commercial directives.
 - **v1.0.168 (julio 2026):** Optimización latencia chat — caché respuesta pre-router (`find_cached_response_for_query`), caché embeddings consulta (`Xabia_Embedding_Cache`, TTL 30 días), router cache sin `SHOW TABLES`, auxiliares LLM alineados a Vertex (`call_auxiliary_llm`), frontend sin typewriter. Motor **Document-to-RAG** agnóstico (`class-xabia-document-ingest.php`, adaptadores WP/PDO). Ver [DESARROLLO.md §4.12 y §5.1](xabia-agent-plugins/documentation/DESARROLLO.md).
 - **v1.0.166 (julio 2026):** Docs de producto alineadas; anexo/listados **agnósticos**; sidebar admin `position: static` (sin sticky). Manuales Core/MEC/Woo + DESARROLLO/DESPLIEGUE.
 - **v1.0.164–1.0.165:** Anexo dinámico de atributos mapeados en `content_chunk` remoto (`append_mapped_attributes_annex`); sin `get_post_meta` en remoto; modo lista strip del bloque `---`; utilidad/contacto → desarrollo.
@@ -684,9 +686,9 @@ Xabia puede usar **Google Cloud Vertex AI** (modelo **Gemini 2.0 Flash**) como m
 
 ### 13.1 Dónde se configura en Xabia
 
-- **Admin** → Editar agente → Pestaña **Datos** → bloque "Motor de Inteligencia (Driver)".
-- Seleccionar **Google Cloud (Vertex AI)**.
-- Campo **"Ruta absoluta JSON Google Cloud (Service Account)"**: ruta en el servidor al archivo `.json` de la cuenta de servicio (ej. `/home/usuario/auth/gcloud-key.json`).
+- **Admin** → Editar agente → Pestaña **Conocimiento** → (modo infraestructura propia) «Conexión con el servicio de IA».
+- Seleccionar **Proveedor B (cuenta de servicio)** si usa Google Cloud.
+- Campo de **archivo de credenciales**: ruta en el servidor al `.json` de la cuenta de servicio (ej. `/home/usuario/auth/gcloud-key.json`).
 - El valor se guarda en la configuración del proyecto: `xabia_projects_config[$id]['gcloud_json_path']` (no dentro de `design`).
 
 **Código**:

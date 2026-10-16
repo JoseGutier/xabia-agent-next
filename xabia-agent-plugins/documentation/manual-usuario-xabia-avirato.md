@@ -5,8 +5,8 @@
 1. Instale y active **Xabia Agent Core**.
 2. Instale y active el ZIP **Xabia Avirato** desde **Plugins → Añadir nuevo → Subir plugin**.
 3. En **Xabia Agent → Addons**, active o sincronice la licencia del addon **Avirato** hasta que el Hub la reconozca.
-4. Cree o edite el agente que usará reservas y abra la pestaña **Avirato**.
-5. Introduzca el **ID de establecimiento (webcode)**, la **URL del motor** y, si hace falta, filtros de inclusión/exclusión.
+4. Cree o edite el agente que usará reservas y abra la pestaña **Reservas**.
+5. Introduzca el **código del establecimiento**, el **nombre que usará el asistente**, el **enlace del motor** y, si hace falta, filtros avanzados de casas.
 6. Guarde el agente y pruebe disponibilidad con fechas reales en **Playground**.
 7. Publique el chat con shortcode o con la interfaz nativa del Core.
 8. Verifique que los enlaces de reserva abren el motor Avirato con fechas e IDs correctos.
@@ -65,7 +65,7 @@ Sin este addon, un asistente con IA puede **inventar** disponibilidad o remitir 
 
 ### 2.4 Comprobar que el addon está reconocido
 
-En **Xabia Agent → Addons** puede ver **Xabia Avirato** en las tarjetas, **introducir o revisar la clave de licencia del addon** (validación Hub) y acceder a la **tienda Polar** ([polar.sh/xabia](https://polar.sh/xabia)) y al **portal del cliente** ([polar.sh/xabia/portal](https://polar.sh/xabia/portal)) para suscripciones. Normalmente el addon **no tiene un menú propio aparte**: el **ID de establecimiento**, URL del motor y filtros se configuran **dentro de cada agente**, en la pestaña **Avirato** (véase más abajo).
+En **Xabia Agent → Addons** puede ver **Xabia Avirato** en las tarjetas, **introducir o revisar la clave de licencia del addon** (validación Hub) y acceder a la **tienda Polar** ([polar.sh/xabia](https://polar.sh/xabia)) y al **portal del cliente** ([polar.sh/xabia/portal](https://polar.sh/xabia/portal)) para suscripciones. Normalmente el addon **no tiene un menú propio aparte**: el **código del establecimiento**, URL del motor y filtros se configuran **dentro de cada agente**, en la pestaña **Reservas** (véase más abajo).
 
 > 📢 **Nota sobre tarifas:** el precio de la suscripción Avirato (y del resto de addons) se actualiza en tiempo real en **[https://xabia.ai/precio](https://xabia.ai/precio)**. En el panel de Addons verá un texto orientativo, no una tarifa fija impresa.
 
@@ -77,7 +77,7 @@ En **Xabia Agent → Addons** puede ver **Xabia Avirato** en las tarjetas, **int
 
 1. **Xabia Agent** (o el nombre del menú que use su instalación para el Core).
 2. Edite el **agente / proyecto** que debe usar Avirato (cada sitio puede tener varios agentes).
-3. Busque la pestaña **«Avirato»** en la ficha del agente.
+3. Busque la pestaña **«Reservas»** en la ficha del agente (conexión con el motor de reservas).
 
 ### 3.2 Cómo se guardan los datos
 

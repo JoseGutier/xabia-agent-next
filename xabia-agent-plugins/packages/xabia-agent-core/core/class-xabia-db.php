@@ -1048,6 +1048,132 @@ class Xabia_DB {
     }
 
     /**
+     * Catálogo canónico de entes del proyecto (ente_id + nombre legible).
+     * Cacheado 12 h en transient xabia_canonical_entities_{project_id}.
+     *
+     * @return list<array{ente_id: string, display: string}>
+     */
+    public static function get_project_canonical_entities(string $project_id): array {
+        $project_id = trim(sanitize_text_field($project_id));
+        if ($project_id === '') {
+            return [];
+        }
+        $cache_key = 'xabia_canonical_entities_' . md5($project_id);
+        $cached = get_transient($cache_key);
+        if (is_array($cached)) {
+            $out = [];
+            foreach ($cached as $row) {
+                if (!is_array($row)) {
+                    continue;
+                }
+                $id = trim((string) ($row['ente_id'] ?? ''));
+                $display = trim((string) ($row['display'] ?? ''));
+                if ($id !== '' && $id !== 'global') {
+                    $out[] = ['ente_id' => $id, 'display' => $display !== '' ? $display : $id];
+                }
+            }
+
+            return $out;
+        }
+
+        global $wpdb;
+        if (!isset($wpdb) || !($wpdb instanceof wpdb)) {
+            return [];
+        }
+        $table = self::resolve_knowledge_catalog_table($project_id);
+        $table = preg_replace('/[^a-z0-9_]/i', '', (string) $table);
+        if ($table === '') {
+            return [];
+        }
+        $meta_col = self::knowledge_vectors_meta_column();
+        $meta_col = preg_replace('/[^a-z0-9_]/i', '', (string) $meta_col);
+        if ($meta_col === '') {
+            $meta_col = 'meta_data';
+        }
+
+        // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+        $rows = $wpdb->get_results($wpdb->prepare(
+            "SELECT ente_id, `{$meta_col}` AS meta_blob, content_chunk
+             FROM `{$table}`
+             WHERE project_id = %s AND ente_id IS NOT NULL AND ente_id <> '' AND ente_id <> 'global'
+             ORDER BY id DESC",
+            $project_id
+        ), ARRAY_A);
+
+        $by_id = [];
+        if (is_array($rows)) {
+            foreach ($rows as $row) {
+                if (!is_array($row)) {
+                    continue;
+                }
+                $ente_id = trim((string) ($row['ente_id'] ?? ''));
+                if ($ente_id === '' || $ente_id === 'global' || isset($by_id[$ente_id])) {
+                    continue;
+                }
+                $display = '';
+                $meta = [];
+                if (!empty($row['meta_blob'])) {
+                    $decoded = json_decode((string) $row['meta_blob'], true);
+                    if (is_array($decoded)) {
+                        $meta = $decoded;
+                        $display = trim((string) ($decoded['__ente_display'] ?? ''));
+                    }
+                }
+                if ($display === '' && class_exists('Xabia_DB_Bridge', false)) {
+                    $display = trim((string) Xabia_DB_Bridge::get_stored_ente_display($project_id, $ente_id));
+                }
+                if ($display === '' || $display === $ente_id) {
+                    if (preg_match('/EMPRESA:\s*(.+)/u', (string) ($row['content_chunk'] ?? ''), $m) === 1) {
+                        $display = trim((string) $m[1]);
+                    }
+                }
+                if ($display === '') {
+                    $display = $ente_id;
+                }
+                unset($meta);
+                $by_id[$ente_id] = ['ente_id' => $ente_id, 'display' => $display];
+            }
+        }
+
+        $out = array_values($by_id);
+        usort($out, static function (array $a, array $b): int {
+            return strcasecmp((string) $a['display'], (string) $b['display']);
+        });
+        set_transient($cache_key, $out, 12 * HOUR_IN_SECONDS);
+
+        return $out;
+    }
+
+    /**
+     * Bloque de prompt con el catálogo canónico + regla de resolución fonética.
+     */
+    public static function format_canonical_entities_prompt_block(string $project_id): string {
+        $entities = self::get_project_canonical_entities($project_id);
+        if ($entities === []) {
+            return '';
+        }
+        $names = [];
+        foreach ($entities as $e) {
+            $display = trim((string) ($e['display'] ?? ''));
+            if ($display !== '') {
+                $names[] = $display;
+            }
+        }
+        $names = array_values(array_unique($names));
+        if ($names === []) {
+            return '';
+        }
+        $list = implode(', ', $names);
+
+        return "[CATÁLOGO CANÓNICO DE ENTES DEL PROYECTO]\n"
+            . "Entes registrados: {$list}\n\n"
+            . "REGLA DE RESOLUCIÓN DE ENTIDAD:\n"
+            . "El usuario puede comunicarse por voz o cometer erratas ortográficas. "
+            . "Si menciona un término fonéticamente similar, aproximado o dividido en varias palabras por reconocimiento de voz "
+            . "(ej. «Garay se» → «GARAIXE»), asígnalo siempre al Ente Canónico correspondiente de esta lista antes de responder.";
+    }
+
+    /**
      * Empresas distintas (ente_id) con ficha EMPRESA en una tabla de conocimiento.
      */
     public static function count_catalog_empresa_rows(string $project_id, ?string $table = null): int {
