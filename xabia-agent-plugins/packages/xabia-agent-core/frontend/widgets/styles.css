@@ -395,6 +395,95 @@
 .xabia-msg.bot .xabia-entity-card__cta:hover {
     filter: brightness(1.05);
 }
+.xabia-msg.bot .xabia-entity-card__cta.is-added {
+    background: #15803d;
+}
+.xabia-msg.bot .xabia-entity-card__shop {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    width: 100%;
+    min-width: 0;
+}
+.xabia-msg.bot .xabia-entity-card__qty {
+    display: inline-flex;
+    align-items: center;
+    align-self: flex-start;
+    gap: 0;
+    border: 1px solid rgba(0, 0, 0, 0.12);
+    border-radius: 8px;
+    overflow: hidden;
+    background: #f9fafb;
+}
+.xabia-msg.bot .xabia-entity-card__qty-btn {
+    width: 32px;
+    height: 32px;
+    border: 0;
+    background: transparent;
+    color: #111;
+    font-size: 1.05em;
+    font-weight: 600;
+    line-height: 1;
+    cursor: pointer;
+    padding: 0;
+}
+.xabia-msg.bot .xabia-entity-card__qty-btn:hover {
+    background: rgba(0, 0, 0, 0.05);
+}
+.xabia-msg.bot .xabia-entity-card__qty-input {
+    width: 36px;
+    height: 32px;
+    border: 0;
+    border-left: 1px solid rgba(0, 0, 0, 0.08);
+    border-right: 1px solid rgba(0, 0, 0, 0.08);
+    background: #fff;
+    text-align: center;
+    font-size: 0.9em;
+    font-weight: 600;
+    color: #111;
+    -moz-appearance: textfield;
+    appearance: textfield;
+}
+.xabia-msg.bot .xabia-entity-card__qty-input::-webkit-outer-spin-button,
+.xabia-msg.bot .xabia-entity-card__qty-input::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+}
+.xabia-msg.bot .xabia-entity-card__shop-actions {
+    display: grid;
+    grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.3fr);
+    gap: 8px;
+    width: 100%;
+    min-width: 0;
+}
+.xabia-msg.bot .xabia-entity-card__shop-actions .xabia-entity-card__info:only-child,
+.xabia-msg.bot .xabia-entity-card__shop-actions .xabia-entity-card__cta:only-child {
+    grid-column: 1 / -1;
+}
+.xabia-msg.bot .xabia-entity-card__info {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-sizing: border-box;
+    padding: 9px 10px;
+    border-radius: 10px;
+    border: 1px solid rgba(0, 0, 0, 0.14);
+    background: #fff;
+    color: #111 !important;
+    font-weight: 600;
+    font-size: 0.84em;
+    text-decoration: none;
+    text-align: center;
+    line-height: 1.2;
+    cursor: pointer;
+}
+.xabia-msg.bot .xabia-entity-card__info:hover {
+    background: #f3f4f6;
+}
+.xabia-msg.bot .xabia-entity-card__shop-actions .xabia-entity-card__cta {
+    width: 100%;
+    margin: 0;
+}
 @media (max-width: 420px) {
     .xabia-msg.bot .xabia-entity-card {
         grid-template-columns: 44px minmax(0, 1fr);

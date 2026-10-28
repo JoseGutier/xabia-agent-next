@@ -617,7 +617,12 @@
                 p: String(data.p || data.price || '').trim(),
                 i: String(data.i || data.img || '').trim(),
                 a: String(data.a || data.action || '').trim(),
-                l: String(data.l || data.label || '').trim()
+                l: String(data.l || data.label || '').trim(),
+                u: String(data.u || data.permalink || '').trim(),
+                cu: String(data.cu || data.cart_url || '').trim(),
+                ck: String(data.ck || data.checkout_url || '').trim(),
+                rd: String(data.rd || data.redirect_behavior || '').trim(),
+                mx: String(data.mx || data.max_qty || '').trim()
             };
         } catch (e) {
             return null;
@@ -632,17 +637,6 @@
         if (!m) return '';
         var kind = String(m[1] || '').toUpperCase();
         var rest = String(m[2] || '').trim();
-        if (kind === 'CART') {
-            var pid = rest.replace(/\D/g, '');
-            if (!pid) return '';
-            var wc = window.xabiaWooCart || {};
-            var cartLbl = lbl || wc.checkoutLabel || xabiaI18n('actionBuyNow', 'Comprar ahora');
-            if (wc.mode === 'redirect' && wc.urlTemplate && String(wc.urlTemplate).indexOf('{id}') !== -1) {
-                var href = String(wc.urlTemplate).split('{id}').join(pid);
-                return '<a href="' + escAttr(href) + '" class="xabia-entity-card__cta xabia-btn-cart-remote" target="_blank" rel="noopener">' + escAttr(cartLbl) + '</a>';
-            }
-            return '<button type="button" class="xabia-entity-card__cta xabia-btn-cart" data-id="' + escAttr(pid) + '">' + escAttr(cartLbl || xabiaI18n('actionAddToCart', 'Añadir al carrito')) + '</button>';
-        }
         if (kind === 'CART_PACK') {
             var parts = rest.split('|');
             var idsPart = (parts[0] || '').trim();
@@ -692,6 +686,48 @@
         return '';
     }
 
+    function renderShopPurchaseModuleHtml(card, escAttr) {
+        var a = String(card.a || '').trim();
+        var m = a.match(/^CART:(.*)$/i);
+        if (!m) return '';
+        var pid = String(m[1] || '').replace(/\D/g, '');
+        if (!pid) return '';
+        var wc = window.xabiaWooCart || {};
+        var buyLbl = String(card.l || '').trim() || wc.buyLabel || wc.checkoutLabel || xabiaI18n('actionBuy', 'Comprar');
+        var infoLbl = wc.infoLabel || xabiaI18n('actionMoreInfo', '+ Info');
+        var maxQty = parseInt(card.mx || '99', 10);
+        if (isNaN(maxQty) || maxQty < 1) maxQty = 99;
+        if (maxQty > 99) maxQty = 99;
+        var redirect = (card.rd === '1' || card.rd === 'true' || wc.redirectAfterAdd) ? '1' : '0';
+        var permalink = String(card.u || '').trim();
+        var cartUrl = String(card.cu || wc.cartUrl || '').trim();
+        var checkoutUrl = String(card.ck || wc.checkoutUrl || '').trim();
+        var qtyHtml = '<div class="xabia-entity-card__qty" role="group" aria-label="' + escAttr(xabiaI18n('actionQuantity', 'Cantidad')) + '">'
+            + '<button type="button" class="xabia-entity-card__qty-btn" data-dir="-" aria-label="-">−</button>'
+            + '<input type="number" class="xabia-entity-card__qty-input" value="1" min="1" max="' + escAttr(String(maxQty)) + '" inputmode="numeric" aria-label="' + escAttr(xabiaI18n('actionQuantity', 'Cantidad')) + '">'
+            + '<button type="button" class="xabia-entity-card__qty-btn" data-dir="+" aria-label="+">+</button>'
+            + '</div>';
+        var infoHtml = permalink
+            ? '<a class="xabia-entity-card__info" href="' + escAttr(permalink) + '" target="_blank" rel="noopener">' + escAttr(infoLbl) + '</a>'
+            : '';
+        var buyHtml;
+        if (wc.mode === 'redirect' && wc.urlTemplate && String(wc.urlTemplate).indexOf('{id}') !== -1) {
+            var href = String(wc.urlTemplate).split('{id}').join(pid).split('{qty}').join('1');
+            buyHtml = '<a href="' + escAttr(href) + '" class="xabia-entity-card__cta xabia-btn-cart xabia-btn-cart-remote" data-id="' + escAttr(pid) + '" data-url-template="' + escAttr(String(wc.urlTemplate)) + '" target="_blank" rel="noopener">' + escAttr(buyLbl) + '</a>';
+        } else {
+            buyHtml = '<button type="button" class="xabia-entity-card__cta xabia-btn-cart" data-id="' + escAttr(pid) + '">' + escAttr(buyLbl) + '</button>';
+        }
+        return '<div class="xabia-entity-card__shop"'
+            + ' data-product-id="' + escAttr(pid) + '"'
+            + ' data-redirect="' + escAttr(redirect) + '"'
+            + ' data-cart-url="' + escAttr(cartUrl) + '"'
+            + ' data-checkout-url="' + escAttr(checkoutUrl) + '"'
+            + ' data-max="' + escAttr(String(maxQty)) + '">'
+            + qtyHtml
+            + '<div class="xabia-entity-card__shop-actions">' + infoHtml + buyHtml + '</div>'
+            + '</div>';
+    }
+
     function renderActionCardHtml(raw, imagesBase, escAttr, decodeHtmlEntities) {
         var card = decodeActionCardPayload(raw);
         if (!card || !card.t) return '';
@@ -707,9 +743,23 @@
             + (card.m ? '<div class="xabia-entity-card__meta">' + escAttr(card.m) + '</div>' : '')
             + (card.p ? '<div class="xabia-entity-card__price">' + escAttr(card.p) + '</div>' : '')
             + '</div>';
-        var cta = renderCardCtaHtml(card.a, card.l, escAttr, decodeHtmlEntities);
-        var ctaWrap = cta ? '<div class="xabia-entity-card__actions">' + cta + '</div>' : '';
-        return '<div class="xabia-entity-card">' + imgHtml + body + ctaWrap + '</div>';
+        var isCart = /^CART:/i.test(String(card.a || ''));
+        var shopHtml = '';
+        if (isCart) {
+            shopHtml = renderShopPurchaseModuleHtml(card, escAttr);
+        } else if (card.u) {
+            // Modo solo información (producto no comprable / sin stock): + Info sin Comprar roto.
+            var wcInfo = window.xabiaWooCart || {};
+            var infoOnlyLbl = wcInfo.infoLabel || xabiaI18n('actionMoreInfo', '+ Info');
+            shopHtml = '<div class="xabia-entity-card__shop xabia-entity-card__shop--info-only">'
+                + '<div class="xabia-entity-card__shop-actions">'
+                + '<a class="xabia-entity-card__info" href="' + escAttr(card.u) + '" target="_blank" rel="noopener">' + escAttr(infoOnlyLbl) + '</a>'
+                + '</div></div>';
+        }
+        var cta = shopHtml ? '' : renderCardCtaHtml(card.a, card.l, escAttr, decodeHtmlEntities);
+        var ctaWrap = (shopHtml || cta) ? '<div class="xabia-entity-card__actions">' + (shopHtml || cta) + '</div>' : '';
+        var shopClass = shopHtml ? ' xabia-entity-card--shop' : '';
+        return '<div class="xabia-entity-card' + shopClass + '">' + imgHtml + body + ctaWrap + '</div>';
     }
 
     /**
@@ -3015,11 +3065,71 @@
             });
         }
 
+        function xabiaCardQtyValue($shop) {
+            var $input = $shop.find('.xabia-entity-card__qty-input').first();
+            var max = parseInt($shop.attr('data-max') || $input.attr('max') || '99', 10);
+            if (isNaN(max) || max < 1) max = 99;
+            var n = parseInt($input.val(), 10);
+            if (isNaN(n) || n < 1) n = 1;
+            if (n > max) n = max;
+            $input.val(String(n));
+            return n;
+        }
+
+        $(document).on('click', '.xabia-entity-card__qty-btn', function(e) {
+            e.preventDefault();
+            var $btn = $(this);
+            var $shop = $btn.closest('.xabia-entity-card__shop');
+            var $input = $shop.find('.xabia-entity-card__qty-input').first();
+            var max = parseInt($shop.attr('data-max') || $input.attr('max') || '99', 10);
+            if (isNaN(max) || max < 1) max = 99;
+            var n = parseInt($input.val(), 10);
+            if (isNaN(n) || n < 1) n = 1;
+            if ($btn.attr('data-dir') === '+') n += 1;
+            else n -= 1;
+            if (n < 1) n = 1;
+            if (n > max) n = max;
+            $input.val(String(n));
+            var $remote = $shop.find('a.xabia-btn-cart-remote');
+            if ($remote.length) {
+                var tpl = String($remote.attr('data-url-template') || '');
+                var pid = String($remote.attr('data-id') || '');
+                if (tpl && pid && tpl.indexOf('{id}') !== -1) {
+                    $remote.attr('href', tpl.split('{id}').join(pid).split('{qty}').join(String(n)));
+                }
+            }
+        });
+
+        $(document).on('change input', '.xabia-entity-card__qty-input', function() {
+            var $input = $(this);
+            var $shop = $input.closest('.xabia-entity-card__shop');
+            xabiaCardQtyValue($shop);
+            var $remote = $shop.find('a.xabia-btn-cart-remote');
+            if ($remote.length) {
+                var tpl = String($remote.attr('data-url-template') || '');
+                var pid = String($remote.attr('data-id') || '');
+                var n = xabiaCardQtyValue($shop);
+                if (tpl && pid && tpl.indexOf('{id}') !== -1) {
+                    $remote.attr('href', tpl.split('{id}').join(pid).split('{qty}').join(String(n)));
+                }
+            }
+        });
+
         $(document).on('click', 'a.xabia-btn-cart-remote', function() {
-            var href = String($(this).attr('href') || '');
+            var $a = $(this);
+            var $shop = $a.closest('.xabia-entity-card__shop');
+            if ($shop.length) {
+                var qty = xabiaCardQtyValue($shop);
+                var tpl = String($a.attr('data-url-template') || '');
+                var pid = String($a.attr('data-id') || '');
+                if (tpl && pid && tpl.indexOf('{id}') !== -1) {
+                    $a.attr('href', tpl.split('{id}').join(pid).split('{qty}').join(String(qty)));
+                }
+            }
+            var href = String($a.attr('href') || '');
             var m = href.match(/(?:add-to-cart=)(\d+)/i);
-            var id = m ? m[1] : '';
-            var $box = $(this).closest('.xabia-chatbox');
+            var id = m ? m[1] : String($a.attr('data-id') || '');
+            var $box = $a.closest('.xabia-chatbox');
             var proj = $box.length ? String($box.data('project') || 'default') : ((window.XabiaSettings && window.XabiaSettings.projectId) ? String(window.XabiaSettings.projectId) : 'default');
             if (id && window.xabiaWooCartIntent) {
                 window.xabiaWooCartIntent.recordSingle(proj, id, '');
@@ -3045,11 +3155,11 @@
         });
 
         $(document).on('click', '.xabia-btn-cart', function(e) {
-            e.preventDefault();
             var $btn = $(this);
             if ($btn.is('a')) {
                 return;
             }
+            e.preventDefault();
             if ($btn.prop('disabled')) return;
             var wc = window.xabiaWooCart;
             if (!wc || !wc.ajaxUrl || !wc.nonce || !wc.action) {
@@ -3058,35 +3168,60 @@
             }
             var productId = parseInt($btn.attr('data-id'), 10);
             if (!productId) return;
+            var $shop = $btn.closest('.xabia-entity-card__shop');
+            var quantity = $shop.length ? xabiaCardQtyValue($shop) : 1;
             var $box = $btn.closest('.xabia-chatbox');
             var $history = messagesStream($box);
-            var avatarName = $box.data('avatarName') || 'Xabia';
+            var originalLabel = $btn.text();
             $btn.prop('disabled', true);
+            var pageLang = '';
+            try {
+                pageLang = String(wc.lang || document.documentElement.lang || '').trim();
+            } catch (eLang) {
+                pageLang = String(wc.lang || '').trim();
+            }
             $.post(wc.ajaxUrl, {
                 action: wc.action,
                 nonce: wc.nonce,
                 product_id: productId,
+                quantity: quantity,
+                lang: pageLang,
                 xabia_project_id: $box.data('project') || 'default'
             }).done(function(r) {
                 if (r.success && r.data) {
-                    var msg = (r.data.message || wc.addedMsg || xabiaI18n('productAdded', '¡Producto añadido!'));
+                    var msg = (r.data.message || wc.addedMsg || xabiaI18n('productAdded', '¡Añadido!'));
                     var proj = String($box.data('project') || (window.XabiaSettings && window.XabiaSettings.projectId) || 'default');
                     if (window.xabiaWooCartIntent) {
                         window.xabiaWooCartIntent.recordSingle(proj, productId, '');
                     }
-                    var $row = $('<div class="xabia-msg bot xabia-msg-system"></div>');
-                    $row.append($('<span class="xabia-msg-content"></span>').text(msg));
-                    $history.append($row);
-                    scrollMessages($box);
+                    var shouldRedirect = false;
+                    if ($shop.length && $shop.attr('data-redirect') === '1') shouldRedirect = true;
+                    if (r.data.redirect_behavior === true || r.data.redirect_behavior === 1 || r.data.redirect_behavior === '1') shouldRedirect = true;
+                    if (wc.redirectAfterAdd) shouldRedirect = true;
+                    var goUrl = '';
+                    if (shouldRedirect) {
+                        goUrl = String(r.data.cart_url || ($shop.length ? $shop.attr('data-cart-url') : '') || wc.cartUrl || r.data.checkout_url || wc.checkoutUrl || '').trim();
+                    }
+                    if (goUrl) {
+                        window.location.href = goUrl;
+                        return;
+                    }
+                    $btn.text(msg);
+                    $btn.addClass('is-added');
+                    window.setTimeout(function() {
+                        $btn.text(originalLabel);
+                        $btn.removeClass('is-added');
+                        $btn.prop('disabled', false);
+                    }, 1800);
                 } else {
                     var err = (r.data && r.data.message) ? r.data.message : xabiaI18n('errorGeneric', 'Error');
                     $history.append('<div class="xabia-msg bot" style="color:#b32d2e">' + $('<div/>').text(err).html() + '</div>');
                     scrollMessages($box);
+                    $btn.prop('disabled', false);
                 }
             }).fail(function() {
                 $history.append($('<div class="xabia-msg bot" style="color:#b32d2e"></div>').text(xabiaI18n('networkError', 'Error de red.')));
                 scrollMessages($box);
-            }).always(function() {
                 $btn.prop('disabled', false);
             });
         });

@@ -20,7 +20,12 @@ $tag = Xabia_Action_Card::encode([
     'p' => '24.90 €',
     'i' => 'https://example.com/img.jpg',
     'a' => 'CART:101',
-    'l' => 'Comprar ahora',
+    'l' => 'Comprar',
+    'u' => 'https://example.com/product/vena/',
+    'cu' => 'https://example.com/cart/',
+    'ck' => 'https://example.com/checkout/',
+    'rd' => '1',
+    'mx' => '12',
 ]);
 assert(str_starts_with($tag, '[ACTION:CARD:') && str_ends_with($tag, ']'), 'tag shape');
 $raw = substr($tag, strlen('[ACTION:CARD:'), -1);
@@ -29,6 +34,11 @@ assert(is_array($decoded), 'decode ok');
 assert($decoded['t'] === 'VENALIGHT PLUS botilak', 'title');
 assert($decoded['a'] === 'CART:101', 'action');
 assert($decoded['i'] === 'https://example.com/img.jpg', 'img');
+assert($decoded['u'] === 'https://example.com/product/vena/', 'permalink');
+assert($decoded['cu'] === 'https://example.com/cart/', 'cart url');
+assert($decoded['ck'] === 'https://example.com/checkout/', 'checkout url');
+assert($decoded['rd'] === '1', 'redirect flag');
+assert($decoded['mx'] === '12', 'max qty');
 
 $bad = Xabia_Action_Card::encode(['t' => '']);
 assert($bad === '', 'empty title rejected');

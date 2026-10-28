@@ -9,6 +9,11 @@
  * - i: URL imagen
  * - a: acción CTA (CART:123 | CART_PACK:1,2 | URL:https://… | CALL:+34… | BOOK:…)
  * - l: etiqueta del botón
+ * - u: permalink / ficha (opcional)
+ * - cu: URL carrito (opcional)
+ * - ck: URL checkout (opcional)
+ * - rd: redirect tras add («1»/«0», opcional)
+ * - mx: cantidad máxima (opcional)
  *
  * @package Xabia
  */
@@ -20,7 +25,7 @@ if (!defined('ABSPATH')) {
 class Xabia_Action_Card {
 
     /**
-     * @param array{t?:string,m?:string,p?:string,i?:string,a?:string,l?:string,title?:string,meta?:string,price?:string,img?:string,action?:string,label?:string} $fields
+     * @param array<string, mixed> $fields
      */
     public static function encode(array $fields): string {
         $payload = [
@@ -30,6 +35,11 @@ class Xabia_Action_Card {
             'i' => self::clean_url($fields['i'] ?? $fields['img'] ?? ''),
             'a' => self::clean_action($fields['a'] ?? $fields['action'] ?? ''),
             'l' => self::clean_field($fields['l'] ?? $fields['label'] ?? ''),
+            'u' => self::clean_url($fields['u'] ?? $fields['permalink'] ?? ''),
+            'cu' => self::clean_url($fields['cu'] ?? $fields['cart_url'] ?? ''),
+            'ck' => self::clean_url($fields['ck'] ?? $fields['checkout_url'] ?? ''),
+            'rd' => self::clean_flag($fields['rd'] ?? $fields['redirect_behavior'] ?? ''),
+            'mx' => self::clean_qty($fields['mx'] ?? $fields['max_qty'] ?? ''),
         ];
         $payload = array_filter($payload, static function ($v) {
             return is_string($v) && $v !== '';
@@ -48,7 +58,7 @@ class Xabia_Action_Card {
     }
 
     /**
-     * @return array{t:string,m:string,p:string,i:string,a:string,l:string}|null
+     * @return array{t:string,m:string,p:string,i:string,a:string,l:string,u:string,cu:string,ck:string,rd:string,mx:string}|null
      */
     public static function decode(string $raw): ?array {
         $raw = trim($raw);
@@ -64,12 +74,17 @@ class Xabia_Action_Card {
             return null;
         }
         $out = [
-            't' => self::clean_field($data['t'] ?? $data['title'] ?? ''),
-            'm' => self::clean_field($data['m'] ?? $data['meta'] ?? ''),
-            'p' => self::clean_field($data['p'] ?? $data['price'] ?? ''),
-            'i' => self::clean_url($data['i'] ?? $data['img'] ?? ''),
-            'a' => self::clean_action($data['a'] ?? $data['action'] ?? ''),
-            'l' => self::clean_field($data['l'] ?? $data['label'] ?? ''),
+            't'  => self::clean_field($data['t'] ?? $data['title'] ?? ''),
+            'm'  => self::clean_field($data['m'] ?? $data['meta'] ?? ''),
+            'p'  => self::clean_field($data['p'] ?? $data['price'] ?? ''),
+            'i'  => self::clean_url($data['i'] ?? $data['img'] ?? ''),
+            'a'  => self::clean_action($data['a'] ?? $data['action'] ?? ''),
+            'l'  => self::clean_field($data['l'] ?? $data['label'] ?? ''),
+            'u'  => self::clean_url($data['u'] ?? $data['permalink'] ?? ''),
+            'cu' => self::clean_url($data['cu'] ?? $data['cart_url'] ?? ''),
+            'ck' => self::clean_url($data['ck'] ?? $data['checkout_url'] ?? ''),
+            'rd' => self::clean_flag($data['rd'] ?? $data['redirect_behavior'] ?? ''),
+            'mx' => self::clean_qty($data['mx'] ?? $data['max_qty'] ?? ''),
         ];
         if ($out['t'] === '') {
             return null;
@@ -109,6 +124,30 @@ class Xabia_Action_Card {
         $s = str_replace(['[', ']'], '', $s);
 
         return function_exists('mb_substr') ? mb_substr($s, 0, 600, 'UTF-8') : substr($s, 0, 600);
+    }
+
+    private static function clean_flag($v): string {
+        if (is_bool($v)) {
+            return $v ? '1' : '0';
+        }
+        $s = strtolower(trim((string) $v));
+        if ($s === '1' || $s === 'yes' || $s === 'true') {
+            return '1';
+        }
+        if ($s === '0' || $s === 'no' || $s === 'false') {
+            return '0';
+        }
+
+        return '';
+    }
+
+    private static function clean_qty($v): string {
+        $n = (int) preg_replace('/\D+/', '', (string) $v);
+        if ($n < 1) {
+            return '';
+        }
+
+        return (string) min(99, $n);
     }
 
     private static function b64url_encode(string $bin): string {
