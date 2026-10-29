@@ -26,6 +26,12 @@ class Xabia_Interface {
     /** @var list<string> */
     private static $rendered_chatbox = [];
 
+    /** Proyectos citados por [xabia_search_bar] en esta petición. */
+    /** @var list<string> */
+    private static $search_bar_projects = [];
+
+    private static bool $park_next_chatbox = false;
+
     /** @var list<string> */
     private static $overlays_rendered = [];
 
@@ -52,6 +58,8 @@ class Xabia_Interface {
     public const OPT_SPEAKING_AVATAR            = 'speaking_avatar';
     /** web_adaptive | totem_transparent_vertical | totem_transparent_horizontal | screen_vertical | screen_horizontal */
     public const OPT_PRESENTATION_MODE          = 'presentation_mode';
+    /** light | dark | auto. Claro por defecto. */
+    public const OPT_COLOR_SCHEME               = 'color_scheme';
 
     /** @return list<string> */
     public static function presentation_mode_keys(): array {
@@ -283,6 +291,18 @@ class Xabia_Interface {
         if ($text === '') {
             return;
         }
+        if (preg_match_all('/\[xabia_search_bar\b([^\]]*)\]/i', $text, $search_matches, PREG_SET_ORDER)) {
+            $search_file = XABIA_PATH . 'frontend/widgets/search-bar.php';
+            if (is_readable($search_file)) {
+                require_once $search_file;
+            }
+            foreach ($search_matches as $search_match) {
+                $search_atts = shortcode_parse_atts($search_match[1] ?? '') ?: [];
+                $search_id = isset($search_atts['id']) ? sanitize_key((string) $search_atts['id']) : 'default';
+                self::note_search_bar_project($search_id);
+            }
+        }
+
         if (!preg_match_all('/\[xabia_(?:agent|chat|launcher|avatar)\b([^\]]*)\]/i', $text, $matches, PREG_SET_ORDER)) {
             return;
         }
@@ -408,7 +428,58 @@ class Xabia_Interface {
             self::OPT_MOBILE_PRESET              => 'compact',
             self::OPT_SPEAKING_AVATAR            => 1,
             self::OPT_PRESENTATION_MODE          => 'web_adaptive',
+            self::OPT_COLOR_SCHEME               => 'light',
         ];
+    }
+
+    public static function sanitize_color_scheme(string $value): string {
+        $value = sanitize_key($value);
+        return in_array($value, ['light', 'dark', 'auto'], true) ? $value : 'light';
+    }
+
+    /**
+     * Atributos de tema. Claro no pone data-theme; Oscuro pone data-theme="dark";
+     * Automático lo resuelve un script con prefers-color-scheme.
+     */
+    public static function color_scheme_attributes(string $scheme): string {
+        $scheme = self::sanitize_color_scheme($scheme);
+        $html = ' data-color-scheme="' . esc_attr($scheme) . '"';
+        if ($scheme === 'dark') {
+            $html .= ' data-theme="dark"';
+        }
+        return $html;
+    }
+
+    public static function has_rendered_chatbox(string $project_id): bool {
+        return in_array(sanitize_key($project_id), self::$rendered_chatbox, true);
+    }
+
+    public static function park_next_chatbox(): void {
+        self::$park_next_chatbox = true;
+    }
+
+    public static function consume_park_next_chatbox(): bool {
+        $park = self::$park_next_chatbox;
+        self::$park_next_chatbox = false;
+        return $park;
+    }
+
+    /**
+     * @return list<string>
+     */
+    public static function search_bar_project_ids(): array {
+        return self::$search_bar_projects;
+    }
+
+    public static function note_search_bar_project(string $project_id): void {
+        $project_id = sanitize_key($project_id);
+        if ($project_id === '' || self::is_project_paused($project_id)) {
+            return;
+        }
+        if (!in_array($project_id, self::$search_bar_projects, true)) {
+            self::$search_bar_projects[] = $project_id;
+        }
+        self::enqueue_chatbox_assets_for_registered($project_id);
     }
 
     /** @return list<string> */
@@ -592,6 +663,9 @@ class Xabia_Interface {
         $presentation_mode = self::sanitize_presentation_mode(
             (string) ($raw[self::OPT_PRESENTATION_MODE] ?? $defaults[self::OPT_PRESENTATION_MODE])
         );
+        $color_scheme = self::sanitize_color_scheme(
+            (string) ($raw[self::OPT_COLOR_SCHEME] ?? $defaults[self::OPT_COLOR_SCHEME])
+        );
         if (self::is_kiosk_presentation_mode($presentation_mode)) {
             $speaking_avatar = 1;
             $autoload = false;
@@ -623,6 +697,7 @@ class Xabia_Interface {
             self::OPT_MOBILE_PRESET              => $mobile_preset,
             self::OPT_SPEAKING_AVATAR            => $speaking_avatar,
             self::OPT_PRESENTATION_MODE          => $presentation_mode,
+            self::OPT_COLOR_SCHEME               => $color_scheme,
         ];
     }
 
@@ -1045,6 +1120,9 @@ class Xabia_Interface {
             ),
             self::OPT_SPEAKING_AVATAR            => $speaking_avatar,
             self::OPT_PRESENTATION_MODE          => $presentation_mode,
+            self::OPT_COLOR_SCHEME               => self::sanitize_color_scheme(
+                (string) ($post['xabia_color_scheme'] ?? $defaults[self::OPT_COLOR_SCHEME])
+            ),
         ];
     }
 
@@ -1317,6 +1395,7 @@ class Xabia_Interface {
             data-project="<?php echo esc_attr($project_id); ?>"
             data-mobile-preset="<?php echo esc_attr($mobile_preset); ?>"
             data-placement="<?php echo esc_attr($placement); ?>"
+            <?php echo self::color_scheme_attributes((string) ($settings[self::OPT_COLOR_SCHEME] ?? 'light')); ?>
             <?php if ($inline_style !== '') : ?>style="<?php echo esc_attr($inline_style); ?>"<?php endif; ?>
         >
             <?php if ($placement === 'fixed') : ?>
@@ -1351,6 +1430,9 @@ class Xabia_Interface {
                         'mouth'  => '#FFFFFF',
                     ]);
                     ?>
+                <?php endif; ?>
+                <?php if ($placement === 'fixed') : ?>
+                    <span class="xabia-trigger-pill__label"><?php echo esc_html(class_exists('Xabia_I18n', false) ? Xabia_I18n::t('¿En qué puedo ayudarte?') : __('¿En qué puedo ayudarte?', 'xabia-intelligence')); ?></span>
                 <?php endif; ?>
             </button>
         </div>
@@ -1457,7 +1539,20 @@ class Xabia_Interface {
         if (!is_array($public_post_types)) {
             $public_post_types = [];
         }
+        $color_scheme = self::sanitize_color_scheme((string) ($s[self::OPT_COLOR_SCHEME] ?? 'light'));
         ?>
+        <div class="xabia-admin-section">
+            <div class="xabia-admin-section__head">
+                <h3 class="xabia-admin-section__title"><?php echo esc_html__('Apariencia', 'xabia-intelligence'); ?></h3>
+                <p class="description"><?php echo esc_html__('Claro es el tema por defecto. Oscuro fuerza el tema oscuro. Automático sigue al sistema del visitante.', 'xabia-intelligence'); ?></p>
+            </div>
+            <label for="xabia_color_scheme"><strong><?php echo esc_html__('Apariencia', 'xabia-intelligence'); ?></strong></label>
+            <select name="xabia_color_scheme" id="xabia_color_scheme" class="widefat" style="max-width:400px;">
+                <option value="light" <?php selected($color_scheme, 'light'); ?>><?php echo esc_html__('Claro', 'xabia-intelligence'); ?></option>
+                <option value="dark" <?php selected($color_scheme, 'dark'); ?>><?php echo esc_html__('Oscuro', 'xabia-intelligence'); ?></option>
+                <option value="auto" <?php selected($color_scheme, 'auto'); ?>><?php echo esc_html__('Automático', 'xabia-intelligence'); ?></option>
+            </select>
+        </div>
         <div class="xabia-admin-section xabia-avatar-section">
         <div class="xabia-admin-section__head">
             <h3 class="xabia-admin-section__title"><?php echo esc_html__('Avatar', 'xabia-intelligence'); ?></h3>

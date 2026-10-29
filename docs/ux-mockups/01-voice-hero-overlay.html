@@ -1,0 +1,660 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Xabia AI — Nueva Experiencia UX / Voice First</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg-dark: #0d0f12;
+      --card-bg: rgba(255, 255, 255, 0.05);
+      --accent: #2dd4bf; /* Verde esmeralda sutil estilo bio/Astei */
+      --accent-glow: rgba(45, 212, 191, 0.35);
+      --text-main: #f3f4f6;
+      --text-muted: #9ca3af;
+      --border: rgba(255, 255, 255, 0.12);
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: 'Plus Jakarta Sans', sans-serif;
+    }
+
+    body {
+      background-color: var(--bg-dark);
+      color: var(--text-main);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow-x: hidden;
+    }
+
+    /* Fondo simulado de la web de Astei */
+    .website-hero {
+      position: relative;
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 40px 20px;
+      text-align: center;
+      background: radial-gradient(circle at 50% 20%, rgba(45, 212, 191, 0.08) 0%, transparent 60%);
+    }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 16px;
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      font-size: 0.85rem;
+      color: var(--accent);
+      margin-bottom: 24px;
+    }
+
+    h1 {
+      font-size: clamp(2.2rem, 5vw, 3.8rem);
+      font-weight: 700;
+      letter-spacing: -0.03em;
+      margin-bottom: 16px;
+      max-width: 800px;
+      line-height: 1.15;
+    }
+
+    h1 span {
+      background: linear-gradient(135deg, #fff 30%, var(--accent) 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    p.subtitle {
+      color: var(--text-muted);
+      font-size: 1.15rem;
+      max-width: 580px;
+      margin-bottom: 40px;
+      line-height: 1.6;
+    }
+
+    /* BARRA INTEGRADA EN EL HERO */
+    .hero-search-wrapper {
+      width: 100%;
+      max-width: 680px;
+      position: relative;
+      z-index: 10;
+    }
+
+    .hero-search-box {
+      background: rgba(22, 27, 34, 0.8);
+      backdrop-filter: blur(16px);
+      border: 1px solid var(--border);
+      border-radius: 28px;
+      padding: 10px 14px 10px 24px;
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      box-shadow: 0 20px 40px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.05);
+      transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+      cursor: pointer;
+    }
+
+    .hero-search-box:hover {
+      border-color: rgba(45, 212, 191, 0.4);
+      box-shadow: 0 20px 45px rgba(0, 0, 0, 0.6), 0 0 25px var(--accent-glow);
+      transform: translateY(-2px);
+    }
+
+    .search-icon-sparkle {
+      color: var(--accent);
+      font-size: 1.3rem;
+      flex-shrink: 0;
+    }
+
+    .search-input-fake {
+      flex: 1;
+      text-align: left;
+      font-size: 1.05rem;
+      color: var(--text-main);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .typing-cursor {
+      display: inline-block;
+      width: 2px;
+      height: 1.1rem;
+      background-color: var(--accent);
+      vertical-align: middle;
+      animation: blink 0.9s infinite;
+      margin-left: 2px;
+    }
+
+    @keyframes blink {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0; }
+    }
+
+    .mic-button-hero {
+      background: linear-gradient(135deg, var(--accent) 0%, #0d9488 100%);
+      color: #0d0f12;
+      border: none;
+      width: 46px;
+      height: 46px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      font-size: 1.25rem;
+      transition: transform 0.2s, box-shadow 0.2s;
+      flex-shrink: 0;
+    }
+
+    .mic-button-hero:hover {
+      transform: scale(1.08);
+      box-shadow: 0 0 20px var(--accent-glow);
+    }
+
+    /* CHIPS DE SUGERENCIA */
+    .quick-chips {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      justify-content: center;
+      margin-top: 20px;
+    }
+
+    .chip {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      color: var(--text-muted);
+      padding: 8px 16px;
+      border-radius: 999px;
+      font-size: 0.88rem;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .chip:hover {
+      color: #fff;
+      border-color: var(--accent);
+      background: rgba(45, 212, 191, 0.1);
+    }
+
+    /* BOTÓN FLOTANTE (Para páginas interiores) */
+    .floating-trigger {
+      position: fixed;
+      bottom: 28px;
+      right: 28px;
+      z-index: 50;
+      background: rgba(22, 27, 34, 0.85);
+      backdrop-filter: blur(12px);
+      border: 1px solid var(--border);
+      padding: 10px 20px 10px 14px;
+      border-radius: 999px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      cursor: pointer;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+      transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+
+    .floating-trigger:hover {
+      border-color: var(--accent);
+      transform: translateY(-3px) scale(1.02);
+      box-shadow: 0 14px 35px var(--accent-glow);
+    }
+
+    .floating-avatar {
+      width: 38px;
+      height: 38px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, var(--accent), #0d9488);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.1rem;
+      color: #0d0f12;
+    }
+
+    .floating-text {
+      font-size: 0.92rem;
+      font-weight: 500;
+      color: var(--text-main);
+    }
+
+    /* OVERLAY INMERSIVO PANTALLA COMPLETA */
+    .voice-overlay {
+      position: fixed;
+      inset: 0;
+      width: 100vw;
+      height: 100vh;
+      background: radial-gradient(circle at 50% 40%, #151a21 0%, #08090b 100%);
+      z-index: 1000;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      align-items: center;
+      padding: 30px 24px;
+      opacity: 0;
+      pointer-events: none;
+      clip-path: circle(0% at calc(100% - 60px) calc(100% - 60px));
+      transition: clip-path 0.55s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.3s ease;
+    }
+
+    .voice-overlay.active {
+      opacity: 1;
+      pointer-events: auto;
+      clip-path: circle(160% at 50% 50%);
+    }
+
+    /* CABECERA MODAL */
+    .overlay-top {
+      width: 100%;
+      max-width: 900px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .brand-pill {
+      font-size: 0.95rem;
+      font-weight: 600;
+      color: var(--accent);
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .close-btn {
+      background: rgba(255, 255, 255, 0.08);
+      border: 1px solid var(--border);
+      color: var(--text-main);
+      width: 42px;
+      height: 42px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      font-size: 1.2rem;
+      transition: all 0.2s;
+    }
+
+    .close-btn:hover {
+      background: rgba(255, 255, 255, 0.18);
+      transform: rotate(90deg);
+    }
+
+    /* CENTRO: ORBE DE VOZ ESTILO GOOGLE / GEMINI */
+    .overlay-center {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      width: 100%;
+      max-width: 760px;
+      position: relative;
+    }
+
+    .orb-container {
+      position: relative;
+      width: 220px;
+      height: 220px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-bottom: 40px;
+    }
+
+    .orb-glow {
+      position: absolute;
+      inset: -30px;
+      border-radius: 50%;
+      background: radial-gradient(circle, var(--accent-glow) 0%, transparent 70%);
+      opacity: 0.6;
+      filter: blur(25px);
+      transition: transform 0.1s ease-out;
+    }
+
+    .orb-core {
+      position: relative;
+      width: 120px;
+      height: 120px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, #2dd4bf 0%, #3b82f6 50%, #a855f7 100%);
+      box-shadow: 0 0 50px rgba(45, 212, 191, 0.5), inset 0 0 20px rgba(255, 255, 255, 0.4);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 2.4rem;
+      color: #fff;
+      transition: transform 0.08s ease-out;
+      animation: float 4s ease-in-out infinite;
+    }
+
+    @keyframes float {
+      0%, 100% { transform: translateY(0px) scale(1); }
+      50% { transform: translateY(-8px) scale(1.03); }
+    }
+
+    .live-transcript-box {
+      min-height: 90px;
+    }
+
+    .listening-title {
+      font-size: 1.8rem;
+      font-weight: 500;
+      color: #fff;
+      margin-bottom: 12px;
+      letter-spacing: -0.02em;
+    }
+
+    .realtime-text {
+      font-size: 1.25rem;
+      color: var(--accent);
+      font-weight: 400;
+      line-height: 1.4;
+      max-width: 650px;
+    }
+
+    /* BARRA INFERIOR DE PREGUNTAS */
+    .overlay-bottom {
+      width: 100%;
+      max-width: 800px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 16px;
+    }
+
+    .minimal-input-bar {
+      width: 100%;
+      background: rgba(255, 255, 255, 0.06);
+      border: 1px solid var(--border);
+      border-radius: 32px;
+      padding: 10px 16px 10px 26px;
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
+    }
+
+    .minimal-input-bar input {
+      flex: 1;
+      background: transparent;
+      border: none;
+      outline: none;
+      color: #fff;
+      font-size: 1.05rem;
+    }
+
+    .minimal-input-bar input::placeholder {
+      color: rgba(255, 255, 255, 0.4);
+    }
+
+    .input-actions {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .action-circle-btn {
+      background: rgba(255, 255, 255, 0.1);
+      border: none;
+      color: #fff;
+      width: 44px;
+      height: 44px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      font-size: 1.2rem;
+      transition: all 0.2s;
+    }
+
+    .action-circle-btn.mic.active {
+      background: var(--accent);
+      color: #0d0f12;
+      box-shadow: 0 0 20px var(--accent-glow);
+    }
+
+    .action-circle-btn:hover {
+      background: rgba(255, 255, 255, 0.2);
+    }
+
+    .action-circle-btn.send {
+      background: #fff;
+      color: #0d0f12;
+    }
+
+    .action-circle-btn.send:hover {
+      background: var(--accent);
+    }
+  </style>
+</head>
+<body>
+
+  <!-- HERO PRINCIPAL (SIMULACIÓN WEB ASTEI) -->
+  <main class="website-hero">
+    <div class="badge">
+      <span>✦</span> Asistente Inteligente de Astei
+    </div>
+    <h1>Descubre el confort natural <span>en Urdaibai</span></h1>
+    <p class="subtitle">Casas bioclimáticas, tranquilidad y naturaleza. Pregúntale a nuestro asistente lo que quieras saber sobre estancias, fechas o planes en la zona.</p>
+
+    <!-- BARRA ESTILO GOOGLE INTEGRADA EN LA HOME -->
+    <div class="hero-search-wrapper">
+      <div class="hero-search-box" id="heroSearchTrigger">
+        <span class="search-icon-sparkle">✦</span>
+        <div class="search-input-fake">
+          <span id="typewriterText"></span><span class="typing-cursor"></span>
+        </div>
+        <button class="mic-button-hero" title="Hablar por voz" id="heroMicBtn">🎙️</button>
+      </div>
+
+      <div class="quick-chips">
+        <button class="chip" data-query="¿Qué casa tiene chimenea y admite mascotas?">🔥 Casas con chimenea</button>
+        <button class="chip" data-query="¿Hay disponibilidad este fin de semana?">📅 Disponibilidad finde</button>
+        <button class="chip" data-query="¿Cómo funciona la piscina climatizada?">🌿 Piscina y spa</button>
+        <button class="chip" data-query="Recomiéndame una ruta con niños cerca de Ea">🚶 Rutas en Urdaibai</button>
+      </div>
+    </div>
+  </main>
+
+  <!-- DISPARADOR FLOTANTE (Para resto de páginas interiores) -->
+  <div class="floating-trigger" id="floatingTrigger">
+    <div class="floating-avatar">🎙️</div>
+    <div class="floating-text">¿En qué puedo ayudarte?</div>
+  </div>
+
+  <!-- OVERLAY EXPANDIDO A PANTALLA COMPLETA (MODO VOZ GOOGLE / GEMINI) -->
+  <div class="voice-overlay" id="voiceOverlay">
+    <div class="overlay-top">
+      <div class="brand-pill">
+        <span>●</span> Xabia AI · Astei Concierge
+      </div>
+      <button class="close-btn" id="closeOverlayBtn" title="Cerrar">✕</button>
+    </div>
+
+    <div class="overlay-center">
+      <div class="orb-container">
+        <div class="orb-glow" id="orbGlow"></div>
+        <div class="orb-core" id="orbCore">🎙️</div>
+      </div>
+      <div class="live-transcript-box">
+        <h2 class="listening-title" id="listeningState">Te escucho...</h2>
+        <div class="realtime-text" id="liveTranscript">Dime qué tipo de estancia buscas o qué duda tienes.</div>
+      </div>
+    </div>
+
+    <div class="overlay-bottom">
+      <div class="minimal-input-bar">
+        <input type="text" id="manualInput" placeholder="Pregunta lo que quieras...">
+        <div class="input-actions">
+          <button class="action-circle-btn mic active" id="toggleMicInModal" title="Activar/Pausar Micro">🎙️</button>
+          <button class="action-circle-btn send" id="sendBtn" title="Enviar">➔</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // 1. EFECTO MECANOGRAFÍA (TYPEWRITER) EN EL HERO
+    const placeholders = [
+      "¿Qué casa tiene chimenea y admite mascotas?",
+      "¿Hay disponibilidad para el próximo fin de semana?",
+      "¿Tenéis cuna o cama supletoria para niños?",
+      "¿A qué distancia queda la playa de Laga o Laida?"
+    ];
+    let phraseIndex = 0;
+    let charIndex = 0;
+    let isDeleting = false;
+    const typewriterEl = document.getElementById("typewriterText");
+
+    function typeLoop() {
+      const currentPhrase = placeholders[phraseIndex];
+      if (isDeleting) {
+        typewriterEl.textContent = currentPhrase.substring(0, charIndex - 1);
+        charIndex--;
+      } else {
+        typewriterEl.textContent = currentPhrase.substring(0, charIndex + 1);
+        charIndex++;
+      }
+
+      let speed = isDeleting ? 30 : 60;
+      if (!isDeleting && charIndex === currentPhrase.length) {
+        speed = 2200; // Pausa tras escribir la frase completa
+        isDeleting = true;
+      } else if (isDeleting && charIndex === 0) {
+        isDeleting = false;
+        phraseIndex = (phraseIndex + 1) % placeholders.length;
+        speed = 400;
+      }
+      setTimeout(typeLoop, speed);
+    }
+    typeLoop();
+
+    // 2. APERTURA CIRCULAR EXPANSIVA (RIPPLE / CLIP-PATH)
+    const overlay = document.getElementById("voiceOverlay");
+    const closeBtn = document.getElementById("closeOverlayBtn");
+    const heroBox = document.getElementById("heroSearchTrigger");
+    const heroMic = document.getElementById("heroMicBtn");
+    const floatingBtn = document.getElementById("floatingTrigger");
+    const listeningState = document.getElementById("listeningState");
+    const liveTranscript = document.getElementById("liveTranscript");
+    const manualInput = document.getElementById("manualInput");
+
+    function openOverlay(originElement, initialText = "") {
+      const rect = originElement.getBoundingClientRect();
+      const originX = rect.left + rect.width / 2;
+      const originY = rect.top + rect.height / 2;
+
+      // Anclamos el origen del círculo al centro del botón presionado
+      overlay.style.clipPath = `circle(0% at ${originX}px ${originY}px)`;
+      overlay.classList.add("active");
+
+      requestAnimationFrame(() => {
+        overlay.style.clipPath = `circle(160% at ${originX}px ${originY}px)`;
+      });
+
+      if (initialText) {
+        listeningState.textContent = "Procesando...";
+        liveTranscript.textContent = `"${initialText}"`;
+        manualInput.value = initialText;
+      } else {
+        listeningState.textContent = "Te escucho...";
+        liveTranscript.textContent = "Dime qué tipo de estancia buscas o qué duda tienes.";
+        startAudioVisualizer();
+      }
+    }
+
+    function closeOverlay() {
+      overlay.style.clipPath = "circle(0% at 50% 50%)";
+      setTimeout(() => {
+        overlay.classList.remove("active");
+        stopAudioVisualizer();
+      }, 450);
+    }
+
+    heroBox.addEventListener("click", (e) => {
+      if (e.target.closest("#heroMicBtn")) return;
+      openOverlay(heroBox);
+    });
+
+    heroMic.addEventListener("click", (e) => {
+      e.stopPropagation();
+      openOverlay(heroMic);
+    });
+
+    floatingBtn.addEventListener("click", () => openOverlay(floatingBtn));
+    closeBtn.addEventListener("click", closeOverlay);
+
+    // Click en los chips de sugerencia rápida
+    document.querySelectorAll(".chip").forEach(chip => {
+      chip.addEventListener("click", (e) => {
+        const query = e.target.getAttribute("data-query");
+        openOverlay(e.target, query);
+      });
+    });
+
+    // 3. REACTIVIDAD DE AUDIO REAL (WEB AUDIO API + FALLBACK SIMULADO)
+    let audioCtx, analyser, dataArray, micStream, animFrameId;
+    const orbCore = document.getElementById("orbCore");
+    const orbGlow = document.getElementById("orbGlow");
+
+    async function startAudioVisualizer() {
+      try {
+        micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        analyser = audioCtx.createAnalyser();
+        analyser.fftSize = 64;
+        const source = audioCtx.createMediaStreamSource(micStream);
+        source.connect(analyser);
+        dataArray = new Uint8Array(analyser.frequencyBinCount);
+
+        function updateVolume() {
+          analyser.getByteFrequencyData(dataArray);
+          let sum = 0;
+          for (let i = 0; i < dataArray.length; i++) {
+            sum += dataArray[i];
+          }
+          let avg = sum / dataArray.length;
+          let scale = 1 + (avg / 255) * 0.45; // Escala entre 1.0 y 1.45 según voz
+          let glowSpread = 20 + avg * 0.5;
+
+          orbCore.style.transform = `scale(${scale})`;
+          orbGlow.style.transform = `scale(${scale * 1.2})`;
+          orbGlow.style.opacity = Math.min(1, 0.4 + (avg / 255));
+          animFrameId = requestAnimationFrame(updateVolume);
+        }
+        updateVolume();
+      } catch (err) {
+        // Fallback visual si el usuario rechaza o no tiene micro
+        console.log("Micrófono no accesible, activando simulación suave:", err);
+      }
+    }
+
+    function stopAudioVisualizer() {
+      if (animFrameId) cancelAnimationFrame(animFrameId);
+      if (micStream) micStream.getTracks().forEach(t => t.stop());
+      if (audioCtx && audioCtx.state !== 'closed') audioCtx.close();
+      orbCore.style.transform = "scale(1)";
+      orbGlow.style.transform = "scale(1)";
+    }
+  </script>
+</body>
+</html>

@@ -930,6 +930,8 @@
         if (!$box || !$box.length) return;
         var ph = xabiaI18n('inputPlaceholder', 'Escribe aquí o pulsa el micro para hablar...');
         $box.find('.xabia-input-field').attr('placeholder', ph);
+        $box.find('.xabia-voice-overlay__input').attr('placeholder', xabiaI18n('overlayPlaceholder', 'Pregunta lo que quieras...'));
+        $box.find('.xabia-voice-overlay__close').attr('aria-label', xabiaI18n('closeOverlay', 'Cerrar'));
     }
 
     function makeContinueButton() {
@@ -1176,9 +1178,124 @@
         $box.toggleClass('xabia-state-typing', !isEmpty);
         var $hero = $box.find('.xabia-voice-hero');
         if ($hero.length) {
-            $hero.attr('aria-hidden', isEmpty ? 'false' : 'true');
+            var heroHidden = !isEmpty || $box.hasClass('xabia-conversation-open') || $box.hasClass('xabia-voice-open');
+            $hero.attr('aria-hidden', heroHidden ? 'true' : 'false');
         }
         syncStarterSuggestions($box);
+    }
+
+    function xabiaFindChatbox($, projectId) {
+        var id = String(projectId || '');
+        var $box = id ? $('#xabia-chatbox-' + id) : $();
+        if (!$box.length && id) {
+            $box = $('.xabia-chatbox[data-project="' + id.replace(/"/g, '') + '"]').first();
+        }
+        return $box;
+    }
+
+    function xabiaThinkingMarkHtml($box) {
+        var tpl = $box.find('template.xabia-dots-template').get(0);
+        if (tpl && tpl.innerHTML && String(tpl.innerHTML).indexOf('<svg') !== -1) {
+            return '<span class="xabia-thinking-mark" aria-hidden="true">' + tpl.innerHTML + '</span>';
+        }
+        var url = String($box.attr('data-dots-svg') || '');
+        if (!url) {
+            return '';
+        }
+        return '<img class="xabia-thinking-mark" src="' + url.replace(/"/g, '') + '" alt="" width="72" height="26">';
+    }
+
+    function xabiaSetThinkingPhase($box, phase) {
+        $box.find('.xabia-thinking-turn').attr('data-phase', String(phase));
+    }
+
+    function openVoiceOverlay($, $box, originEl) {
+        if (!$box || !$box.length) {
+            return false;
+        }
+        var overlay = $box.find('.xabia-voice-overlay').get(0);
+        if (!overlay) {
+            return false;
+        }
+        $box.addClass('xabia-voice-open');
+        document.body.classList.add('xabia-voice-open');
+        var rect = originEl && originEl.getBoundingClientRect ? originEl.getBoundingClientRect() : null;
+        var x = rect ? (rect.left + rect.width / 2) : (window.innerWidth / 2);
+        var y = rect ? (rect.top + rect.height / 2) : (window.innerHeight / 2);
+        overlay.hidden = false;
+        overlay.style.clipPath = 'circle(0% at ' + x + 'px ' + y + 'px)';
+        overlay.classList.add('is-active');
+        if (typeof window.requestAnimationFrame === 'function') {
+            window.requestAnimationFrame(function() {
+                overlay.style.clipPath = 'circle(160% at ' + x + 'px ' + y + 'px)';
+            });
+        } else {
+            overlay.style.clipPath = 'circle(160% at ' + x + 'px ' + y + 'px)';
+        }
+        $box.find('.xabia-voice-overlay__title').text(xabiaI18n('voiceListeningTitle', 'Te escucho...'));
+        var $live = $box.find('.xabia-voice-overlay__transcript');
+        if (!$live.text() || $live.attr('data-idle') === '1') {
+            $live.attr('data-idle', '1').text(xabiaI18n('voiceIdlePrompt', 'Dime qué quieres saber.'));
+        }
+        return true;
+    }
+
+    function closeVoiceOverlay($, $box) {
+        if (!$box || !$box.length) {
+            return;
+        }
+        var overlay = $box.find('.xabia-voice-overlay').get(0);
+        if (!overlay || !overlay.classList.contains('is-active')) {
+            $box.removeClass('xabia-voice-open');
+            if (!$('.xabia-chatbox.xabia-voice-open').length) {
+                document.body.classList.remove('xabia-voice-open');
+            }
+            return;
+        }
+        overlay.style.clipPath = 'circle(0% at 50% 50%)';
+        window.setTimeout(function() {
+            overlay.classList.remove('is-active');
+            overlay.hidden = true;
+            $box.removeClass('xabia-voice-open');
+            if (!$('.xabia-chatbox.xabia-voice-open').length) {
+                document.body.classList.remove('xabia-voice-open');
+            }
+        }, 450);
+    }
+
+    function enterConversation($, $box) {
+        if (!$box || !$box.length) {
+            return;
+        }
+        var kiosk = $box.hasClass('xabia-present-kiosk');
+        if (!kiosk) {
+            $box.addClass('xabia-conversation-open');
+            document.body.classList.add('xabia-conversation-open');
+        }
+        closeVoiceOverlay($, $box);
+    }
+
+    function xabiaApplyColorSchemes() {
+        var mq = window.matchMedia ? window.matchMedia('(prefers-color-scheme: dark)') : null;
+        function paint() {
+            document.querySelectorAll('[data-color-scheme]').forEach(function(el) {
+                var scheme = el.getAttribute('data-color-scheme') || 'light';
+                if (scheme === 'dark' || (scheme === 'auto' && mq && mq.matches)) {
+                    el.setAttribute('data-theme', 'dark');
+                    return;
+                }
+                el.removeAttribute('data-theme');
+            });
+        }
+        paint();
+        if (mq && !window.__xabiaSchemeBound) {
+            window.__xabiaSchemeBound = true;
+            if (mq.addEventListener) {
+                mq.addEventListener('change', paint);
+            } else if (mq.addListener) {
+                mq.addListener(paint);
+            }
+        }
     }
 
     function renderBotHtml(raw, imagesBase) {
@@ -2016,27 +2133,28 @@
             return;
         }
         clearWaitingTimers($box);
+        messagesStream($box).find('.xabia-thinking-turn').remove();
 
-        var $dots = $box.find('.xabia-compose-area .xabia-typing-dots');
-        if (!$dots.length) {
-            $dots = $box.find('.xabia-typing-dots');
-        }
-        var $msgEl = $dots.find('.xabia-waiting-message');
-        if (!$msgEl.length) {
-            $msgEl = $('<span class="xabia-waiting-message" aria-live="polite"></span>');
-            $dots.append($msgEl);
-        }
+        var $turn = $('<div class="xabia-msg bot xabia-thinking-turn" data-phase="1" role="status"></div>');
+        var $boxInner = $('<div class="xabia-thinking-box"></div>');
+        $boxInner.append(xabiaThinkingMarkHtml($box));
+        var $msgEl = $('<span class="xabia-waiting-message" aria-live="polite"></span>');
+        $boxInner.append($msgEl);
+        $turn.append($boxInner);
+        messagesStream($box).append($turn);
 
         setWaitingMessageText($msgEl, getWaitingMessage(userPrompt));
         $box.addClass('xabia-is-waiting');
-        $dots.attr('aria-hidden', 'false').css('display', '');
         setAvatarThinking($box, true);
+        scrollMessages($box);
 
         var timers = [];
         timers.push(setTimeout(function() {
+            xabiaSetThinkingPhase($box, 2);
             setWaitingMessageText($msgEl, xabiaI18n('waitingAnalyzing', 'Sigo analizando la información...'));
         }, 3500));
         timers.push(setTimeout(function() {
+            xabiaSetThinkingPhase($box, 3);
             setWaitingMessageText($msgEl, xabiaI18n('waitingAlmost', 'Un segundo más, preparando la respuesta...'));
         }, 7000));
         $box.data('xabiaWaitingState', { timers: timers, $message: $msgEl });
@@ -2047,13 +2165,8 @@
             return;
         }
         clearWaitingTimers($box);
-        var $dots = $box.find('.xabia-compose-area .xabia-typing-dots');
-        if (!$dots.length) {
-            $dots = $box.find('.xabia-typing-dots');
-        }
         $box.removeClass('xabia-is-waiting');
-        $dots.attr('aria-hidden', 'true').css('display', 'none');
-        $dots.find('.xabia-waiting-message').text('').removeClass('xabia-waiting-message--swap');
+        messagesStream($box).find('.xabia-thinking-turn').remove();
         setAvatarThinking($box, false);
     }
 
@@ -2444,6 +2557,16 @@
             // No volcar el dictado al textarea mientras escucha: en móvil hincha el composer
             // y deja texto residual que se acumula en la siguiente locución.
             session.previewText = micDisplayText(session, interim);
+            var $live = $box.find('.xabia-voice-overlay__transcript');
+            if (!$live.length) {
+                return;
+            }
+            var text = $.trim(String(session.previewText || ''));
+            if (!text) {
+                $live.attr('data-idle', '1').text(xabiaI18n('voiceIdlePrompt', 'Dime qué quieres saber.'));
+                return;
+            }
+            $live.attr('data-idle', '0').text(text);
         }
 
         function scheduleMicSilenceStop($box, session, opts) {
@@ -2508,6 +2631,101 @@
                 finalizeMicSession($box, session);
             }
         }
+
+        function abortMicSession($box) {
+            var session = micSessions.get($box[0]);
+            if (!session) {
+                return;
+            }
+            session.holding = false;
+            session.released = false;
+            clearMicTimers(session);
+            try {
+                session.rec.abort();
+            } catch (eAbort) {
+                finalizeMicSession($box, session);
+            }
+        }
+
+        function voiceOverlayText($box) {
+            var $voice = $box.find('.xabia-voice-overlay');
+            if (!$voice.length || !$voice.hasClass('is-active') || $voice.prop('hidden')) {
+                return '';
+            }
+            var typed = $.trim(String($voice.find('.xabia-voice-overlay__input').val() || ''));
+            if (typed) {
+                return typed;
+            }
+            var $live = $voice.find('.xabia-voice-overlay__transcript');
+            if ($live.attr('data-idle') === '1') {
+                return '';
+            }
+            return $.trim(String($live.text() || ''));
+        }
+
+        window.xabiaOpenVoiceOverlay = function(projectId, origin) {
+            var $box = xabiaFindChatbox($, projectId);
+            if (!$box.length && origin && origin.closest) {
+                $box = $(origin).closest('.xabia-chatbox');
+            }
+            if (!$box.length) {
+                return false;
+            }
+            if (micSessions.get($box[0])) {
+                stopMicSession($box);
+                return true;
+            }
+            if (!openVoiceOverlay($, $box, origin || null)) {
+                return false;
+            }
+            var $mic = $box.find('.xabia-voice-overlay__mic').first();
+            if (!$mic.length) {
+                $mic = $box.find('.xabia-mic').first();
+            }
+            startMicSession($mic);
+            return true;
+        };
+
+        window.xabiaCloseVoiceSurfaces = function(panel, opts) {
+            opts = opts || {};
+            var $box = panel ? $(panel) : $();
+            if ($box.length && !$box.hasClass('xabia-chatbox')) {
+                $box = $box.closest('.xabia-chatbox');
+            }
+            if (!$box.length) {
+                return;
+            }
+            if (opts.cancelMic) {
+                abortMicSession($box);
+            }
+            var overlay = $box.find('.xabia-voice-overlay').get(0);
+            if (overlay) {
+                overlay.classList.remove('is-active');
+                overlay.hidden = true;
+                overlay.style.clipPath = '';
+            }
+            $box.removeClass('xabia-voice-open xabia-conversation-open');
+            if (!$('.xabia-chatbox.xabia-voice-open').length) {
+                document.body.classList.remove('xabia-voice-open');
+            }
+            if (!$('.xabia-chatbox.xabia-conversation-open').length) {
+                document.body.classList.remove('xabia-conversation-open');
+            }
+        };
+
+        window.xabiaSubmitText = function(projectId, text) {
+            var $box = xabiaFindChatbox($, projectId);
+            text = $.trim(String(text || ''));
+            if (!$box.length || !text) {
+                return false;
+            }
+            if (micSessions.get($box[0])) {
+                abortMicSession($box);
+            }
+            $box.find('.xabia-input-field').first().val(clampUserInputText(text));
+            submitChatMessage($box);
+            return true;
+        };
 
         function startMicSession($mic) {
             var $box = $mic.closest('.xabia-chatbox');
@@ -2638,6 +2856,7 @@
                 stopMicSession($box);
                 return;
             }
+            openVoiceOverlay($, $box, this);
             startMicSession($mic);
         });
 
@@ -2898,6 +3117,7 @@
             var isContinue = !!continuePrompt;
             var val = $.trim(isContinue ? continuePrompt : enforceInputLimits($input));
             if (!val) return;
+            enterConversation($, $box);
             if (!isContinue && (countInputLines(val) > userInputMaxLines() || val.length > userInputMaxChars())) {
                 syncInputLimitState($input);
                 return;
@@ -2954,6 +3174,9 @@
             var historyArr = [];
             $history.find('.xabia-msg').each(function() {
                 var $msg = $(this);
+                if ($msg.hasClass('xabia-thinking-turn')) {
+                    return;
+                }
                 var role = $msg.hasClass('user') ? 'user' : 'assistant';
                 var content;
                 if (role === 'assistant' && $msg.attr('data-raw')) {
@@ -2993,7 +3216,142 @@
         $(document).on('click', '.xabia-send', function(e) {
             e.preventDefault();
             e.stopPropagation();
-            submitChatMessage($(this).closest('.xabia-chatbox'));
+            var $box = $(this).closest('.xabia-chatbox');
+            var spoken = voiceOverlayText($box);
+            if (micSessions.get($box[0])) {
+                abortMicSession($box);
+            }
+            if (spoken) {
+                $box.find('.xabia-input-field').first().val(spoken);
+                $box.find('.xabia-voice-overlay__input').val('');
+            }
+            submitChatMessage($box);
+        });
+
+        $(document).on('click', '.xabia-voice-overlay__close', function(e) {
+            e.preventDefault();
+            e.stopPropagation();
+            var $box = $(this).closest('.xabia-chatbox');
+            window.xabiaCloseVoiceSurfaces($box.get(0), { cancelMic: true });
+        });
+
+        $(document).on('keydown', function(e) {
+            if (e.key !== 'Escape') {
+                return;
+            }
+            var $box = $('.xabia-chatbox.xabia-voice-open, .xabia-chatbox.xabia-conversation-open').first();
+            if (!$box.length) {
+                return;
+            }
+            window.xabiaCloseVoiceSurfaces($box.get(0), { cancelMic: true });
+        });
+
+        $(document).on('keydown', '.xabia-voice-overlay__input', function(e) {
+            var isEnter = e.key === 'Enter' || e.which === 13 || e.keyCode === 13;
+            if (!isEnter || e.shiftKey || e.isComposing) {
+                return;
+            }
+            e.preventDefault();
+            $(this).closest('.xabia-voice-overlay').find('.xabia-send').trigger('click');
+        });
+
+        $(document).on('click', '.xabia-dock-chip', function(e) {
+            e.preventDefault();
+            e.stopPropagation();
+            var $chip = $(this);
+            var $box = $chip.closest('.xabia-chatbox');
+            var text = String($chip.attr('data-query') || '').trim();
+            if (!$box.length || !text) {
+                return;
+            }
+            $box.find('.xabia-input-field').first().val(text);
+            submitChatMessage($box);
+        });
+
+        $(document).on('click', '.xabia-search-bar__mic', function(e) {
+            e.preventDefault();
+            e.stopPropagation();
+            var $bar = $(this).closest('.xabia-search-bar');
+            window.xabiaOpenVoiceOverlay($bar.attr('data-project'), this);
+        });
+
+        $(document).on('submit', '.xabia-search-bar__box', function(e) {
+            e.preventDefault();
+            var $bar = $(this).closest('.xabia-search-bar');
+            var text = $.trim(String($bar.find('.xabia-search-bar__input').val() || ''));
+            if (!text) {
+                return;
+            }
+            window.xabiaSubmitText($bar.attr('data-project'), text);
+            $bar.find('.xabia-search-bar__input').val('');
+        });
+
+        $(document).on('click', '.xabia-search-chip', function(e) {
+            e.preventDefault();
+            var $bar = $(this).closest('.xabia-search-bar');
+            var text = String($(this).attr('data-query') || '').trim();
+            window.xabiaSubmitText($bar.attr('data-project'), text);
+        });
+
+        function xabiaStartSearchTypewriter($bar) {
+            if (!$bar || !$bar.length || $bar.data('xabiaTypeOn') === 1) {
+                return;
+            }
+            var phrases = [];
+            try {
+                phrases = JSON.parse($bar.attr('data-placeholders') || '[]');
+            } catch (ePhrase) {
+                phrases = [];
+            }
+            if (!Array.isArray(phrases) || !phrases.length) {
+                return;
+            }
+            $bar.data('xabiaTypeOn', 1);
+            var ghost = $bar.find('.xabia-search-bar__ghost').get(0);
+            var input = $bar.find('.xabia-search-bar__input').get(0);
+            if (!ghost || !input) {
+                return;
+            }
+            var phraseIndex = 0;
+            var charIndex = 0;
+            var deleting = false;
+            function tick() {
+                if (document.body && !document.body.contains($bar[0])) {
+                    return;
+                }
+                var phrase = String(phrases[phraseIndex] || '');
+                var hidden = $.trim(String(input.value || '')) !== '';
+                ghost.style.visibility = hidden ? 'hidden' : 'visible';
+                if (!hidden) {
+                    if (deleting) {
+                        charIndex = Math.max(0, charIndex - 1);
+                    } else {
+                        charIndex = Math.min(phrase.length, charIndex + 1);
+                    }
+                    ghost.textContent = phrase.substring(0, charIndex);
+                }
+                var speed = deleting ? 30 : 60;
+                if (!hidden && !deleting && charIndex === phrase.length) {
+                    speed = 2200;
+                    deleting = true;
+                } else if (!hidden && deleting && charIndex === 0) {
+                    deleting = false;
+                    phraseIndex = (phraseIndex + 1) % phrases.length;
+                    speed = 400;
+                }
+                window.setTimeout(tick, speed);
+            }
+            tick();
+        }
+
+        function xabiaStartSearchTypewriters() {
+            $('.xabia-search-bar').each(function() {
+                xabiaStartSearchTypewriter($(this));
+            });
+        }
+        xabiaStartSearchTypewriters();
+        $(function() {
+            xabiaStartSearchTypewriters();
         });
 
         $(document).on('click', '.xabia-starter-chip', function(e) {
@@ -3420,6 +3778,7 @@
                 }
                 setVoiceOn($b, isVoiceOn($b));
                 applyChatboxI18n($b);
+                xabiaApplyColorSchemes();
                 autoSizeInput($b.find('.xabia-input-field'));
                 syncChatUiState($b);
                 initXabiaTotem($b);
@@ -3446,6 +3805,7 @@
         }
 
         bindXabiaChatboxHandlers();
+        xabiaApplyColorSchemes();
         preloadSpeechVoices();
         if (window.speechSynthesis) {
             window.speechSynthesis.onvoiceschanged = preloadSpeechVoices;

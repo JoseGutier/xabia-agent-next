@@ -628,6 +628,19 @@ $xabia_chat_shortcode_cb = static function ($atts) {
 add_shortcode('xabia_agent', $xabia_chat_shortcode_cb);
 add_shortcode('xabia_chat', $xabia_chat_shortcode_cb);
 
+$xabia_search_bar_shortcode_cb = static function ($atts) {
+    $file = XABIA_PATH . 'frontend/widgets/search-bar.php';
+    if (file_exists($file)) {
+        require_once $file;
+        if (function_exists('xabia_search_bar_shortcode')) {
+            return xabia_search_bar_shortcode($atts);
+        }
+    }
+
+    return '';
+};
+add_shortcode('xabia_search_bar', $xabia_search_bar_shortcode_cb);
+
 $xabia_launcher_shortcode_cb = static function ($atts) {
     if (!class_exists('Xabia_Interface', false)) {
         return '';

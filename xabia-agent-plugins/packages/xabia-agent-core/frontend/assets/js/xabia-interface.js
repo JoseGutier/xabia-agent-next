@@ -755,6 +755,11 @@
 
         function closePanel() {
             try {
+                if (typeof window.xabiaCloseVoiceSurfaces === 'function') {
+                    window.xabiaCloseVoiceSurfaces(panel, { cancelMic: true });
+                }
+            } catch (eVoice) {}
+            try {
                 if (window.jQuery && typeof window.jQuery.fn !== 'undefined') {
                     var $box = window.jQuery(panel);
                     if ($box.length && typeof window.xabiaStopAvatarLipSync === 'function') {
@@ -778,6 +783,10 @@
         trigger.addEventListener('click', function (e) {
             e.preventDefault();
             e.stopPropagation();
+            if (typeof window.xabiaOpenVoiceOverlay === 'function') {
+                window.xabiaOpenVoiceOverlay(trigger.getAttribute('data-project') || '', trigger);
+                return;
+            }
             togglePanel();
         });
 

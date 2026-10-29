@@ -122,10 +122,21 @@
     gap: 12px;
 }
 
-/* Scrollbar fina */
-.xabia-chat-history::-webkit-scrollbar { width: 6px; }
-.xabia-chat-history::-webkit-scrollbar-track { background: transparent; }
-.xabia-chat-history::-webkit-scrollbar-thumb { background-color: rgba(0,0,0,0.15); border-radius: 10px; }
+/* Scrollbar flotante: 5px, thumb redondeado, pista transparente */
+.xabia-chat-history,
+.xabia-text-scroll {
+    scrollbar-width: thin;
+    scrollbar-color: var(--xabia-scroll-thumb, rgba(0, 0, 0, 0.28)) transparent;
+}
+.xabia-chat-history::-webkit-scrollbar,
+.xabia-text-scroll::-webkit-scrollbar { width: 5px; height: 5px; }
+.xabia-chat-history::-webkit-scrollbar-track,
+.xabia-text-scroll::-webkit-scrollbar-track { background: transparent; }
+.xabia-chat-history::-webkit-scrollbar-thumb,
+.xabia-text-scroll::-webkit-scrollbar-thumb {
+    background-color: var(--xabia-scroll-thumb, rgba(0, 0, 0, 0.28));
+    border-radius: 999px;
+}
 
 /* --- BURBUJAS DE MENSAJE --- */
 .xabia-msg {
@@ -2510,4 +2521,545 @@ body.xabia-kiosk-open .xabia-kiosk-embed {
 .xabia-chatbox.xabia-ui-modern .xabia-input-pill {
     justify-content: center !important;
     gap: 22px !important;
+}
+
+/* ============================================================
+   Tema claro primero — Claro / Oscuro / Automático
+   Automático solo pone o quita data-theme="dark" (sin tercer bloque).
+   ============================================================ */
+:root {
+    --xabia-surface: #ffffff;
+    --xabia-text: #111111;
+    --xabia-muted: #5c6370;
+    --xabia-line: rgba(0, 0, 0, 0.08);
+    --xabia-shadow: 0 16px 40px rgba(0, 0, 0, 0.08);
+    --xabia-elevated: #f7f7f8;
+    --xabia-scroll-thumb: rgba(0, 0, 0, 0.28);
+}
+
+[data-theme="dark"] {
+    --xabia-surface: #141416;
+    --xabia-text: #f4f4f5;
+    --xabia-muted: #a1a1aa;
+    --xabia-line: rgba(255, 255, 255, 0.12);
+    --xabia-shadow: 0 16px 40px rgba(0, 0, 0, 0.45);
+    --xabia-elevated: #1f1f23;
+    --xabia-scroll-thumb: rgba(255, 255, 255, 0.32);
+}
+
+.material-symbols-outlined {
+    font-family: 'Material Symbols Outlined';
+    font-weight: normal;
+    font-style: normal;
+    font-size: 24px;
+    line-height: 1;
+    letter-spacing: normal;
+    text-transform: none;
+    display: inline-block;
+    white-space: nowrap;
+    word-wrap: normal;
+    direction: ltr;
+    font-variation-settings: 'FILL' 0, 'wght' 500, 'GRAD' 0, 'opsz' 24;
+    -webkit-font-feature-settings: 'liga';
+    font-feature-settings: 'liga';
+    -webkit-font-smoothing: antialiased;
+}
+
+.xabia-chatbox.xabia-chatbox--parked:not(.xabia-voice-open):not(.xabia-conversation-open) {
+    display: none !important;
+}
+
+.xabia-chatbox.xabia-panel-shell.xabia-voice-open:not(.xabia-present-kiosk),
+.xabia-chatbox.xabia-panel-shell.xabia-conversation-open:not(.xabia-present-kiosk),
+.xabia-chatbox.xabia-voice-open:not(.xabia-present-kiosk),
+.xabia-chatbox.xabia-conversation-open:not(.xabia-present-kiosk) {
+    display: flex !important;
+    visibility: visible !important;
+    opacity: 1 !important;
+    position: fixed !important;
+    inset: 0 !important;
+    top: 0 !important;
+    right: 0 !important;
+    bottom: 0 !important;
+    left: 0 !important;
+    width: 100vw !important;
+    width: 100dvw !important;
+    height: 100vh !important;
+    height: 100dvh !important;
+    max-width: none !important;
+    max-height: none !important;
+    min-height: 0 !important;
+    margin: 0 !important;
+    border: 0 !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+    animation: none !important;
+    transform: none !important;
+    z-index: 100000 !important;
+    overflow: hidden !important;
+    background: var(--xabia-surface, #ffffff) !important;
+    color: var(--xabia-text, #111111) !important;
+    pointer-events: auto !important;
+}
+
+body.xabia-voice-open,
+body.xabia-conversation-open {
+    overflow: hidden;
+}
+
+.xabia-voice-overlay {
+    position: absolute;
+    inset: 0;
+    z-index: 60;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    box-sizing: border-box;
+    background: var(--xabia-surface, #ffffff);
+    color: var(--xabia-text, #111111);
+    clip-path: circle(0% at 50% 80%);
+    transition: clip-path 0.45s cubic-bezier(0.22, 1, 0.36, 1);
+    pointer-events: none;
+}
+
+.xabia-voice-overlay[hidden] {
+    display: none !important;
+}
+
+.xabia-voice-overlay.is-active {
+    pointer-events: auto;
+}
+
+.xabia-voice-overlay__top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: calc(env(safe-area-inset-top, 0px) + 16px) 20px 8px;
+}
+
+.xabia-voice-overlay__brand {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    min-width: 0;
+    font-weight: 650;
+    letter-spacing: -0.02em;
+    color: var(--xabia-text, #111111);
+}
+
+.xabia-voice-overlay__mark svg,
+.xabia-thinking-mark svg {
+    display: block;
+    width: 72px;
+    height: auto;
+}
+
+.xabia-voice-overlay__mark svg {
+    width: 46px;
+}
+
+.xabia-voice-overlay__close {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 40px;
+    height: 40px;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    border-radius: 999px;
+    background: transparent;
+    color: var(--xabia-text, #111111);
+    cursor: pointer;
+}
+
+.xabia-voice-overlay__center {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    gap: 12px;
+    padding: 12px 24px;
+}
+
+.xabia-voice-orb {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 96px;
+    height: 96px;
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--xabia-accent, #2271b1) 16%, var(--xabia-surface, #ffffff));
+    color: var(--xabia-text, #111111);
+    box-shadow: var(--xabia-shadow, 0 16px 40px rgba(0, 0, 0, 0.08));
+}
+
+.xabia-voice-overlay__title {
+    margin: 0;
+    font-size: 1.75rem;
+    font-weight: 650;
+    letter-spacing: -0.03em;
+    color: var(--xabia-text, #111111);
+}
+
+.xabia-voice-overlay__transcript {
+    margin: 0;
+    max-width: 36rem;
+    font-size: 1rem;
+    line-height: 1.45;
+    color: var(--xabia-muted, #5c6370);
+}
+
+.xabia-voice-overlay__transcript:not([data-idle="1"]) {
+    color: var(--xabia-text, #111111);
+}
+
+.xabia-voice-overlay__bottom {
+    padding: 8px 16px calc(env(safe-area-inset-bottom, 0px) + 16px);
+}
+
+.xabia-voice-overlay__bar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: min(720px, 100%);
+    margin: 0 auto;
+    padding: 8px 8px 8px 16px;
+    box-sizing: border-box;
+    border: 1px solid var(--xabia-line, rgba(0, 0, 0, 0.08));
+    border-radius: 999px;
+    background: var(--xabia-surface, #ffffff);
+    box-shadow: var(--xabia-shadow, 0 16px 40px rgba(0, 0, 0, 0.08));
+}
+
+.xabia-voice-overlay__input {
+    flex: 1 1 auto;
+    min-width: 0;
+    border: 0;
+    background: transparent;
+    color: var(--xabia-text, #111111);
+    font: inherit;
+    font-size: 1rem;
+    outline: none;
+}
+
+.xabia-voice-overlay__mic,
+.xabia-voice-overlay__send,
+.xabia-search-bar__mic,
+.xabia-search-bar__send {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: 0 0 42px;
+    width: 42px;
+    height: 42px;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    border-radius: 999px;
+    cursor: pointer;
+}
+
+.xabia-voice-overlay__mic,
+.xabia-search-bar__mic {
+    background: color-mix(in srgb, var(--xabia-accent, #2271b1) 16%, var(--xabia-surface, #ffffff));
+    color: var(--xabia-text, #111111);
+}
+
+.xabia-voice-overlay__send,
+.xabia-search-bar__send {
+    background: #111111;
+    color: #ffffff;
+}
+
+[data-theme="dark"] .xabia-voice-overlay__send,
+[data-theme="dark"] .xabia-search-bar__send {
+    background: #f4f4f5;
+    color: #111111;
+}
+
+.xabia-chatbox .xabia-input-area,
+.xabia-ui-modern .xabia-input-area {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+}
+
+.xabia-dock-chips,
+.xabia-search-bar__chips {
+    display: flex;
+    gap: 8px;
+    overflow-x: auto;
+    scrollbar-width: none;
+}
+
+.xabia-dock-chips::-webkit-scrollbar,
+.xabia-search-bar__chips::-webkit-scrollbar {
+    display: none;
+    width: 0;
+    height: 0;
+}
+
+.xabia-dock-chip,
+.xabia-search-chip {
+    flex: 0 0 auto;
+    margin: 0;
+    padding: 8px 14px;
+    border: 1px solid var(--xabia-line, rgba(0, 0, 0, 0.08));
+    border-radius: 999px;
+    background: var(--xabia-surface, #ffffff);
+    color: var(--xabia-text, #111111);
+    font: inherit;
+    font-size: 0.9rem;
+    cursor: pointer;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+}
+
+.xabia-convo-dock {
+    display: flex;
+    align-items: flex-end;
+    gap: 8px;
+    width: 100%;
+    box-sizing: border-box;
+    padding: 8px 10px 8px 16px;
+    border: 1px solid var(--xabia-line, rgba(0, 0, 0, 0.08));
+    border-radius: 28px;
+    background: var(--xabia-surface, #ffffff);
+    box-shadow: var(--xabia-shadow, 0 16px 40px rgba(0, 0, 0, 0.08));
+}
+
+.xabia-convo-dock .xabia-compose-area {
+    flex: 1 1 auto;
+    min-width: 0;
+    background: transparent;
+}
+
+.xabia-conversation-open .xabia-chat-header,
+.xabia-conversation-open .xabia-chat-body,
+.xabia-conversation-open .xabia-text-scroll,
+.xabia-conversation-open .xabia-chat-history,
+.xabia-conversation-open .xabia-input-area,
+.xabia-conversation-open .xabia-powered-by,
+.xabia-conversation-open .xabia-compose-area {
+    background: var(--xabia-surface, #ffffff) !important;
+    color: var(--xabia-text, #111111);
+}
+
+.xabia-conversation-open .xabia-chat-header {
+    border-bottom: 1px solid var(--xabia-line, rgba(0, 0, 0, 0.08));
+}
+
+.xabia-conversation-open .xabia-chat-header__center {
+    flex-direction: column;
+    gap: 0;
+}
+
+.xabia-chat-header__presence {
+    display: none;
+    font-size: 12px;
+    font-weight: 500;
+    line-height: 1.3;
+    color: var(--xabia-muted, #5c6370);
+}
+
+.xabia-conversation-open .xabia-chat-header__presence {
+    display: block;
+}
+
+.xabia-conversation-open .xabia-chat-header__name,
+.xabia-conversation-open .xabia-msg.bot,
+.xabia-conversation-open .xabia-input-field {
+    color: var(--xabia-text, #111111);
+}
+
+.xabia-conversation-open .xabia-msg.bot {
+    max-width: min(720px, 92%);
+    background: transparent;
+    border: 0;
+    box-shadow: none;
+}
+
+.xabia-conversation-open .xabia-msg.user {
+    max-width: min(720px, 92%);
+    background: var(--xabia-elevated, #f7f7f8);
+    color: var(--xabia-text, #111111);
+    border: 1px solid var(--xabia-line, rgba(0, 0, 0, 0.08));
+    box-shadow: none;
+}
+
+.xabia-conversation-open .xabia-input-area {
+    border-top: 0;
+    padding: 8px 16px calc(env(safe-area-inset-bottom, 0px) + 12px);
+}
+
+.xabia-conversation-open .xabia-input-pill {
+    flex: 0 0 auto;
+    justify-content: flex-end !important;
+    gap: 8px !important;
+}
+
+.xabia-conversation-open .xabia-msg.bot .xabia-entity-card {
+    background: var(--xabia-surface, #ffffff);
+    border: 1px solid var(--xabia-line, rgba(0, 0, 0, 0.08));
+    border-radius: 16px;
+    box-shadow: var(--xabia-shadow, 0 16px 40px rgba(0, 0, 0, 0.08));
+    color: var(--xabia-text, #111111);
+}
+
+.xabia-conversation-open .xabia-msg.bot .xabia-entity-card__title,
+.xabia-conversation-open .xabia-msg.bot .xabia-entity-card__qty-btn {
+    color: var(--xabia-text, #111111);
+}
+
+.xabia-chatbox.xabia-is-waiting .xabia-convo-dock .xabia-input-field,
+.xabia-ui-modern.xabia-is-waiting .xabia-convo-dock .xabia-compose-area .xabia-input-field {
+    position: static !important;
+    width: 100% !important;
+    height: auto !important;
+    min-height: 1.45em !important;
+    margin: 0 !important;
+    padding: 2px 0 4px !important;
+    overflow: hidden !important;
+    clip: auto !important;
+    white-space: pre-wrap !important;
+    border: 0 !important;
+    opacity: 1 !important;
+    pointer-events: auto !important;
+}
+
+.xabia-chatbox .xabia-compose-area .xabia-typing-dots,
+.xabia-is-waiting .xabia-compose-area .xabia-typing-dots,
+.xabia-ui-modern.xabia-is-waiting .xabia-compose-area .xabia-typing-dots {
+    display: none !important;
+}
+
+.xabia-thinking-turn {
+    align-self: flex-start;
+    max-width: min(720px, 92%);
+    padding: 4px 0 8px;
+    background: transparent !important;
+    border: 0 !important;
+    box-shadow: none !important;
+}
+
+.xabia-thinking-box {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 10px;
+}
+
+.xabia-thinking-mark {
+    display: block;
+    width: 72px;
+    height: auto;
+}
+
+.xabia-thinking-mark svg g > * {
+    transform-box: fill-box;
+    transform-origin: center;
+    animation: xabiaBrandDot 1.15s ease-in-out infinite;
+}
+
+.xabia-thinking-mark svg g > *:nth-child(1) { animation-delay: 0s; }
+.xabia-thinking-mark svg g > *:nth-child(2) { animation-delay: 0.16s; }
+.xabia-thinking-mark svg g > *:nth-child(3) { animation-delay: 0.32s; }
+
+.xabia-thinking-turn[data-phase="1"] .xabia-thinking-mark svg g > *:nth-child(1),
+.xabia-thinking-turn[data-phase="2"] .xabia-thinking-mark svg g > *:nth-child(2),
+.xabia-thinking-turn[data-phase="3"] .xabia-thinking-mark svg g > *:nth-child(3) {
+    animation-duration: 0.7s;
+}
+
+@keyframes xabiaBrandDot {
+    0%, 100% { opacity: 0.4; transform: scale(0.86); }
+    40% { opacity: 1; transform: scale(1); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .xabia-voice-overlay { transition: none; }
+    .xabia-thinking-mark svg g > * { animation: none; opacity: 1; transform: none; }
+}
+
+.xabia-search-bar {
+    color: var(--xabia-text, #111111);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+}
+
+.xabia-search-bar__box {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin: 0;
+    padding: 8px 8px 8px 16px;
+    box-sizing: border-box;
+    border: 1px solid var(--xabia-line, rgba(0, 0, 0, 0.08));
+    border-radius: 999px;
+    background: var(--xabia-surface, #ffffff);
+    box-shadow: var(--xabia-shadow, 0 16px 40px rgba(0, 0, 0, 0.08));
+}
+
+.xabia-search-bar__spark {
+    color: var(--xabia-text, #111111);
+}
+
+.xabia-search-bar__field {
+    position: relative;
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
+.xabia-search-bar__input {
+    width: 100%;
+    border: 0;
+    background: transparent;
+    color: var(--xabia-text, #111111);
+    font: inherit;
+    font-size: 1rem;
+    outline: none;
+}
+
+.xabia-search-bar__ghost {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    overflow: hidden;
+    color: var(--xabia-muted, #5c6370);
+    white-space: nowrap;
+    pointer-events: none;
+}
+
+.xabia-search-bar__chips {
+    flex-wrap: wrap;
+    margin-top: 12px;
+    overflow: visible;
+}
+
+.xabia-chatbox[data-theme="dark"] .xabia-chat-header,
+.xabia-chatbox[data-theme="dark"] .xabia-chat-body,
+.xabia-chatbox[data-theme="dark"] .xabia-text-scroll,
+.xabia-chatbox[data-theme="dark"] .xabia-chat-history,
+.xabia-chatbox[data-theme="dark"] .xabia-input-area,
+.xabia-chatbox[data-theme="dark"] .xabia-powered-by,
+.xabia-chatbox[data-theme="dark"] .xabia-compose-area,
+.xabia-chatbox[data-theme="dark"] .xabia-msg.bot {
+    background: var(--xabia-surface, #141416) !important;
+    color: var(--xabia-text, #f4f4f5);
+    border-color: var(--xabia-line, rgba(255, 255, 255, 0.12));
+}
+
+.xabia-chatbox[data-theme="dark"] .xabia-chat-header__name,
+.xabia-chatbox[data-theme="dark"] .xabia-input-field,
+.xabia-chatbox[data-theme="dark"] .xabia-panel-close {
+    color: var(--xabia-text, #f4f4f5);
+}
+
+.xabia-chatbox[data-theme="dark"] .xabia-msg.user,
+.xabia-chatbox[data-theme="dark"] .xabia-msg.bot .xabia-entity-card,
+.xabia-chatbox[data-theme="dark"] .xabia-convo-dock,
+.xabia-chatbox[data-theme="dark"] .xabia-dock-chip {
+    background: var(--xabia-elevated, #1f1f23) !important;
+    color: var(--xabia-text, #f4f4f5);
+    border-color: var(--xabia-line, rgba(255, 255, 255, 0.12));
 }

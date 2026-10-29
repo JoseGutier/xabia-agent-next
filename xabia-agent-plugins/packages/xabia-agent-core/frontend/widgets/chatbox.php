@@ -48,6 +48,17 @@ function xabia_chatbox_icon_svg(string $name, int $size = 20): string {
     return $icons[$name] ?? '';
 }
 
+/**
+ * Ligaduras oficiales de Material Symbols (mic, send, close, spark).
+ */
+function xabia_material_icon(string $name): string {
+    $allowed = ['mic', 'send', 'close', 'auto_awesome'];
+    if (!in_array($name, $allowed, true)) {
+        return '';
+    }
+    return '<span class="material-symbols-outlined" aria-hidden="true">' . esc_html($name) . '</span>';
+}
+
 function xabia_agent_shortcode_debug_comment(string $message): string {
     if (!current_user_can('manage_options')) {
         return '';
@@ -151,6 +162,12 @@ function xabia_enqueue_chatbox_assets_for_project(string $project_id, array $pro
         ? ['xabia-interface']
         : [];
     wp_enqueue_style('xabia-frontend-styles', plugins_url('styles.css', __FILE__), $style_deps, $styles_ver);
+    wp_enqueue_style(
+        'xabia-material-symbols',
+        'https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200',
+        [],
+        null
+    );
     wp_enqueue_script('xabia-chatbox', plugins_url($js_basename, __FILE__), ['jquery'], $js_ver, true);
 
     wp_localize_script(
@@ -373,10 +390,14 @@ function shortcode_xabia_agent_renderer($atts) {
     } elseif ($is_kiosk_presentation) {
         $bg_color = '#ffffff';
     }
+    $park_chatbox = class_exists('Xabia_Interface', false) && Xabia_Interface::consume_park_next_chatbox();
     $chatbox_class_list = array_merge(
         ['xabia-chatbox', 'xabia-chatbot', 'xabia-ui-modern', 'xabia-state-empty'],
         $presentation_classes
     );
+    if ($park_chatbox) {
+        $chatbox_class_list[] = 'xabia-chatbox--parked';
+    }
     if ($is_kiosk_presentation) {
         $chatbox_class_list[] = 'xabia-kiosk-embed';
         $chatbox_class_list[] = 'xabia-immersive-mode';
@@ -388,6 +409,29 @@ function shortcode_xabia_agent_renderer($atts) {
     if (!function_exists('xabia_render_kinetic_avatar_svg')) {
         require_once dirname(__FILE__) . '/avatar-svg.php';
     }
+    $color_scheme = 'light';
+    if (isset($iface) && is_array($iface) && class_exists('Xabia_Interface', false)) {
+        $color_scheme = (string) ($iface[Xabia_Interface::OPT_COLOR_SCHEME] ?? 'light');
+    }
+    $scheme_attrs = class_exists('Xabia_Interface', false)
+        ? Xabia_Interface::color_scheme_attributes($color_scheme)
+        : '';
+    $search_bar_file = __DIR__ . '/search-bar.php';
+    if (is_readable($search_bar_file)) {
+        require_once $search_bar_file;
+    }
+    $dock_chips = function_exists('xabia_search_bar_chips_from_rules') && is_array($rules)
+        ? xabia_search_bar_chips_from_rules($rules)
+        : [];
+    $dots_svg_path = dirname(__DIR__) . '/assets/svg/xabia-dots.svg';
+    $dots_svg_markup = '';
+    if (is_readable($dots_svg_path)) {
+        $dots_raw = (string) file_get_contents($dots_svg_path);
+        $dots_svg_markup = trim((string) preg_replace('/<\?xml[^>]*\?>/', '', $dots_raw));
+    }
+    $dots_svg_url = defined('XABIA_URL')
+        ? trailingslashit(XABIA_URL) . 'frontend/assets/svg/xabia-dots.svg'
+        : '';
 
     $uploads_base = wp_upload_dir();
     $images_base_url = !empty($uploads_base['baseurl']) ? rtrim($uploads_base['baseurl'], '/') . '/' : '';
@@ -478,7 +522,34 @@ function shortcode_xabia_agent_renderer($atts) {
         }
     </style>
 
-    <div id="<?php echo esc_attr($container_id); ?>" class="<?php echo esc_attr($chatbox_classes); ?>" data-project="<?php echo esc_attr($project_id); ?>" data-presentation-mode="<?php echo esc_attr($presentation_mode); ?>" data-endpoint="<?php echo esc_url($ajax_url); ?>" data-ask-endpoint="<?php echo esc_url($ask_url); ?>" data-nonce="<?php echo esc_attr($ask_nonce); ?>" data-scope="<?php echo esc_attr($current_scope); ?>" data-strict-mode="<?php echo $is_strict_mode ? '1' : '0'; ?>" data-ente-id-raw="<?php echo esc_attr($shortcode_tunnel); ?>" data-ente-id="<?php echo esc_attr($data_ente_attr); ?>" data-qr-auto="<?php echo esc_attr($qr_auto_json); ?>" data-starter-questions="<?php echo esc_attr($starter_questions_json); ?>" data-totem-minutes="<?php echo (int) $totem_minutes; ?>" data-totem-reset="<?php echo esc_attr($totem_reset_json); ?>" data-images-base="<?php echo esc_url($images_base_url); ?>" data-lang="<?php echo esc_attr($current_lang); ?>" data-voice="1" data-tts="<?php echo esc_attr($tts_config_json); ?>" data-avatar-name="<?php echo esc_attr($avatar_name); ?>" data-speaking-avatar="<?php echo (int) $speaking_avatar; ?>">
+    <div id="<?php echo esc_attr($container_id); ?>" class="<?php echo esc_attr($chatbox_classes); ?>" data-project="<?php echo esc_attr($project_id); ?>" data-presentation-mode="<?php echo esc_attr($presentation_mode); ?>" data-endpoint="<?php echo esc_url($ajax_url); ?>" data-ask-endpoint="<?php echo esc_url($ask_url); ?>" data-nonce="<?php echo esc_attr($ask_nonce); ?>" data-scope="<?php echo esc_attr($current_scope); ?>" data-strict-mode="<?php echo $is_strict_mode ? '1' : '0'; ?>" data-ente-id-raw="<?php echo esc_attr($shortcode_tunnel); ?>" data-ente-id="<?php echo esc_attr($data_ente_attr); ?>" data-qr-auto="<?php echo esc_attr($qr_auto_json); ?>" data-starter-questions="<?php echo esc_attr($starter_questions_json); ?>" data-totem-minutes="<?php echo (int) $totem_minutes; ?>" data-totem-reset="<?php echo esc_attr($totem_reset_json); ?>" data-images-base="<?php echo esc_url($images_base_url); ?>" data-lang="<?php echo esc_attr($current_lang); ?>" data-voice="1" data-tts="<?php echo esc_attr($tts_config_json); ?>" data-avatar-name="<?php echo esc_attr($avatar_name); ?>" data-speaking-avatar="<?php echo (int) $speaking_avatar; ?>" data-dots-svg="<?php echo esc_url($dots_svg_url); ?>"<?php echo $scheme_attrs; ?>>
+        <template class="xabia-dots-template"><?php echo $dots_svg_markup; ?></template>
+
+        <div class="xabia-voice-overlay" hidden>
+            <div class="xabia-voice-overlay__top">
+                <div class="xabia-voice-overlay__brand">
+                    <?php if ($dots_svg_markup !== '') : ?>
+                        <span class="xabia-voice-overlay__mark" aria-hidden="true"><?php echo $dots_svg_markup; ?></span>
+                    <?php endif; ?>
+                    <span class="xabia-voice-overlay__name"><?php echo esc_html($avatar_name); ?></span>
+                </div>
+                <button type="button" class="xabia-voice-overlay__close" aria-label="<?php echo esc_attr(Xabia_I18n::t('Cerrar')); ?>">
+                    <?php echo xabia_material_icon('close'); ?>
+                </button>
+            </div>
+            <div class="xabia-voice-overlay__center">
+                <div class="xabia-voice-orb" aria-hidden="true"><?php echo xabia_material_icon('mic'); ?></div>
+                <h2 class="xabia-voice-overlay__title"><?php echo esc_html(Xabia_I18n::t('Te escucho...')); ?></h2>
+                <p class="xabia-voice-overlay__transcript" data-idle="1"><?php echo esc_html(Xabia_I18n::t('Dime qué quieres saber.')); ?></p>
+            </div>
+            <div class="xabia-voice-overlay__bottom">
+                <div class="xabia-voice-overlay__bar">
+                    <input type="text" class="xabia-voice-overlay__input" placeholder="<?php echo esc_attr(Xabia_I18n::t('Pregunta lo que quieras...')); ?>" autocomplete="off">
+                    <button type="button" class="xabia-btn-icon xabia-mic xabia-voice-overlay__mic" title="<?php echo esc_attr(Xabia_I18n::t('Toca para hablar o mantén pulsado')); ?>" aria-label="<?php echo esc_attr(Xabia_I18n::t('Toca para hablar o mantén pulsado')); ?>"><?php echo xabia_material_icon('mic'); ?></button>
+                    <button type="button" class="xabia-btn-icon xabia-send xabia-voice-overlay__send" title="<?php echo esc_attr(Xabia_I18n::t('Enviar')); ?>" aria-label="<?php echo esc_attr(Xabia_I18n::t('Enviar mensaje')); ?>"><?php echo xabia_material_icon('send'); ?></button>
+                </div>
+            </div>
+        </div>
 
         <?php if ($speaking_avatar) : ?>
         <div class="xabia-immersive-avatar-stage" aria-hidden="<?php echo $is_kiosk_presentation ? 'false' : 'true'; ?>">
@@ -498,12 +569,13 @@ function shortcode_xabia_agent_renderer($atts) {
 
         <div class="xabia-immersive-panel">
         <header class="xabia-chat-header">
-            <button type="button" class="xabia-panel-close" aria-label="<?php echo esc_attr(Xabia_I18n::t('Minimizar chat')); ?>">
-                <?php echo xabia_chatbox_icon_svg('chevron_down', 22); ?>
+            <button type="button" class="xabia-panel-close" aria-label="<?php echo esc_attr(Xabia_I18n::t('Cerrar')); ?>">
+                <?php echo xabia_material_icon('close'); ?>
             </button>
             <div class="xabia-chat-header__center">
                 <span class="xabia-chat-header__status" aria-hidden="true"></span>
                 <span class="xabia-chat-header__name"><?php echo esc_html($avatar_name); ?></span>
+                <span class="xabia-chat-header__presence"><?php echo esc_html(Xabia_I18n::t('En línea')); ?></span>
             </div>
             <span class="xabia-chat-header__spacer" aria-hidden="true"></span>
         </header>
@@ -518,32 +590,35 @@ function shortcode_xabia_agent_renderer($atts) {
                     </div>
                     <div id="xabia-voice-hero-<?php echo esc_attr($project_id); ?>" class="xabia-voice-hero" aria-hidden="false">
                         <button type="button" class="xabia-voice-hero__orb xabia-mic xabia-mic-hero" title="<?php echo esc_attr(Xabia_I18n::t('Toca para hablar o mantén pulsado')); ?>" aria-label="<?php echo esc_attr(Xabia_I18n::t('Toca para hablar o mantén pulsado')); ?>">
-                            <?php echo xabia_chatbox_icon_svg('mic', 44); ?>
+                            <?php echo xabia_material_icon('mic'); ?>
                         </button>
                     </div>
                     <div class="xabia-starter-suggestions" role="group" aria-label="<?php echo esc_attr(Xabia_I18n::t('Preguntas sugeridas')); ?>" hidden></div>
-                </div>
-                <div class="xabia-compose-area">
-                    <textarea class="xabia-input-field" placeholder="<?php echo esc_attr(Xabia_I18n::t('Escribe aquí o pulsa el micro para hablar...')); ?>" autocomplete="off" rows="1"></textarea>
-                    <div class="xabia-typing-dots" style="display:none;" aria-hidden="true" role="status">
-                        <span class="xabia-typing-dot" aria-hidden="true"></span>
-                        <span class="xabia-typing-dot" aria-hidden="true"></span>
-                        <span class="xabia-typing-dot" aria-hidden="true"></span>
-                        <span class="xabia-waiting-message" aria-live="polite"></span>
-                    </div>
                 </div>
             </div>
         </div>
 
         <div class="xabia-input-area">
+            <?php if ($dock_chips !== []) : ?>
+                <div class="xabia-dock-chips" role="group">
+                    <?php foreach ($dock_chips as $chip) : ?>
+                        <button type="button" class="xabia-dock-chip" data-query="<?php echo esc_attr($chip['query']); ?>"><?php echo esc_html($chip['label']); ?></button>
+                    <?php endforeach; ?>
+                </div>
+            <?php endif; ?>
             <div class="xabia-mic-listening-banner" role="status" aria-live="polite">
                 <span class="xabia-mic-listening-banner__dot" aria-hidden="true"></span>
                 <span class="xabia-mic-listening-banner__text"><?php echo esc_html(Xabia_I18n::t('Escuchando… Habla ahora')); ?></span>
             </div>
-            <div class="xabia-input-pill">
-                <button type="button" class="xabia-btn-icon xabia-mic" title="<?php echo esc_attr(Xabia_I18n::t('Toca para hablar o mantén pulsado')); ?>" aria-label="<?php echo esc_attr(Xabia_I18n::t('Toca para hablar o mantén pulsado')); ?>"><?php echo xabia_chatbox_icon_svg('mic', 18); ?></button>
-                <button type="button" class="xabia-btn-icon xabia-mute" title="<?php echo esc_attr(Xabia_I18n::t('Activar voz (lectura en alto)')); ?>" aria-label="<?php echo esc_attr(Xabia_I18n::t('Activar voz')); ?>"><?php echo xabia_chatbox_icon_svg('volume_x', 18); ?><?php echo xabia_chatbox_icon_svg('volume_2', 18); ?></button>
-                <button type="button" class="xabia-btn-icon xabia-send" title="<?php echo esc_attr(Xabia_I18n::t('Enviar')); ?>" aria-label="<?php echo esc_attr(Xabia_I18n::t('Enviar mensaje')); ?>"><?php echo xabia_chatbox_icon_svg('send', 18); ?></button>
+            <div class="xabia-convo-dock">
+                <div class="xabia-compose-area">
+                    <textarea class="xabia-input-field" placeholder="<?php echo esc_attr(Xabia_I18n::t('Escribe aquí o pulsa el micro para hablar...')); ?>" autocomplete="off" rows="1"></textarea>
+                </div>
+                <div class="xabia-input-pill">
+                    <button type="button" class="xabia-btn-icon xabia-mic" title="<?php echo esc_attr(Xabia_I18n::t('Toca para hablar o mantén pulsado')); ?>" aria-label="<?php echo esc_attr(Xabia_I18n::t('Toca para hablar o mantén pulsado')); ?>"><?php echo xabia_material_icon('mic'); ?></button>
+                    <button type="button" class="xabia-btn-icon xabia-mute" title="<?php echo esc_attr(Xabia_I18n::t('Activar voz (lectura en alto)')); ?>" aria-label="<?php echo esc_attr(Xabia_I18n::t('Activar voz')); ?>"><?php echo xabia_chatbox_icon_svg('volume_x', 18); ?><?php echo xabia_chatbox_icon_svg('volume_2', 18); ?></button>
+                    <button type="button" class="xabia-btn-icon xabia-send" title="<?php echo esc_attr(Xabia_I18n::t('Enviar')); ?>" aria-label="<?php echo esc_attr(Xabia_I18n::t('Enviar mensaje')); ?>"><?php echo xabia_material_icon('send'); ?></button>
+                </div>
             </div>
         </div>
 

@@ -2069,3 +2069,79 @@ body.xabia-keyboard-open.xabia-mobile-chat-stack .xabia-chatbox.xabia-panel-shel
         animation: none !important;
     }
 }
+
+/* Pastilla fija: avatar ~38px + texto. El launcher inline conserva su tamaño. */
+body .xabia-sticky-footer-box:not(.xabia-trigger--inline),
+body .xabia-sticky-footer-box:not(.xabia-trigger--inline).is-anchored,
+body .xabia-sticky-footer-box.xabia-mobile-preset-compact:not(.xabia-trigger--inline),
+body .xabia-sticky-footer-box.xabia-mobile-preset-ultra-compact:not(.xabia-trigger--inline) {
+    width: auto !important;
+    height: auto !important;
+    max-width: min(92vw, 420px) !important;
+    min-height: 0 !important;
+    padding: 8px 16px 8px 8px !important;
+    box-sizing: border-box;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    background: var(--xabia-surface, #ffffff) !important;
+    border: 1px solid var(--xabia-line, rgba(0, 0, 0, 0.08)) !important;
+    border-radius: 999px !important;
+    box-shadow: var(--xabia-shadow, 0 16px 40px rgba(0, 0, 0, 0.08)) !important;
+    color: var(--xabia-text, #111111);
+    pointer-events: auto;
+}
+
+body .xabia-sticky-footer-box:not(.xabia-trigger--inline) .xabia-interface-trigger,
+body.xabia-mobile-preset-compact .xabia-sticky-footer-box:not(.xabia-trigger--inline) .xabia-interface-trigger,
+body.xabia-mobile-preset-ultra-compact .xabia-sticky-footer-box:not(.xabia-trigger--inline) .xabia-interface-trigger {
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: flex-start !important;
+    gap: 10px;
+    width: auto !important;
+    height: auto !important;
+    max-width: none !important;
+    max-height: none !important;
+    line-height: 1.2;
+    background: transparent !important;
+}
+
+body .xabia-sticky-footer-box:not(.xabia-trigger--inline) .xabia-kinetic-wrapper,
+body .xabia-sticky-footer-box:not(.xabia-trigger--inline) .x-avatar-container,
+body .xabia-sticky-footer-box:not(.xabia-trigger--inline) .xabia-trigger-custom-img,
+body .xabia-sticky-footer-box.xabia-mobile-preset-compact:not(.xabia-trigger--inline) .xabia-kinetic-wrapper,
+body .xabia-sticky-footer-box.xabia-mobile-preset-compact:not(.xabia-trigger--inline) .x-avatar-container,
+body .xabia-sticky-footer-box.xabia-mobile-preset-compact:not(.xabia-trigger--inline) .xabia-trigger-custom-img,
+body .xabia-sticky-footer-box.xabia-mobile-preset-ultra-compact:not(.xabia-trigger--inline) .xabia-kinetic-wrapper,
+body .xabia-sticky-footer-box.xabia-mobile-preset-ultra-compact:not(.xabia-trigger--inline) .x-avatar-container,
+body .xabia-sticky-footer-box.xabia-mobile-preset-ultra-compact:not(.xabia-trigger--inline) .xabia-trigger-custom-img {
+    width: 38px !important;
+    height: 38px !important;
+    max-width: 38px !important;
+    max-height: 38px !important;
+    flex: 0 0 38px;
+}
+
+.xabia-trigger-pill__label {
+    font-size: 14px;
+    font-weight: 650;
+    letter-spacing: -0.01em;
+    color: var(--xabia-text, #111111);
+    white-space: nowrap;
+}
+
+.xabia-sticky-footer-box:not(.xabia-trigger--inline):has(.xabia-trigger-pill__label) .xabia-avatar-hint-bubble {
+    display: none !important;
+}
+
+body.xabia-voice-open .xabia-sticky-footer-box:not(.xabia-trigger--inline),
+body.xabia-conversation-open .xabia-sticky-footer-box:not(.xabia-trigger--inline) {
+    opacity: 0 !important;
+    visibility: hidden !important;
+    pointer-events: none !important;
+}
+
+.xabia-sticky-footer-box[data-theme="dark"]:not(.xabia-trigger--inline) .xabia-trigger-pill__label {
+    color: var(--xabia-text, #f4f4f5);
+}

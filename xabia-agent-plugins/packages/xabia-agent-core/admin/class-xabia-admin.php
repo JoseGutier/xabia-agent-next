@@ -243,6 +243,23 @@ class Xabia_Admin {
     }
 
     /**
+     * Frases de la barra hero: una por línea, tope igual que las preguntas de arranque.
+     *
+     * @param mixed $raw
+     * @return list<string>
+     */
+    private static function search_bar_lines_from_post($raw): array {
+        $file = defined('XABIA_PATH') ? XABIA_PATH . 'frontend/widgets/search-bar.php' : '';
+        if ($file !== '' && is_readable($file)) {
+            require_once $file;
+        }
+        if (function_exists('xabia_search_bar_normalize_lines')) {
+            return xabia_search_bar_normalize_lines($raw);
+        }
+        return [];
+    }
+
+    /**
      * Tarjetas radio para «Estilo de inteligencia» (value = slug técnico del modelo).
      *
      * @param list<string> $opts
@@ -2077,6 +2094,8 @@ ORDER BY name ASC";
                     'starter_questions' => class_exists('Xabia_Starter_Questions', false)
                         ? Xabia_Starter_Questions::normalize_manual_list($post['starter_questions'] ?? '')
                         : [],
+                    'search_bar_placeholders' => self::search_bar_lines_from_post($post['search_bar_placeholders'] ?? ''),
+                    'search_bar_chips' => self::search_bar_lines_from_post($post['search_bar_chips'] ?? ''),
                     'rag_behavior_preset' => in_array(sanitize_key($post['rag_behavior_preset'] ?? ''), ['neutral', 'compact', 'custom'], true)
                         ? sanitize_key($post['rag_behavior_preset'])
                         : 'neutral',
@@ -3887,6 +3906,14 @@ ORDER BY name ASC";
         if (!empty($data['rules']['starter_questions']) && is_array($data['rules']['starter_questions'])) {
             $starter_questions_raw = implode("\n", array_map('strval', $data['rules']['starter_questions']));
         }
+        $search_bar_placeholders_raw = '';
+        if (!empty($data['rules']['search_bar_placeholders']) && is_array($data['rules']['search_bar_placeholders'])) {
+            $search_bar_placeholders_raw = implode("\n", array_map('strval', $data['rules']['search_bar_placeholders']));
+        }
+        $search_bar_chips_raw = '';
+        if (!empty($data['rules']['search_bar_chips']) && is_array($data['rules']['search_bar_chips'])) {
+            $search_bar_chips_raw = implode("\n", array_map('strval', $data['rules']['search_bar_chips']));
+        }
         $min_score = $data['rules']['min_score'] ?? '0.2';
         $is_editing_agent = is_string($edit_id) && $edit_id !== '' && $edit_id !== 'new' && is_array($data);
         $is_agent_paused = $is_editing_agent && !empty($data['paused']);
@@ -4978,6 +5005,7 @@ ORDER BY name ASC";
                                     <input type="text" name="name" id="xabia-agent-name" value="<?php echo esc_attr($data['name'] ?? ''); ?>" class="widefat">
                                     <?php if ($edit_id && $edit_id !== 'new'): ?>
                                         <p class="description"><?php echo esc_html__('Shortcode:', 'xabia-intelligence'); ?> <code>[xabia_agent id="<?php echo esc_html($edit_id); ?>"]</code></p>
+                                        <p class="description"><?php echo esc_html__('Barra hero:', 'xabia-intelligence'); ?> <code>[xabia_search_bar id="<?php echo esc_html($edit_id); ?>"]</code></p>
                                     <?php else: ?>
                                         <p class="description"><?php echo esc_html__('Guarda el agente para ver aquí el shortcode definitivo.', 'xabia-intelligence'); ?></p>
                                     <?php endif; ?>
@@ -4993,6 +5021,12 @@ ORDER BY name ASC";
                                     <label style="display:block;margin-top:10px;"><strong><?php echo esc_html__('Preguntas manuales (una por línea)', 'xabia-intelligence'); ?></strong></label>
                                     <textarea name="starter_questions" class="widefat" rows="4" placeholder="<?php echo esc_attr__('Opcional. Una pregunta por línea.', 'xabia-intelligence'); ?>"><?php echo esc_textarea($starter_questions_raw); ?></textarea>
                                     <p class="description"><?php echo esc_html__('Si lo dejas vacío, Xabia generará preguntas según el contenido del agente.', 'xabia-intelligence'); ?></p>
+                                    <label style="display:block;margin-top:16px;"><strong><?php echo esc_html__('Barra hero: frases del placeholder', 'xabia-intelligence'); ?></strong></label>
+                                    <textarea name="search_bar_placeholders" class="widefat" rows="4" placeholder="<?php echo esc_attr__('Una frase por línea. Si está vacío, el placeholder no rota.', 'xabia-intelligence'); ?>"><?php echo esc_textarea($search_bar_placeholders_raw); ?></textarea>
+                                    <p class="description"><?php echo esc_html__('Se turnan en [xabia_search_bar]. No sustituyen a las preguntas del chat.', 'xabia-intelligence'); ?></p>
+                                    <label style="display:block;margin-top:10px;"><strong><?php echo esc_html__('Barra hero: chips', 'xabia-intelligence'); ?></strong></label>
+                                    <textarea name="search_bar_chips" class="widefat" rows="4" placeholder="<?php echo esc_attr__('Etiqueta | consulta', 'xabia-intelligence'); ?>"><?php echo esc_textarea($search_bar_chips_raw); ?></textarea>
+                                    <p class="description"><?php echo esc_html__('Una línea por chip. Formato «Etiqueta | consulta». Sin barra vertical, el texto se envía tal cual.', 'xabia-intelligence'); ?></p>
                                 </div>
 
                                 <div class="xabia-admin-section">

@@ -1,0 +1,811 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Xabia AI — Experiencia Conversacional Astei</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      /* Paleta mineral suave / Bosque templado para Astei */
+      --bg-base: #141815;
+      --bg-surface: #1b211d;
+      --bg-card: rgba(255, 255, 255, 0.04);
+      --bg-card-hover: rgba(255, 255, 255, 0.07);
+      
+      --accent: #34d399; /* Verde esmeralda suave */
+      --accent-glow: rgba(52, 211, 153, 0.25);
+      --accent-clay: #e0a96d; /* Tono madera/arcilla para detalles */
+      
+      --text-main: #f4f5f3;
+      --text-muted: #9ba39c;
+      --border: rgba(255, 255, 255, 0.1);
+      --border-focus: rgba(52, 211, 153, 0.4);
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: 'Plus Jakarta Sans', sans-serif;
+    }
+
+    body {
+      background-color: var(--bg-base);
+      color: var(--text-main);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow-x: hidden;
+    }
+
+    /* VISTA 1: HERO DE LA HOME */
+    .hero-view {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 60px 24px;
+      text-align: center;
+      background: radial-gradient(circle at 50% 25%, rgba(52, 211, 153, 0.08) 0%, transparent 65%);
+      transition: opacity 0.4s ease, transform 0.4s ease;
+    }
+
+    .hero-view.hidden {
+      opacity: 0;
+      transform: scale(0.96);
+      pointer-events: none;
+      display: none;
+    }
+
+    .brand-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 16px;
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      font-size: 0.86rem;
+      color: var(--accent);
+      margin-bottom: 24px;
+    }
+
+    h1 {
+      font-size: clamp(2.2rem, 5vw, 3.6rem);
+      font-weight: 700;
+      letter-spacing: -0.03em;
+      margin-bottom: 16px;
+      max-width: 820px;
+      line-height: 1.18;
+    }
+
+    h1 span {
+      background: linear-gradient(135deg, #ffffff 40%, var(--accent) 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    p.subtitle {
+      color: var(--text-muted);
+      font-size: 1.12rem;
+      max-width: 600px;
+      margin-bottom: 40px;
+      line-height: 1.6;
+    }
+
+    /* BARRA HERO PRINCIPAL */
+    .search-hero-box {
+      width: 100%;
+      max-width: 680px;
+      background: var(--bg-surface);
+      border: 1px solid var(--border);
+      border-radius: 32px;
+      padding: 8px 10px 8px 24px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      box-shadow: 0 16px 36px rgba(0, 0, 0, 0.35);
+      transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+
+    .search-hero-box:focus-within, .search-hero-box:hover {
+      border-color: var(--border-focus);
+      box-shadow: 0 18px 45px rgba(0, 0, 0, 0.45), 0 0 25px var(--accent-glow);
+    }
+
+    .search-hero-box input {
+      flex: 1;
+      background: transparent;
+      border: none;
+      outline: none;
+      color: var(--text-main);
+      font-size: 1.05rem;
+    }
+
+    .search-hero-box input::placeholder {
+      color: rgba(255, 255, 255, 0.45);
+    }
+
+    .btn-circle {
+      width: 44px;
+      height: 44px;
+      border-radius: 50%;
+      border: none;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.15rem;
+      transition: transform 0.2s, background 0.2s;
+    }
+
+    .btn-mic {
+      background: rgba(255, 255, 255, 0.08);
+      color: var(--accent);
+    }
+
+    .btn-mic:hover {
+      background: rgba(52, 211, 153, 0.15);
+      transform: scale(1.06);
+    }
+
+    .btn-send {
+      background: var(--accent);
+      color: #121613;
+      font-weight: 700;
+    }
+
+    .btn-send:hover {
+      transform: scale(1.06);
+      box-shadow: 0 0 15px var(--accent-glow);
+    }
+
+    .chips-group {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      justify-content: center;
+      margin-top: 22px;
+      max-width: 700px;
+    }
+
+    .chip-item {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      color: var(--text-muted);
+      padding: 8px 16px;
+      border-radius: 999px;
+      font-size: 0.88rem;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .chip-item:hover {
+      color: #fff;
+      border-color: var(--accent);
+      background: rgba(52, 211, 153, 0.1);
+      transform: translateY(-1px);
+    }
+
+    /* VISTA 2: ESPACIO CONVERSACIONAL (OVERLAY / PANTALLA COMPLETA SUAVE) */
+    .chat-view {
+      display: none;
+      position: fixed;
+      inset: 0;
+      width: 100vw;
+      height: 100vh;
+      background: linear-gradient(180deg, #18201b 0%, #121613 100%);
+      z-index: 100;
+      flex-direction: column;
+      animation: fadeIn 0.4s ease forwards;
+    }
+
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(12px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    .chat-header {
+      width: 100%;
+      padding: 16px 28px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-bottom: 1px solid var(--border);
+      background: rgba(24, 32, 27, 0.8);
+      backdrop-filter: blur(12px);
+    }
+
+    .chat-header-title {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      font-size: 0.95rem;
+      font-weight: 600;
+    }
+
+    .avatar-indicator {
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, var(--accent), #10b981);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 0.9rem;
+      color: #121613;
+      box-shadow: 0 0 10px var(--accent-glow);
+    }
+
+    .btn-close {
+      background: rgba(255, 255, 255, 0.08);
+      border: 1px solid var(--border);
+      color: var(--text-main);
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      font-size: 1.1rem;
+      transition: background 0.2s, transform 0.2s;
+    }
+
+    .btn-close:hover {
+      background: rgba(255, 255, 255, 0.16);
+      transform: rotate(90deg);
+    }
+
+    /* FLUJO DE MENSAJES */
+    .chat-stream {
+      flex: 1;
+      overflow-y: auto;
+      padding: 30px 24px 140px 24px;
+      display: flex;
+      flex-direction: column;
+      gap: 24px;
+      max-width: 840px;
+      width: 100%;
+      margin: 0 auto;
+    }
+
+    /* Mensaje del Usuario */
+    .msg-user {
+      align-self: flex-end;
+      background: rgba(52, 211, 153, 0.12);
+      border: 1px solid rgba(52, 211, 153, 0.3);
+      color: #ffffff;
+      padding: 14px 22px;
+      border-radius: 22px 22px 4px 22px;
+      max-width: 75%;
+      font-size: 1rem;
+      line-height: 1.5;
+      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
+    }
+
+    /* Mensaje del Asistente Xabia */
+    .msg-assistant-wrapper {
+      display: flex;
+      gap: 16px;
+      align-items: flex-start;
+      max-width: 100%;
+    }
+
+    .assistant-avatar-badge {
+      width: 34px;
+      height: 34px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, var(--accent), #059669);
+      flex-shrink: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #121613;
+      font-size: 0.95rem;
+      margin-top: 4px;
+    }
+
+    .msg-assistant-content {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    .text-prose {
+      font-size: 1.05rem;
+      line-height: 1.65;
+      color: #e5e7eb;
+    }
+
+    /* LOADER PENSANDO / BUSCANDO */
+    .thinking-box {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      padding: 14px 20px;
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      width: fit-content;
+    }
+
+    .dots-animation {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+    }
+
+    .dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: var(--accent);
+      animation: pulseDot 1.4s infinite ease-in-out both;
+    }
+
+    .dot:nth-child(1) { animation-delay: -0.32s; }
+    .dot:nth-child(2) { animation-delay: -0.16s; }
+
+    @keyframes pulseDot {
+      0%, 80%, 100% { transform: scale(0.6); opacity: 0.4; }
+      40% { transform: scale(1.2); opacity: 1; box-shadow: 0 0 8px var(--accent); }
+    }
+
+    .thinking-label {
+      font-size: 0.92rem;
+      color: var(--accent);
+      font-weight: 500;
+      letter-spacing: 0.01em;
+    }
+
+    /* TARJETAS DE ALOJAMIENTO / ACCIÓN */
+    .cards-deck {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 16px;
+      margin-top: 6px;
+    }
+
+    .stay-card {
+      background: var(--bg-surface);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      transition: all 0.25s ease;
+    }
+
+    .stay-card:hover {
+      border-color: var(--border-focus);
+      transform: translateY(-2px);
+      box-shadow: 0 12px 30px rgba(0, 0, 0, 0.35);
+    }
+
+    .stay-card-thumb {
+      height: 140px;
+      background: linear-gradient(135deg, #27362c 0%, #18221b 100%);
+      position: relative;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 2.2rem;
+      color: rgba(255, 255, 255, 0.4);
+    }
+
+    .stay-price-tag {
+      position: absolute;
+      bottom: 10px;
+      right: 12px;
+      background: rgba(18, 22, 19, 0.85);
+      backdrop-filter: blur(8px);
+      padding: 4px 10px;
+      border-radius: 12px;
+      font-size: 0.82rem;
+      font-weight: 600;
+      color: var(--accent);
+      border: 1px solid var(--border);
+    }
+
+    .stay-card-body {
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      flex: 1;
+    }
+
+    .stay-card-title {
+      font-size: 1.1rem;
+      font-weight: 600;
+      color: #fff;
+    }
+
+    .stay-tags {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+    }
+
+    .tag-badge {
+      font-size: 0.74rem;
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid var(--border);
+      padding: 3px 8px;
+      border-radius: 6px;
+      color: var(--text-muted);
+    }
+
+    .tag-badge.highlight {
+      color: var(--accent-clay);
+      border-color: rgba(224, 169, 109, 0.3);
+      background: rgba(224, 169, 109, 0.08);
+    }
+
+    .stay-card-desc {
+      font-size: 0.88rem;
+      color: var(--text-muted);
+      line-height: 1.45;
+    }
+
+    .stay-card-actions {
+      display: flex;
+      gap: 8px;
+      margin-top: auto;
+      padding-top: 10px;
+    }
+
+    .card-btn {
+      flex: 1;
+      padding: 9px 12px;
+      border-radius: 12px;
+      font-size: 0.85rem;
+      font-weight: 600;
+      text-align: center;
+      cursor: pointer;
+      text-decoration: none;
+      transition: all 0.2s;
+    }
+
+    .card-btn.primary {
+      background: var(--accent);
+      color: #121613;
+      border: none;
+    }
+
+    .card-btn.primary:hover {
+      box-shadow: 0 0 12px var(--accent-glow);
+    }
+
+    .card-btn.secondary {
+      background: transparent;
+      color: var(--text-main);
+      border: 1px solid var(--border);
+    }
+
+    .card-btn.secondary:hover {
+      background: rgba(255, 255, 255, 0.08);
+    }
+
+    /* DOCK INFERIOR DE ENTRADA (CONVERSACIÓN ACTIVA) */
+    .chat-bottom-dock {
+      position: absolute;
+      bottom: 0;
+      left: 0;
+      width: 100%;
+      background: linear-gradient(180deg, transparent 0%, rgba(18, 22, 19, 0.95) 30%, #121613 100%);
+      padding: 16px 24px 28px 24px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .chat-input-bar {
+      width: 100%;
+      max-width: 800px;
+      background: var(--bg-surface);
+      border: 1px solid var(--border);
+      border-radius: 30px;
+      padding: 8px 12px 8px 22px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+    }
+
+    .chat-input-bar:focus-within {
+      border-color: var(--border-focus);
+    }
+
+    .chat-input-bar input {
+      flex: 1;
+      background: transparent;
+      border: none;
+      outline: none;
+      color: #fff;
+      font-size: 1rem;
+    }
+
+    .chat-input-bar input::placeholder {
+      color: rgba(255, 255, 255, 0.4);
+    }
+
+    .context-chips-hint {
+      display: flex;
+      gap: 8px;
+      overflow-x: auto;
+      max-width: 800px;
+      width: 100%;
+      scrollbar-width: none;
+    }
+
+    .context-chips-hint::-webkit-scrollbar { display: none; }
+
+    .micro-chip {
+      font-size: 0.78rem;
+      background: rgba(255, 255, 255, 0.04);
+      border: 1px solid var(--border);
+      color: var(--text-muted);
+      padding: 4px 12px;
+      border-radius: 999px;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+
+    .micro-chip:hover {
+      color: #fff;
+      border-color: var(--accent);
+    }
+  </style>
+</head>
+<body>
+
+  <!-- ================= VISTA 1: HERO HOME ================= -->
+  <section class="hero-view" id="heroView">
+    <div class="brand-badge">
+      <span>✦</span> Asistente Inteligente · Las Casas de Ea Astei
+    </div>
+    <h1>El refugio natural <span>en Urdaibai</span></h1>
+    <p class="subtitle">Casas bioclimáticas y silencio absoluto. Escribe lo que buscas o pulsa el micrófono para resolver tus dudas de estancia al instante.</p>
+
+    <!-- BARRA CENTRAL INTEGRADA -->
+    <div class="search-hero-box">
+      <input type="text" id="heroInput" placeholder="¿Qué casa tiene chimenea y admite mascotas?">
+      <button class="btn-circle btn-mic" id="heroMicBtn" title="Hablar por voz">🎙️</button>
+      <button class="btn-circle btn-send" id="heroSendBtn" title="Enviar">➔</button>
+    </div>
+
+    <!-- SUGERENCIAS RÁPIDAS -->
+    <div class="chips-group">
+      <button class="chip-item" data-query="¿Qué casas tienen chimenea y admiten mascotas?">🔥 Casas con chimenea y mascotas</button>
+      <button class="chip-item" data-query="¿Tenéis disponibilidad para este fin de semana?">📅 Disponibilidad este fin de semana</button>
+      <button class="chip-item" data-query="¿Cómo funciona la zona de piscina y spa?">🌿 Piscina y bienestar</button>
+      <button class="chip-item" data-query="¿Qué rutas a pie recomendáis cerca de Ea?">🥾 Rutas desde la casa</button>
+    </div>
+  </section>
+
+  <!-- ================= VISTA 2: ESPACIO CONVERSACIONAL ================= -->
+  <div class="chat-view" id="chatView">
+    <!-- Header -->
+    <header class="chat-header">
+      <div class="chat-header-title">
+        <div class="avatar-indicator">✦</div>
+        <div>
+          <div>Lami · Concierge de Astei</div>
+          <div style="font-size: 0.75rem; color: var(--accent); font-weight: 400;">En línea · Respuestas en tiempo real</div>
+        </div>
+      </div>
+      <button class="btn-close" id="closeChatBtn" title="Volver a la web">✕</button>
+    </header>
+
+    <!-- Flujo de Mensajes -->
+    <main class="chat-stream" id="chatStream">
+      <!-- Se inyectan dinámicamente con JS -->
+    </main>
+
+    <!-- Barra de Input Flotante / Inferior -->
+    <footer class="chat-bottom-dock">
+      <div class="context-chips-hint">
+        <span class="micro-chip" data-query="¿Cuál tiene jardín privado vallado?">¿Cuál tiene jardín cerrado?</span>
+        <span class="micro-chip" data-query="¿Cuánto suplemento hay por noche por mascota?">Suplemento de mascota</span>
+        <span class="micro-chip" data-query="¿Tenéis cuna disponible para bebé?">Cuna disponible</span>
+      </div>
+      <div class="chat-input-bar">
+        <input type="text" id="dockInput" placeholder="Pregunta lo que quieras...">
+        <button class="btn-circle btn-mic" id="dockMicBtn" title="Hablar">🎙️</button>
+        <button class="btn-circle btn-send" id="dockSendBtn" title="Enviar">➔</button>
+      </div>
+    </footer>
+  </div>
+
+  <script>
+    const heroView = document.getElementById('heroView');
+    const chatView = document.getElementById('chatView');
+    const heroInput = document.getElementById('heroInput');
+    const heroSendBtn = document.getElementById('heroSendBtn');
+    const heroMicBtn = document.getElementById('heroMicBtn');
+    const closeChatBtn = document.getElementById('closeChatBtn');
+    const chatStream = document.getElementById('chatStream');
+    const dockInput = document.getElementById('dockInput');
+    const dockSendBtn = document.getElementById('dockSendBtn');
+
+    // Transición a la vista de conversación
+    function launchChat(queryText) {
+      if (!queryText || queryText.trim() === '') {
+        queryText = "¿Qué casas tenéis con chimenea y que admitan mascotas?";
+      }
+
+      heroView.classList.add('hidden');
+      chatView.style.display = 'flex';
+      chatStream.innerHTML = ''; // Reset
+
+      // 1. Mostrar mensaje del usuario
+      appendUserMessage(queryText);
+
+      // 2. Iniciar el loader dinámico con fases
+      triggerThinkingSequence(queryText);
+    }
+
+    function closeChat() {
+      chatView.style.display = 'none';
+      heroView.classList.remove('hidden');
+    }
+
+    function appendUserMessage(text) {
+      const msg = document.createElement('div');
+      msg.className = 'msg-user';
+      msg.textContent = text;
+      chatStream.appendChild(msg);
+      chatStream.scrollTop = chatStream.scrollHeight;
+    }
+
+    // SIMULACIÓN DEL LOADER DE XABIA CON FASES DINÁMICAS
+    function triggerThinkingSequence(query) {
+      const wrapper = document.createElement('div');
+      wrapper.className = 'msg-assistant-wrapper';
+      wrapper.id = 'activeAssistantTurn';
+
+      wrapper.innerHTML = `
+        <div class="assistant-avatar-badge">✦</div>
+        <div class="msg-assistant-content">
+          <div class="thinking-box" id="thinkingIndicator">
+            <div class="dots-animation">
+              <span class="dot"></span>
+              <span class="dot"></span>
+              <span class="dot"></span>
+            </div>
+            <span class="thinking-label" id="thinkingStatus">Analizando tu consulta...</span>
+          </div>
+        </div>
+      `;
+      chatStream.appendChild(wrapper);
+      chatStream.scrollTop = chatStream.scrollHeight;
+
+      const statusEl = document.getElementById('thinkingStatus');
+
+      // Fase 1: Entendiendo
+      setTimeout(() => {
+        if (statusEl) statusEl.textContent = "Consultando alojamientos con chimenea en Astei...";
+      }, 900);
+
+      // Fase 2: Filtrando política y motor
+      setTimeout(() => {
+        if (statusEl) statusEl.textContent = "Verificando política de mascotas y disponibilidad...";
+      }, 1900);
+
+      // Fase 3: Renderizado de la respuesta comercial y tarjetas
+      setTimeout(() => {
+        renderFinalAnswer(wrapper);
+      }, 2900);
+    }
+
+    function renderFinalAnswer(container) {
+      const contentBox = container.querySelector('.msg-assistant-content');
+      
+      contentBox.innerHTML = `
+        <div class="text-prose">
+          ¡Hola! En <strong>Las Casas de Ea Astei</strong> sabemos que una escapada en plena naturaleza no está completa sin tu mascota y el abrigo de una buena chimenea.
+          <br><br>
+          Para lo que buscas, las dos opciones más confortables y preparadas son:
+        </div>
+
+        <div class="cards-deck">
+          <!-- Tarjeta 1: Astei Txiki -->
+          <div class="stay-card">
+            <div class="stay-card-thumb">
+              🏡
+              <span class="stay-price-tag">Desde 165 € / noche</span>
+            </div>
+            <div class="stay-card-body">
+              <div class="stay-card-title">Astei Txiki</div>
+              <div class="stay-tags">
+                <span class="tag-badge highlight">🔥 Chimenea Nórdica</span>
+                <span class="tag-badge highlight">🐾 Admite Perro</span>
+                <span class="tag-badge">2 a 4 plazas</span>
+              </div>
+              <p class="stay-card-desc">Casa independiente con amplio porche de roble, salón cálido de piedra y acceso directo a las campas para pasear con tu mascota.</p>
+              <div class="stay-card-actions">
+                <button class="card-btn secondary">+ Información</button>
+                <button class="card-btn primary">Reservar en Avirato</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Tarjeta 2: Sustraiak -->
+          <div class="stay-card">
+            <div class="stay-card-thumb">
+              🌿
+              <span class="stay-price-tag">Desde 140 € / noche</span>
+            </div>
+            <div class="stay-card-body">
+              <div class="stay-card-title">Apartamento Sustraiak</div>
+              <div class="stay-tags">
+                <span class="tag-badge highlight">🔥 Estufa de leña</span>
+                <span class="tag-badge highlight">🐾 Jardín privado</span>
+                <span class="tag-badge">Ideal parejas</span>
+              </div>
+              <p class="stay-card-desc">Planta baja bioclimática con salida directa a un pequeño jardín cercado, perfecto para que tu compañero peludo esté seguro.</p>
+              <div class="stay-card-actions">
+                <button class="card-btn secondary">+ Información</button>
+                <button class="card-btn primary">Reservar en Avirato</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="text-prose" style="font-size: 0.95rem; color: var(--text-muted); margin-top: 8px;">
+          ¿Tienes ya pensadas las fechas para comprobar si ambas están libres? Dime los días o el mes y te miro la disponibilidad exacta.
+        </div>
+      `;
+
+      chatStream.scrollTop = chatStream.scrollHeight;
+    }
+
+    // EVENT LISTENERS
+    heroSendBtn.addEventListener('click', () => launchChat(heroInput.value));
+    heroInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') launchChat(heroInput.value);
+    });
+
+    heroMicBtn.addEventListener('click', () => {
+      launchChat("¿Qué casas tenéis con chimenea y que admitan mascotas?");
+    });
+
+    closeChatBtn.addEventListener('click', closeChat);
+
+    // Click en chips de sugerencia
+    document.querySelectorAll('.chip-item, .micro-chip').forEach(chip => {
+      chip.addEventListener('click', (e) => {
+        const text = e.target.getAttribute('data-query');
+        launchChat(text);
+      });
+    });
+
+    // Enviar desde el dock inferior dentro de la conversación
+    dockSendBtn.addEventListener('click', () => {
+      if (dockInput.value.trim() !== '') {
+        const query = dockInput.value;
+        dockInput.value = '';
+        appendUserMessage(query);
+        triggerThinkingSequence(query);
+      }
+    });
+
+    dockInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && dockInput.value.trim() !== '') {
+        const query = dockInput.value;
+        dockInput.value = '';
+        appendUserMessage(query);
+        triggerThinkingSequence(query);
+      }
+    });
+  </script>
+</body>
+</html>

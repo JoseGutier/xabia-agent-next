@@ -234,6 +234,30 @@ final class Xabia_I18n {
                 'eu' => 'Irudia handitu',
                 'en' => 'Enlarge image',
             ],
+            'Te escucho...' => [
+                'eu' => 'Entzuten zaitut...',
+                'en' => 'I am listening...',
+            ],
+            'Dime qué quieres saber.' => [
+                'eu' => 'Esadazu zer jakin nahi duzun.',
+                'en' => 'Tell me what you want to know.',
+            ],
+            '¿En qué puedo ayudarte?' => [
+                'eu' => 'Zertan lagun zaitzaket?',
+                'en' => 'How can I help?',
+            ],
+            'Pregunta lo que quieras...' => [
+                'eu' => 'Galdetu nahi duzuna...',
+                'en' => 'Ask anything...',
+            ],
+            'En línea' => [
+                'eu' => 'Linean',
+                'en' => 'Online',
+            ],
+            'Cerrar' => [
+                'eu' => 'Itxi',
+                'en' => 'Close',
+            ],
         ];
     }
 
@@ -286,6 +310,12 @@ final class Xabia_I18n {
             'micBlockedWhileBotSpeaks' => 'Espera a que termine de hablar y vuelve a pulsar el micrófono.',
             'micLabelOff'          => 'Toca para hablar o mantén pulsado',
             'imageEnlarge'         => 'Ampliar imagen',
+            'voiceListeningTitle'  => 'Te escucho...',
+            'voiceIdlePrompt'      => 'Dime qué quieres saber.',
+            'voiceHelp'            => '¿En qué puedo ayudarte?',
+            'overlayPlaceholder'   => 'Pregunta lo que quieras...',
+            'onlineStatus'         => 'En línea',
+            'closeOverlay'         => 'Cerrar',
         ];
     }
 
