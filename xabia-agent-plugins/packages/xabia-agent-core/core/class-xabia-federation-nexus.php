@@ -242,7 +242,10 @@ final class Xabia_Federation_Nexus {
             }
         }
 
-        $discovery = apply_filters('xabia_chat_addon_discovery_blocks', [], $project_id, $config);
+        $discovery = apply_filters('xabia_chat_addon_discovery_blocks', [], $project_id, $config, [
+            'user_message'  => $search_term,
+            'catalog_broad' => false,
+        ]);
         if (is_array($discovery) && $discovery !== []) {
             $disc_text = trim(implode("\n\n", array_filter(array_map('strval', $discovery))));
             if ($disc_text !== '') {

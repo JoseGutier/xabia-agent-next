@@ -2560,14 +2560,51 @@ ORDER BY p.post_modified DESC
 }
 
 /**
+ * Tope del descubrimiento: 10 productos, 12 si la consulta es un listado abierto.
+ */
+function xabia_woo_discovery_limit(bool $broad): int {
+    return $broad ? 12 : 10;
+}
+
+/**
+ * El bloque de descubrimiento solo acompaña preguntas de tienda o de catálogo.
+ * Un saludo o una consulta ajena a productos no debe arrastrar filas.
+ */
+function xabia_woo_query_wants_discovery(string $message, bool $broad): bool {
+    if ($broad) {
+        return true;
+    }
+    $text = mb_strtolower(trim(wp_strip_all_tags($message)), 'UTF-8');
+    if ($text === '') {
+        return false;
+    }
+    if (preg_match('/\b(qu[eé]\s+(?:hay|ten[eé]is|tienes|vend[eé]is|vende)|cat[aá]logo|listado|todos\s+los\s+productos)\b/u', $text)) {
+        return true;
+    }
+
+    $signals = [
+        'producto', 'productos', 'comprar', 'compra', 'precio', 'precios', 'stock',
+        'tienda', 'oferta', 'ofertas', 'carrito', 'sku', 'envío', 'envio',
+        'disponible', 'agotado', 'recomiend', 'marca', 'cuesta', 'cuánto', 'cuanto',
+    ];
+    foreach ($signals as $signal) {
+        if (mb_strpos($text, $signal) !== false) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+/**
  * Descubre productos para el bloque ADDON DISCOVERY del chat.
  */
-function xabia_woo_discover_products($limit = 80) {
+function xabia_woo_discover_products($limit = 10) {
     if (!class_exists('WooCommerce', false)) {
         return '';
     }
     global $wpdb;
-    $limit = max(1, min(200, (int) $limit));
+    $limit = max(1, min(12, (int) $limit));
     $posts = $wpdb->posts;
     $pm = $wpdb->postmeta;
 
@@ -2632,13 +2669,13 @@ LIMIT %d
  *
  * @param array<string, mixed> $cfg
  */
-function xabia_woo_discover_products_remote(array $cfg, $limit = 80): string {
+function xabia_woo_discover_products_remote(array $cfg, $limit = 10): string {
     $sql_cfg = isset($cfg['sql_config']) && is_array($cfg['sql_config']) ? $cfg['sql_config'] : [];
     $db = xabia_woo_remote_wpdb($sql_cfg);
     if (!$db) {
         return '';
     }
-    $limit = max(1, min(200, (int) $limit));
+    $limit = max(1, min(12, (int) $limit));
     $p = xabia_woo_remote_table_prefix($db, $sql_cfg);
     $posts = "{$p}posts";
     $pm = "{$p}postmeta";
@@ -2698,7 +2735,7 @@ LIMIT %d
 
 add_filter(
     'xabia_chat_addon_discovery_blocks',
-    static function ($blocks, $project_id, $config) {
+    static function ($blocks, $project_id, $config, $ctx = null) {
         if (!is_array($blocks)) {
             $blocks = [];
         }
@@ -2708,11 +2745,24 @@ add_filter(
         if (($config['source_type'] ?? '') !== 'addon' || ($config['addon_slug'] ?? '') !== 'woo') {
             return $blocks;
         }
+        $message = '';
+        $broad = false;
+        if (is_array($ctx)) {
+            $message = trim((string) ($ctx['user_message'] ?? ''));
+            $broad = !empty($ctx['catalog_broad']);
+            if (!$broad && $message !== '' && preg_match('/\b(qu[eé]\s+(?:hay|ten[eé]is|tienes|vend[eé]is|vende)|cat[aá]logo|listado|todos\s+los\s+productos)\b/ui', $message)) {
+                $broad = true;
+            }
+        }
+        if (!xabia_woo_query_wants_discovery($message, $broad)) {
+            return $blocks;
+        }
+        $limit = xabia_woo_discovery_limit($broad);
         $summary = '';
         if (class_exists('WooCommerce', false)) {
-            $summary = xabia_woo_discover_products(80);
+            $summary = xabia_woo_discover_products($limit);
         } elseif (xabia_woo_is_remote_catalog($config)) {
-            $summary = xabia_woo_discover_products_remote($config, 80);
+            $summary = xabia_woo_discover_products_remote($config, $limit);
         }
         if ($summary !== '') {
             $blocks[] = $summary;
@@ -2721,7 +2771,7 @@ add_filter(
         return $blocks;
     },
     10,
-    3
+    4
 );
 
 add_filter(

@@ -2472,7 +2472,13 @@ if (!class_exists('Xabia_API')) {
             $had_knowledge_rows = false;
             $rag_total_found = null;
             $rag_vector_chunk_count = null;
-            if (class_exists('Xabia_Brain')) {
+            $knowledge_query = $user_msg_clean !== '' ? $user_msg_clean : $search_term;
+            $knowledge_free = self::is_knowledge_free_utterance($knowledge_query);
+            if ($knowledge_free) {
+                self::$last_rag_debug['knowledge_free'] = 'yes';
+                self::$last_rag_debug['chunk_count'] = 0;
+                self::$last_rag_debug['keyword_boost_status'] = 'skipped_no_knowledge_signal';
+            } elseif (class_exists('Xabia_Brain')) {
                 if ($use_vector && !$strict_ente) {
                     $hub_rag = self::is_hub_rag_enabled_for_project($project_id);
                     $query_vector = null;
@@ -2488,6 +2494,7 @@ if (!class_exists('Xabia_API')) {
                         }
                     }
                     $out = Xabia_Brain::search_knowledge_vector($project_id, $retrieval_search_term, $ente_scope, false, $rag_fetch_limit, $similarity_threshold, $query_vector, $hub_rag_opts);
+                    $out = self::discard_subthreshold_vector_chunks($out, $similarity_threshold);
                     if (!empty($out['_hub_meta']) && is_array($out['_hub_meta']) && empty($out['_hub_meta']['ok'])) {
                         self::log_hub_rag_transport_failure(
                             $project_id,
@@ -2778,7 +2785,12 @@ if (!class_exists('Xabia_API')) {
                 }
             }
 
-            $discovery_blocks = apply_filters('xabia_chat_addon_discovery_blocks', [], $project_id, $config);
+            $discovery_blocks = $knowledge_free
+                ? []
+                : apply_filters('xabia_chat_addon_discovery_blocks', [], $project_id, $config, [
+                    'user_message'  => $knowledge_query,
+                    'catalog_broad' => !empty($catalog_intent['hit']),
+                ]);
             if (is_array($discovery_blocks) && $discovery_blocks !== []) {
                 $disc_text = trim(implode("\n\n", array_filter(array_map('strval', $discovery_blocks))));
                 if ($disc_text !== '') {
@@ -3069,7 +3081,9 @@ if (!class_exists('Xabia_API')) {
             $response = '';
             $stream_armed = class_exists('Xabia_Chat_Stream', false) && Xabia_Chat_Stream::is_armed();
             $vertex_local = $ai_driver === 'google_cloud' && class_exists('Xabia_Digixop_Client') && Xabia_Digixop_Client::should_use_local_vertex($config);
-            $use_tool_loop = self::merged_chat_tools($project_id) !== [];
+            $diag_tools = self::merged_chat_tools($project_id);
+            $use_tool_loop = $diag_tools !== [];
+            self::log_llm_payload_diagnostics($system_prompt_final, (string) $context, $messages, $diag_tools);
             $streamed = null;
             if ($stream_armed && !$use_tool_loop) {
                 $streamed = $vertex_local
@@ -7159,6 +7173,140 @@ if (!class_exists('Xabia_API')) {
             }
 
             return $any_signal_in_query && $any_signal_missing_in_context;
+        }
+
+        /**
+         * Saludo, agradecimiento o acuse sin ningún término de búsqueda.
+         * «hola» no debe arrastrar chunks ni el catálogo de descubrimiento.
+         */
+        private static function is_knowledge_free_utterance(string $msg): bool {
+            $t = mb_strtolower(trim(wp_strip_all_tags($msg)), 'UTF-8');
+            $t = preg_replace('/[!?¿¡.,;:]+/u', ' ', $t) ?? $t;
+            $t = trim((string) preg_replace('/\s+/u', ' ', $t));
+            if ($t === '') {
+                return true;
+            }
+            $phatic = [
+                'hola', 'holaa', 'hello', 'hi', 'hey', 'ei', 'ey',
+                'kaixo', 'aupa', 'agur', 'buenas', 'bueno', 'buena',
+                'buenos', 'dias', 'días', 'tardes', 'noches',
+                'gracias', 'thanks', 'thank', 'you', 'vale', 'ok', 'okay', 'genial',
+                'que', 'qué', 'tal',
+            ];
+            $parts = preg_split('/\s+/u', $t) ?: [];
+            foreach ($parts as $part) {
+                $part = trim((string) $part, "'-");
+                if ($part === '' || in_array($part, $phatic, true)) {
+                    continue;
+                }
+                if (mb_strlen($part, 'UTF-8') < 4) {
+                    continue;
+                }
+                return false;
+            }
+
+            return true;
+        }
+
+        /**
+         * El Hub ya aplica similarity_threshold. Si aun así llegan scores por debajo, no entran al prompt.
+         * La búsqueda léxica no usa coseno: sus scores son de ranking y no se descartan aquí.
+         *
+         * @param array<string, mixed> $out
+         * @return array<string, mixed>
+         */
+        private static function discard_subthreshold_vector_chunks(array $out, float $threshold): array {
+            if (($out['retrieval'] ?? '') === 'lexical') {
+                return $out;
+            }
+            $threshold = max(0.0, min(1.0, $threshold));
+            $chunks = isset($out['chunks']) && is_array($out['chunks']) ? $out['chunks'] : [];
+            if ($chunks === []) {
+                $avg = $out['similarity_avg'] ?? null;
+                if (is_numeric($avg) && (float) $avg < $threshold) {
+                    $out['context'] = '';
+                    $out['chunk_count'] = 0;
+                    $out['chunks'] = [];
+                }
+
+                return $out;
+            }
+            $kept = [];
+            $saw_score = false;
+            foreach ($chunks as $chunk) {
+                if (!is_array($chunk)) {
+                    continue;
+                }
+                $score = null;
+                foreach (['score', 'similarity', 'similarity_score'] as $key) {
+                    if (isset($chunk[$key]) && is_numeric($chunk[$key])) {
+                        $score = (float) $chunk[$key];
+                        break;
+                    }
+                }
+                if ($score === null) {
+                    $kept[] = $chunk;
+                    continue;
+                }
+                $saw_score = true;
+                if ($score >= $threshold) {
+                    $kept[] = $chunk;
+                }
+            }
+            if (!$saw_score) {
+                return $out;
+            }
+            $out['chunks'] = $kept;
+            $out['chunk_count'] = count($kept);
+            if ($kept === []) {
+                $out['context'] = '';
+            }
+
+            return $out;
+        }
+
+        /**
+         * Diagnóstico temporal de tokens. Quitar cuando el consumo de un saludo quede acotado.
+         *
+         * @param list<array<string, mixed>> $messages
+         * @param list<array<string, mixed>> $tools
+         */
+        private static function log_llm_payload_diagnostics(string $system_prompt, string $context, array $messages, array $tools): void {
+            $estimate = static function (string $text): int {
+                $chars = strlen($text);
+
+                return $chars === 0 ? 0 : (int) ceil($chars / 4);
+            };
+            $discovery = '';
+            $rag = $context;
+            $marker = '### ADDON DISCOVERY ###';
+            $pos = strpos($context, $marker);
+            if ($pos !== false) {
+                $rag = substr($context, 0, $pos);
+                $discovery = substr($context, $pos);
+            }
+            $history_bits = [];
+            $history_chars = 0;
+            foreach ($messages as $i => $msg) {
+                if (!is_array($msg) || (($msg['role'] ?? '') === 'system')) {
+                    continue;
+                }
+                $content = (string) ($msg['content'] ?? '');
+                $chars = strlen($content);
+                $history_chars += $chars;
+                $history_bits[] = '#' . $i . ' role=' . (string) ($msg['role'] ?? '') . ' chars=' . $chars . ' tokens~' . $estimate($content);
+            }
+            $tools_json = $tools === [] ? '' : (string) wp_json_encode($tools, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+            error_log('[XABIA_TOKEN_DIAG] TEMP system_prompt chars=' . strlen($system_prompt) . ' tokens~' . $estimate($system_prompt));
+            error_log('[XABIA_TOKEN_DIAG] TEMP rag_context chars=' . strlen($rag) . ' tokens~' . $estimate($rag));
+            error_log('[XABIA_TOKEN_DIAG] TEMP rag_context_body=' . $rag);
+            error_log('[XABIA_TOKEN_DIAG] TEMP addon_discovery chars=' . strlen($discovery) . ' tokens~' . $estimate($discovery));
+            error_log('[XABIA_TOKEN_DIAG] TEMP addon_discovery_body=' . $discovery);
+            error_log('[XABIA_TOKEN_DIAG] TEMP history_count=' . count($history_bits) . ' chars=' . $history_chars . ' tokens~' . ($history_chars === 0 ? 0 : (int) ceil($history_chars / 4)) . ' ' . implode(' | ', $history_bits));
+            error_log('[XABIA_TOKEN_DIAG] TEMP tools_count=' . count($tools) . ' chars=' . strlen($tools_json) . ' tokens~' . $estimate($tools_json));
+            if ($tools_json !== '') {
+                error_log('[XABIA_TOKEN_DIAG] TEMP tools_schema=' . $tools_json);
+            }
         }
 
         /**
