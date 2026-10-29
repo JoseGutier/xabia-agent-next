@@ -3,7 +3,7 @@
  * Plugin Name: Xabia Agent Core
  * Plugin URI: https://xabia.ai
  * Description: Agente de Inteligencia Artificial de última generación con voz, texto y acciones en la web. Perfecciona la UX mediante interacciones conversacionales inteligentes, hiperpersonalizadas y políglotas. Smart QRs integrados, addons para Woo, MEC, Amelia, etc.
- * Version: 1.0.343
+ * Version: 1.0.344
  * Author: Digixop
  * Author URI: https://digixop.com
  */
@@ -294,8 +294,17 @@ add_filter('xabia_agent_context_injection', static function ($context, $project_
  * Catálogo canónico de entes (nombres propios del proyecto) para resolución fonética/voz.
  */
 add_filter('xabia_agent_context_injection', static function ($context, $project_id, $config, $request) {
-    unset($config, $request);
+    unset($config);
     $context = is_string($context) ? $context : '';
+    $request = is_array($request) ? $request : [];
+    if (!empty($request['knowledge_free'])) {
+        return $context;
+    }
+    $chunk_count = isset($request['chunk_count']) ? (int) $request['chunk_count'] : -1;
+    $entity_intent = !empty($request['entity_intent']);
+    if ($chunk_count === 0 && !$entity_intent) {
+        return $context;
+    }
     $project_id = (string) $project_id;
     if ($project_id === '' || !class_exists('Xabia_DB', false)) {
         return $context;

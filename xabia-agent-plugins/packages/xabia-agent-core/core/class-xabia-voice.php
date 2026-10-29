@@ -134,16 +134,7 @@ class Xabia_Voice {
      */
     public static function spoken_format_directive(): string {
         $block = "# FORMATO HABLADO PARA SÍNTESIS DE VOZ (TTS — OBLIGATORIO):\n"
-            . "Redacta siempre las fechas, horas y cantidades monetarias en la forma hablada natural correspondiente al idioma en el que estás respondiendo. "
-            . "Evita formatos ISO (2026-10-17), abreviaturas técnicas y símbolos que no se lean bien en voz alta.\n"
-            . "Ejemplos de adaptación al idioma de respuesta:\n"
-            . "- Francés: «le 17 octobre 2026», «à 19h30», «15 euros».\n"
-            . "- Inglés: «October 17th, 2026», «at 7:30 PM», «15 euros».\n"
-            . "- Euskera: «2026ko urriaren 17an», «19:30ean», «15 euro».\n"
-            . "- Español: «17 de octubre de 2026», «a las 19:30», «15 euros».\n"
-            . "Aplica el mismo criterio a cualquier otro idioma de respuesta: meses, ordinales, horas y moneda en forma nativa y fluida para TTS.\n"
-            . "En fichas de eventos, listas y datos estructurados, escribe cada campo en una línea nueva (p. ej. «Data: …» en una línea, «Lekua: …» en la siguiente). "
-            . "Así la voz hará una pausa natural entre campos.";
+            . 'Fechas, horas y precios en forma hablada del idioma de respuesta (sin ISO ni símbolos mudos). En fichas, un campo por línea.';
 
         return (string) apply_filters('xabia_voice_spoken_format_directive', $block);
     }

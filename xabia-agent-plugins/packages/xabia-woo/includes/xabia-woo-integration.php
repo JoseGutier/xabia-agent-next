@@ -573,19 +573,13 @@ function xabia_woo_evaluate_purchase_intent(string $user_msg, bool $has_cart_cli
 }
 
 function xabia_woo_build_crosssell_control_preamble(bool $intent_active): string {
-    $mochila = "### MOCHILA_CROSS_SELL (solo metadato del Hub/catálogo)\n"
-        . "Las filas de producto pueden incluir la columna Productos_Recomendados (cross/upsell reales). El usuario no ve esta etiqueta; sirve como reserva silenciosa.\n\n"
-        . "### CONTROL_DE_INTENCION_COMPRA (esta petición)\n"
+    $mochila = "### CONTROL_DE_INTENCION_COMPRA\n"
         . 'intención_activa: ' . ($intent_active ? 'SÍ' : 'NO') . "\n";
     if (!$intent_active) {
-        $mochila .= "Instrucción: NO cites Productos_Recomendados ni propongas complementos (ni en la primera respuesta informativa ni si el usuario solo pide datos). Mantén el foco en el producto preguntado.\n"
-            . "Aunque intención_activa sea NO, si ofreces productos del catálogo incluye siempre [ACTION:CART:711:TITULO] de cada uno, con el número real de la columna ID y el Titulo de esa misma fila. Nunca escribas la palabra ID dentro de la etiqueta. Sigue la ESTRUCTURA OBLIGATORIA DE RESPUESTA. Eso no es cross-sell.\n";
-
-        return $mochila;
+        return $mochila . "No propongas complementos. Productos_Recomendados es metadato silencioso.\n";
     }
-    $mochila .= "Instrucción: Ya hay señal clara de compra o interés activo. Puedes abrir la mochila con UNA frase breve y natural al final, sin eclipsar el producto principal. Si acepta conjunto (principal + complemento), un solo enlace: [ACTION:CART_PACK:ID_principal,ID_complemento] con los IDs correctos del catálogo.\n";
 
-    return $mochila;
+    return $mochila . "Puedes mencionar un complemento en una frase final. Si aceptan ambos: [ACTION:CART_PACK:ID_principal,ID_complemento].\n";
 }
 
 /**
@@ -2814,24 +2808,19 @@ add_filter(
             return $rules === '' ? $append : $rules . "\n\n" . $append;
         }
 
-        $sales = 'PERSONALIDAD DE VENTAS (Woo, no intrusivo): Responde primero a la necesidad informativa; destaca precio/stock/detalles del producto consultado. Los complementos (Productos_Recomendados) están en contexto como mochila silenciosa: respeta CONTROL_DE_INTENCION_COMPRA — si intención_activa es NO, no propongas cross-sell aunque veas la columna.'
-            . ' Si intención_activa es SÍ, una sola mención breve (una frase) al final, opcional, sin robar protagonismo. Oferta especial cuando descuento_porcentaje aplique.'
-            . ' Si aparece «CARRITO CONVERSACIONAL», úsalo con tacto para continuidad, sin rellenar con sugerencias no pedidas.'
-            . ' BREVEDAD: máximo 2–3 productos por respuesta; frases cortas (ahorra tokens y facilita la compra).'
-            . ' STOCK: NUNCA recomiendes como opción preferente un producto agotado (Stock_estado outofstock, «Sin stock» o [AGOTADO / SIN STOCK]). Para un síntoma o necesidad habitual, propone de 2 a 3 alternativas con stock listas para comprar. Un agotado solo se menciona al final, y solo si no hay suficientes alternativas en stock, dejando claro que ahora no se puede comprar.'
-            . ' INTEGRIDAD FILA-PRODUCTO: prohibido mezclar el nombre de un producto con el ID de otro; Nombre e ID deben ser de la misma fila del catálogo.';
+        $sales = 'VENTAS WOO: Responde primero al producto pedido (precio y stock). Cross-sell solo si intención_activa es SÍ, una frase al final. Máximo 2–3 productos. Nunca recomiendes como preferente un agotado (outofstock o [AGOTADO / SIN STOCK]); ofrece 2–3 con stock. Nombre e ID de la misma fila. No inventes precios, cupones ni nombres.';
         if (xabia_woo_is_remote_catalog($config)) {
             $sales .= ' Pack conjunto: [ACTION:CART_PACK:ID_principal,ID_complemento] solo si aceptan ambos.';
         } else {
             $sales .= ' Pack: [ACTION:CART_PACK:ID_principal,ID_complemento] si aceptan ambos.';
         }
-        $sales .= ' MULTILINGÜE: respeta user_lang en la prosa; en la etiqueta CART el TITULO debe ser el Titulo de la fila del catálogo. No inventes precios, cupones, stock ni nombres de producto.';
+        $sales .= ' En CART, el título es el Titulo de esa fila.';
 
         $append = $sales . "\n\n" . xabia_woo_conversion_few_shot_block();
         if ($coupon_line !== '') {
             $append .= "\n\n" . $coupon_line;
         }
-        $append .= "\n" . 'REGLA DE CIERRE: Conversión con etiqueta CART (y ficha de compra) en la primera oferta. Usa solo datos del contexto.';
+        $append .= "\n" . 'Cierra la oferta con la etiqueta CART de la fila real.';
 
         return $rules === '' ? $append : $rules . "\n\n" . $append;
     },
@@ -3106,6 +3095,9 @@ add_filter(
             $context = '';
         }
         if (!is_array($config) || ($config['source_type'] ?? '') !== 'addon' || ($config['addon_slug'] ?? '') !== 'woo') {
+            return $context;
+        }
+        if (is_array($args) && !empty($args['knowledge_free'])) {
             return $context;
         }
         $user_msg = isset($args['user_message']) ? (string) $args['user_message'] : '';
