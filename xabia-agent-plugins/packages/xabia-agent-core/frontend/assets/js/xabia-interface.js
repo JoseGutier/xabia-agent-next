@@ -818,7 +818,7 @@
                     return;
                 }
                 var actionable = e.target.closest(
-                    '.xabia-continue, .xabia-send, .xabia-mic, .xabia-mute, .xabia-panel-close, .xabia-starter-chip'
+                    '.xabia-continue, .xabia-send, .xabia-mic, .xabia-mute, .xabia-panel-close, .xabia-starter-chip, .xabia-voice-overlay__close, .close-btn, .xabia-close-btn'
                 );
                 if (!actionable || !panel.contains(actionable)) {
                     /* No cortar el bubble: los handlers delegados de chatbox.js viven en document */

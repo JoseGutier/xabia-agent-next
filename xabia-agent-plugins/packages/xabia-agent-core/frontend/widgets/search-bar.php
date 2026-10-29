@@ -51,9 +51,9 @@ function xabia_search_bar_parse_chips(array $lines): array {
         if ($line === '') {
             continue;
         }
-        $parts = array_map('trim', explode('|', $line, 2));
+        $parts = array_map('trim', explode('|', $line));
         $label = $parts[0] ?? '';
-        $query = $parts[1] ?? '';
+        $query = count($parts) > 1 ? implode('|', array_slice($parts, 1)) : '';
         if ($label === '') {
             continue;
         }
@@ -87,14 +87,80 @@ function xabia_search_bar_chips_from_rules(array $rules): array {
 }
 
 /**
+ * Frases del efecto mecanografía cuando el admin no ha definido ninguna.
+ *
+ * @return list<string>
+ */
+function xabia_search_bar_default_placeholders(): array {
+    return [
+        '¿Qué casa tiene chimenea y admite mascotas?',
+        '¿Hay disponibilidad para el próximo fin de semana?',
+        '¿Tenéis cuna o cama supletoria para niños?',
+        '¿A qué distancia queda la playa de Laga o Laida?',
+    ];
+}
+
+/**
+ * Pastillas de la maqueta cuando el admin no ha definido chips.
+ *
+ * @return list<array{label:string,query:string}>
+ */
+function xabia_search_bar_default_chips(): array {
+    return [
+        [
+            'label' => '🔥 Casas con chimenea',
+            'query' => '¿Qué casa tiene chimenea y admite mascotas?',
+        ],
+        [
+            'label' => '📅 Disponibilidad finde',
+            'query' => '¿Hay disponibilidad este fin de semana?',
+        ],
+        [
+            'label' => '🌿 Piscina y spa',
+            'query' => '¿Cómo funciona la piscina climatizada?',
+        ],
+        [
+            'label' => '🚶 Rutas en Urdaibai',
+            'query' => 'Recomiéndame una ruta con niños cerca de Ea',
+        ],
+    ];
+}
+
+/**
+ * Agente por defecto del plugin: el mismo id que usa [xabia_agent] cuando no lleva id.
+ */
+function xabia_search_bar_default_project_id(): string {
+    return 'default';
+}
+
+/**
+ * id tiene prioridad. Si falta, agent_id. Si no hay ninguno, el agente por defecto.
+ *
+ * @param array<string, mixed>|string $atts
+ */
+function xabia_search_bar_project_id_from_atts($atts): string {
+    $atts = is_array($atts) ? $atts : [];
+    $id = sanitize_key((string) ($atts['id'] ?? ''));
+    if ($id !== '') {
+        return $id;
+    }
+    $agent_id = sanitize_key((string) ($atts['agent_id'] ?? ''));
+    if ($agent_id !== '') {
+        return $agent_id;
+    }
+    return xabia_search_bar_default_project_id();
+}
+
+/**
  * @param array<string, mixed>|string $atts
  */
 function xabia_search_bar_shortcode($atts): string {
-    $atts = shortcode_atts(['id' => 'default'], is_array($atts) ? $atts : [], 'xabia_search_bar');
-    $project_id = sanitize_key((string) ($atts['id'] ?? 'default'));
-    if ($project_id === '') {
-        $project_id = 'default';
-    }
+    $raw = is_array($atts) ? $atts : [];
+    $raw = shortcode_atts([
+        'id'       => '',
+        'agent_id' => '',
+    ], $raw, 'xabia_search_bar');
+    $project_id = xabia_search_bar_project_id_from_atts($raw);
 
     if (class_exists('Xabia_Interface', false)) {
         Xabia_Interface::note_search_bar_project($project_id);
@@ -106,8 +172,14 @@ function xabia_search_bar_shortcode($atts): string {
         : [];
     $rules = (isset($project['rules']) && is_array($project['rules'])) ? $project['rules'] : [];
     $placeholders = xabia_search_bar_placeholders_from_rules($rules);
+    if ($placeholders === []) {
+        $placeholders = xabia_search_bar_default_placeholders();
+    }
     $chips = xabia_search_bar_chips_from_rules($rules);
-    $placeholders_json = wp_json_encode(array_values($placeholders), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+    if ($chips === []) {
+        $chips = xabia_search_bar_default_chips();
+    }
+    $placeholders_json = wp_json_encode(array_values($placeholders));
     if (!is_string($placeholders_json)) {
         $placeholders_json = '[]';
     }
@@ -148,22 +220,28 @@ function xabia_search_bar_shortcode($atts): string {
             <span class="material-symbols-outlined xabia-search-bar__spark" aria-hidden="true">auto_awesome</span>
             <span class="xabia-search-bar__field">
                 <input type="text" class="xabia-search-bar__input" autocomplete="off" aria-label="<?php echo esc_attr($send_label); ?>">
-                <span class="xabia-search-bar__ghost" aria-hidden="true"></span>
             </span>
-            <button type="button" class="xabia-search-bar__mic" title="<?php echo esc_attr($mic_label); ?>" aria-label="<?php echo esc_attr($mic_label); ?>">
-                <span class="material-symbols-outlined" aria-hidden="true">mic</span>
-            </button>
-            <button type="submit" class="xabia-search-bar__send" title="<?php echo esc_attr($send_label); ?>" aria-label="<?php echo esc_attr($send_label); ?>">
-                <span class="material-symbols-outlined" aria-hidden="true">send</span>
-            </button>
+            <span class="xabia-search-bar__actions">
+                <button type="button" class="xabia-search-bar__mic" title="<?php echo esc_attr($mic_label); ?>" aria-label="<?php echo esc_attr($mic_label); ?>">
+                    <span class="material-symbols-outlined" aria-hidden="true">mic</span>
+                </button>
+                <button type="submit" class="xabia-search-bar__send" title="<?php echo esc_attr($send_label); ?>" aria-label="<?php echo esc_attr($send_label); ?>">
+                    <span class="material-symbols-outlined" aria-hidden="true">send</span>
+                </button>
+            </span>
         </form>
-        <?php if ($chips !== []) : ?>
-            <div class="xabia-search-bar__chips" role="group">
-                <?php foreach ($chips as $chip) : ?>
-                    <button type="button" class="xabia-search-chip" data-query="<?php echo esc_attr($chip['query']); ?>"><?php echo esc_html($chip['label']); ?></button>
-                <?php endforeach; ?>
-            </div>
-        <?php endif; ?>
+        <div class="xabia-quick-chips">
+            <?php foreach ($chips as $chip) : ?>
+                <?php
+                $label = (string) ($chip['label'] ?? '');
+                $query = (string) ($chip['query'] ?? '');
+                if ($query === '') {
+                    $query = $label;
+                }
+                ?>
+                <button type="button" class="xabia-chip" data-query="<?php echo esc_attr($query); ?>"><?php echo esc_html($label); ?></button>
+            <?php endforeach; ?>
+        </div>
     </div>
     <?php
     return (string) ob_get_clean();

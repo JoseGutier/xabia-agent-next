@@ -297,8 +297,13 @@ class Xabia_Interface {
                 require_once $search_file;
             }
             foreach ($search_matches as $search_match) {
-                $search_atts = shortcode_parse_atts($search_match[1] ?? '') ?: [];
-                $search_id = isset($search_atts['id']) ? sanitize_key((string) $search_atts['id']) : 'default';
+                $search_atts = shortcode_parse_atts($search_match[1] ?? '');
+                if (!is_array($search_atts)) {
+                    $search_atts = [];
+                }
+                $search_id = function_exists('xabia_search_bar_project_id_from_atts')
+                    ? xabia_search_bar_project_id_from_atts($search_atts)
+                    : 'default';
                 self::note_search_bar_project($search_id);
             }
         }

@@ -539,7 +539,7 @@ function shortcode_xabia_agent_renderer($atts) {
                     <?php endif; ?>
                     <span class="xabia-voice-overlay__name"><?php echo esc_html($avatar_name); ?></span>
                 </div>
-                <button type="button" class="xabia-voice-overlay__close" aria-label="<?php echo esc_attr(Xabia_I18n::t('Cerrar')); ?>">
+                <button type="button" class="xabia-voice-overlay__close close-btn xabia-close-btn" aria-label="<?php echo esc_attr(Xabia_I18n::t('Cerrar')); ?>">
                     <?php echo xabia_material_icon('close'); ?>
                 </button>
             </div>

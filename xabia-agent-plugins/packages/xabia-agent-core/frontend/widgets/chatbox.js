@@ -1233,17 +1233,20 @@
         $box.addClass('xabia-voice-open');
         document.body.classList.add('xabia-voice-open');
         var rect = originEl && originEl.getBoundingClientRect ? originEl.getBoundingClientRect() : null;
-        var x = rect ? (rect.left + rect.width / 2) : (window.innerWidth / 2);
-        var y = rect ? (rect.top + rect.height / 2) : (window.innerHeight / 2);
+        var originX = rect ? (rect.left + rect.width / 2) : (window.innerWidth / 2);
+        var originY = rect ? (rect.top + rect.height / 2) : (window.innerHeight / 2);
         overlay.hidden = false;
-        overlay.style.clipPath = 'circle(0% at ' + x + 'px ' + y + 'px)';
+        overlay.removeAttribute('hidden');
+        overlay.classList.remove('is-active');
+        overlay.style.clipPath = 'circle(0% at ' + originX + 'px ' + originY + 'px)';
+        void overlay.offsetWidth;
         overlay.classList.add('is-active');
         if (typeof window.requestAnimationFrame === 'function') {
             window.requestAnimationFrame(function() {
-                overlay.style.clipPath = 'circle(160% at ' + x + 'px ' + y + 'px)';
+                overlay.style.clipPath = 'circle(160% at ' + originX + 'px ' + originY + 'px)';
             });
         } else {
-            overlay.style.clipPath = 'circle(160% at ' + x + 'px ' + y + 'px)';
+            overlay.style.clipPath = 'circle(160% at ' + originX + 'px ' + originY + 'px)';
         }
         $box.find('.xabia-voice-overlay__title').text(xabiaI18n('voiceListeningTitle', 'Te escucho...'));
         var $live = $box.find('.xabia-voice-overlay__transcript');
@@ -2711,19 +2714,11 @@
             if (opts.cancelMic) {
                 abortMicSession($box);
             }
-            var overlay = $box.find('.xabia-voice-overlay').get(0);
-            if (overlay) {
-                overlay.classList.remove('is-active');
-                overlay.hidden = true;
-                overlay.style.clipPath = '';
-            }
-            $box.removeClass('xabia-voice-open xabia-conversation-open');
-            if (!$('.xabia-chatbox.xabia-voice-open').length) {
-                document.body.classList.remove('xabia-voice-open');
-            }
+            $box.removeClass('xabia-conversation-open');
             if (!$('.xabia-chatbox.xabia-conversation-open').length) {
                 document.body.classList.remove('xabia-conversation-open');
             }
+            closeVoiceOverlay($, $box);
         };
 
         window.xabiaSubmitText = function(projectId, text) {
@@ -3247,10 +3242,13 @@
             submitChatMessage($box);
         });
 
-        $(document).on('click', '.xabia-voice-overlay__close', function(e) {
+        $(document).on('click', '.xabia-voice-overlay__close, .xabia-voice-overlay .close-btn, .xabia-close-btn, .xabia-chatbox.xabia-voice-open .xabia-panel-close, .xabia-chatbox.xabia-conversation-open .xabia-panel-close', function(e) {
             e.preventDefault();
             e.stopPropagation();
             var $box = $(this).closest('.xabia-chatbox');
+            if (!$box.length || typeof window.xabiaCloseVoiceSurfaces !== 'function') {
+                return;
+            }
             window.xabiaCloseVoiceSurfaces($box.get(0), { cancelMic: true });
         });
 
@@ -3305,12 +3303,41 @@
             $bar.find('.xabia-search-bar__input').val('');
         });
 
-        $(document).on('click', '.xabia-search-chip', function(e) {
+        $(document).on('click', '.xabia-chip', function(e) {
             e.preventDefault();
-            var $bar = $(this).closest('.xabia-search-bar');
-            var text = String($(this).attr('data-query') || '').trim();
-            window.xabiaSubmitText($bar.attr('data-project'), text);
+            e.stopPropagation();
+            var $chip = $(this);
+            var $bar = $chip.closest('.xabia-search-bar');
+            var text = String($chip.attr('data-query') || '').trim();
+            if (!text) {
+                text = $.trim($chip.text());
+            }
+            var project = $bar.attr('data-project');
+            var $box = xabiaFindChatbox($, project);
+            if ($box.length) {
+                openVoiceOverlay($, $box, this);
+                if (text) {
+                    $box.find('.xabia-voice-overlay__title').text('Procesando...');
+                    $box.find('.xabia-voice-overlay__transcript').attr('data-idle', '0').text('"' + text + '"');
+                    $box.find('.xabia-voice-overlay__input').val(text);
+                }
+            }
+            if (!text) {
+                return;
+            }
+            window.setTimeout(function() {
+                window.xabiaSubmitText(project, text);
+            }, 480);
         });
+
+        function xabiaDefaultSearchPhrases() {
+            return [
+                '¿Qué casa tiene chimenea y admite mascotas?',
+                '¿Hay disponibilidad para el próximo fin de semana?',
+                '¿Tenéis cuna o cama supletoria para niños?',
+                '¿A qué distancia queda la playa de Laga o Laida?'
+            ];
+        }
 
         function xabiaStartSearchTypewriter($bar) {
             if (!$bar || !$bar.length || $bar.data('xabiaTypeOn') === 1) {
@@ -3322,45 +3349,82 @@
             } catch (ePhrase) {
                 phrases = [];
             }
-            if (!Array.isArray(phrases) || !phrases.length) {
+            if (!Array.isArray(phrases)) {
+                phrases = [];
+            }
+            phrases = phrases.map(function(phrase) {
+                return String(phrase || '').trim();
+            }).filter(Boolean);
+            if (!phrases.length) {
+                phrases = xabiaDefaultSearchPhrases();
+            }
+            var input = $bar.find('input.xabia-search-bar__input').get(0);
+            if (!input) {
                 return;
             }
             $bar.data('xabiaTypeOn', 1);
-            var ghost = $bar.find('.xabia-search-bar__ghost').get(0);
-            var input = $bar.find('.xabia-search-bar__input').get(0);
-            if (!ghost || !input) {
-                return;
-            }
             var phraseIndex = 0;
             var charIndex = 0;
-            var deleting = false;
-            function tick() {
-                if (document.body && !document.body.contains($bar[0])) {
+            var isDeleting = false;
+            var paused = false;
+            var timer = 0;
+            function userIsTyping() {
+                return document.activeElement === input || $.trim(String(input.value || '')) !== '';
+            }
+            function stopTypewriter() {
+                paused = true;
+                if (timer) {
+                    window.clearTimeout(timer);
+                    timer = 0;
+                }
+            }
+            function typeLoop() {
+                if (paused || (document.body && !document.body.contains($bar[0]))) {
                     return;
                 }
-                var phrase = String(phrases[phraseIndex] || '');
-                var hidden = $.trim(String(input.value || '')) !== '';
-                ghost.style.visibility = hidden ? 'hidden' : 'visible';
-                if (!hidden) {
-                    if (deleting) {
-                        charIndex = Math.max(0, charIndex - 1);
-                    } else {
-                        charIndex = Math.min(phrase.length, charIndex + 1);
+                if (userIsTyping()) {
+                    stopTypewriter();
+                    return;
+                }
+                var currentPhrase = String(phrases[phraseIndex] || '');
+                var speed = isDeleting ? 30 : 60;
+                if (isDeleting) {
+                    charIndex = Math.max(0, charIndex - 1);
+                    input.placeholder = currentPhrase.substring(0, charIndex);
+                    if (charIndex === 0) {
+                        isDeleting = false;
+                        phraseIndex = (phraseIndex + 1) % phrases.length;
+                        speed = 400;
                     }
-                    ghost.textContent = phrase.substring(0, charIndex);
+                } else {
+                    charIndex = Math.min(currentPhrase.length, charIndex + 1);
+                    input.placeholder = currentPhrase.substring(0, charIndex);
+                    if (currentPhrase.length && charIndex === currentPhrase.length) {
+                        speed = 2000;
+                        isDeleting = true;
+                    }
                 }
-                var speed = deleting ? 30 : 60;
-                if (!hidden && !deleting && charIndex === phrase.length) {
-                    speed = 2200;
-                    deleting = true;
-                } else if (!hidden && deleting && charIndex === 0) {
-                    deleting = false;
-                    phraseIndex = (phraseIndex + 1) % phrases.length;
-                    speed = 400;
-                }
-                window.setTimeout(tick, speed);
+                timer = window.setTimeout(typeLoop, speed);
             }
-            tick();
+            $bar.on('focusin', 'input.xabia-search-bar__input', stopTypewriter);
+            $bar.on('input', 'input.xabia-search-bar__input', function() {
+                if ($.trim(String(input.value || '')) !== '') {
+                    stopTypewriter();
+                }
+            });
+            $bar.on('focusout', 'input.xabia-search-bar__input', function() {
+                if ($.trim(String(input.value || '')) !== '') {
+                    return;
+                }
+                window.setTimeout(function() {
+                    if (userIsTyping() || !document.body.contains($bar[0])) {
+                        return;
+                    }
+                    paused = false;
+                    typeLoop();
+                }, 200);
+            });
+            typeLoop();
         }
 
         function xabiaStartSearchTypewriters() {

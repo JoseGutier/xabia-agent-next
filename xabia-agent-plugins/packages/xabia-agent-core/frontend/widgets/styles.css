@@ -2610,7 +2610,7 @@ body.xabia-conversation-open {
 .xabia-voice-overlay {
     position: absolute;
     inset: 0;
-    z-index: 60;
+    z-index: 80;
     display: flex;
     flex-direction: column;
     justify-content: space-between;
@@ -2618,7 +2618,7 @@ body.xabia-conversation-open {
     background: var(--xabia-surface, #ffffff);
     color: var(--xabia-text, #111111);
     clip-path: circle(0% at 50% 80%);
-    transition: clip-path 0.45s cubic-bezier(0.22, 1, 0.36, 1);
+    transition: clip-path 0.55s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.3s ease;
     pointer-events: none;
 }
 
@@ -2627,7 +2627,9 @@ body.xabia-conversation-open {
 }
 
 .xabia-voice-overlay.is-active {
-    pointer-events: auto;
+    z-index: 80;
+    opacity: 1;
+    pointer-events: auto !important;
 }
 
 .xabia-voice-overlay__top {
@@ -2658,19 +2660,33 @@ body.xabia-conversation-open {
     width: 46px;
 }
 
-.xabia-voice-overlay__close {
+.xabia-voice-overlay__close,
+.xabia-voice-overlay .close-btn,
+.xabia-close-btn {
+    position: relative;
+    z-index: 5;
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 40px;
-    height: 40px;
+    width: 42px;
+    height: 42px;
     margin: 0;
     padding: 0;
-    border: 0;
-    border-radius: 999px;
-    background: transparent;
+    border: 1px solid var(--xabia-line, rgba(0, 0, 0, 0.08));
+    border-radius: 50%;
+    background: rgba(0, 0, 0, 0.04);
     color: var(--xabia-text, #111111);
     cursor: pointer;
+    pointer-events: auto !important;
+    -webkit-appearance: none;
+    appearance: none;
+    box-shadow: none;
+}
+
+.xabia-voice-overlay__close:hover,
+.xabia-voice-overlay .close-btn:hover,
+.xabia-close-btn:hover {
+    background: rgba(0, 0, 0, 0.08);
 }
 
 .xabia-voice-overlay__center {
@@ -2982,25 +2998,27 @@ body.xabia-conversation-open {
 }
 
 .xabia-search-bar {
-    color: var(--xabia-text, #111111);
+    color: #111111;
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
 }
 
 .xabia-search-bar__box {
     display: flex;
     align-items: center;
-    gap: 10px;
+    gap: 14px;
+    width: 100%;
     margin: 0;
-    padding: 8px 8px 8px 16px;
+    padding: 10px 10px 10px 22px;
     box-sizing: border-box;
-    border: 1px solid var(--xabia-line, rgba(0, 0, 0, 0.08));
-    border-radius: 999px;
-    background: var(--xabia-surface, #ffffff);
-    box-shadow: var(--xabia-shadow, 0 16px 40px rgba(0, 0, 0, 0.08));
+    border: 1px solid rgba(0, 0, 0, 0.08) !important;
+    border-radius: 32px !important;
+    background: #ffffff !important;
+    box-shadow: 0 16px 40px rgba(0, 0, 0, 0.08) !important;
 }
 
 .xabia-search-bar__spark {
-    color: var(--xabia-text, #111111);
+    flex: 0 0 auto;
+    color: #111111;
 }
 
 .xabia-search-bar__field {
@@ -3009,14 +3027,27 @@ body.xabia-conversation-open {
     min-width: 0;
 }
 
-.xabia-search-bar__input {
-    width: 100%;
-    border: 0;
-    background: transparent;
-    color: var(--xabia-text, #111111);
+.xabia-search-bar input.xabia-search-bar__input,
+.xabia-search-bar input.xabia-search-bar__input:focus,
+.xabia-search-bar input.xabia-search-bar__input:hover {
+    display: block;
+    width: 100% !important;
+    min-width: 0;
+    height: auto;
+    margin: 0;
+    padding: 0;
+    background: transparent !important;
+    background-color: transparent !important;
+    border: none !important;
+    border-radius: 0 !important;
+    outline: none !important;
+    box-shadow: none !important;
+    color: #111111;
     font: inherit;
-    font-size: 1rem;
-    outline: none;
+    font-size: 1.05rem !important;
+    line-height: 1.4;
+    -webkit-appearance: none;
+    appearance: none;
 }
 
 .xabia-search-bar__ghost {
@@ -3025,15 +3056,103 @@ body.xabia-conversation-open {
     display: flex;
     align-items: center;
     overflow: hidden;
-    color: var(--xabia-muted, #5c6370);
+    color: #5c6370;
+    font-size: 1.05rem;
+    line-height: 1.4;
     white-space: nowrap;
     pointer-events: none;
 }
 
-.xabia-search-bar__chips {
+.xabia-search-bar__cursor {
+    display: inline-block;
+    width: 2px;
+    height: 1.1rem;
+    margin-left: 2px;
+    background: #111111;
+    vertical-align: middle;
+    animation: xabiaSearchCaret 0.9s infinite;
+}
+
+@keyframes xabiaSearchCaret {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0; }
+}
+
+.xabia-search-bar__actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex: 0 0 auto;
+}
+
+.xabia-search-bar button.xabia-search-bar__mic,
+.xabia-search-bar button.xabia-search-bar__send {
+    display: inline-flex !important;
+    align-items: center;
+    justify-content: center;
+    flex: 0 0 44px;
+    width: 44px !important;
+    height: 44px !important;
+    min-width: 44px;
+    min-height: 44px;
+    margin: 0 !important;
+    padding: 0 !important;
+    border: none !important;
+    border-radius: 50% !important;
+    box-shadow: none !important;
+    line-height: 1;
+    cursor: pointer;
+    -webkit-appearance: none;
+    appearance: none;
+}
+
+.xabia-search-bar button.xabia-search-bar__mic {
+    background: #f4f4f5 !important;
+    color: #111111 !important;
+}
+
+.xabia-search-bar button.xabia-search-bar__send {
+    background: #111111 !important;
+    color: #ffffff !important;
+}
+
+.xabia-search-bar button.xabia-search-bar__mic:hover,
+.xabia-search-bar button.xabia-search-bar__send:hover {
+    transform: scale(1.06);
+}
+
+.xabia-search-bar input.xabia-search-bar__input::placeholder {
+    color: #5c6370;
+    opacity: 1;
+}
+
+.xabia-quick-chips {
+    display: flex;
     flex-wrap: wrap;
-    margin-top: 12px;
-    overflow: visible;
+    justify-content: center;
+    gap: 10px;
+    margin-top: 16px;
+}
+
+.xabia-chip {
+    margin: 0;
+    border-radius: 999px;
+    background: rgba(0, 0, 0, 0.04);
+    border: 1px solid rgba(0, 0, 0, 0.08);
+    padding: 6px 14px;
+    color: #3f4652;
+    font: inherit;
+    font-size: 0.88rem;
+    line-height: 1.3;
+    cursor: pointer;
+    -webkit-appearance: none;
+    appearance: none;
+}
+
+.xabia-chip:hover {
+    background: #ffffff;
+    border-color: #111111;
+    color: #111111;
 }
 
 .xabia-chatbox[data-theme="dark"] .xabia-chat-header,
