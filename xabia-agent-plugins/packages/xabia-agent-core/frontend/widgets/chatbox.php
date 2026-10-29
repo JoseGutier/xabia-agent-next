@@ -106,6 +106,33 @@ function xabia_chatbox_build_settings_payload(string $project_id, array $extra =
     return $payload;
 }
 
+/**
+ * Copia un asset del widget a un nombre versionado.
+ * La CDN de Hostinger cachea por path e ignora el query ?ver=.
+ *
+ * @return string Nombre de fichero público (el versionado, o el original si no se pudo copiar).
+ */
+function xabia_publish_versioned_widget_asset(string $source, string $public_basename): string {
+    $public_basename = basename($public_basename);
+    if ($public_basename === '' || !is_readable($source)) {
+        return basename($source);
+    }
+    $public = dirname($source) . '/' . $public_basename;
+    $need_copy = !is_readable($public);
+    if (!$need_copy) {
+        $need_copy = (int) filemtime($public) < (int) filemtime($source);
+    }
+    if ($need_copy) {
+        // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_copy
+        @copy($source, $public);
+    }
+    if (!is_readable($public)) {
+        return basename($source);
+    }
+
+    return $public_basename;
+}
+
 function xabia_enqueue_chatbox_assets_for_project(string $project_id, array $project_data = []): void {
     static $enqueued = [];
     $project_id = sanitize_key($project_id);
@@ -125,33 +152,26 @@ function xabia_enqueue_chatbox_assets_for_project(string $project_id, array $pro
     }
 
     $ver = defined('XABIA_VERSION') ? XABIA_VERSION : '1.0';
-    $styles_path = __DIR__ . '/styles.css';
-    $styles_ver = $ver;
-    if (is_readable($styles_path)) {
-        $styles_ver .= '.' . (string) filemtime($styles_path);
+    $safe_ver = preg_replace('/[^0-9A-Za-z._-]/', '', $ver);
+    if (!is_string($safe_ver) || $safe_ver === '') {
+        $safe_ver = '1.0';
     }
 
     /*
-     * Hostinger CDN cachea por path e ignora ?ver=. Hay que cambiar el nombre del fichero.
-     * chatbox.js sigue siendo la fuente; se publica una copia versionada.
+     * Hostinger CDN cachea por path e ignora ?ver=.
+     * La fuente sigue siendo styles.css / chatbox.js; se publica una copia con el nombre de versión.
      */
+    $styles_path = __DIR__ . '/styles.css';
+    $styles_basename = xabia_publish_versioned_widget_asset($styles_path, 'styles-v' . $safe_ver . '.css');
+    $styles_public = __DIR__ . '/' . $styles_basename;
+    $styles_ver = $ver;
+    if (is_readable($styles_public)) {
+        $styles_ver .= '.' . (string) filemtime($styles_public);
+    }
+
     $js_source = __DIR__ . '/chatbox.js';
-    $js_basename = 'chatbox-v' . preg_replace('/[^0-9A-Za-z._-]/', '', $ver) . '.js';
+    $js_basename = xabia_publish_versioned_widget_asset($js_source, 'chatbox-v' . $safe_ver . '.js');
     $js_public = __DIR__ . '/' . $js_basename;
-    if (is_readable($js_source)) {
-        $need_copy = !is_readable($js_public);
-        if (!$need_copy) {
-            $need_copy = (int) filemtime($js_public) < (int) filemtime($js_source);
-        }
-        if ($need_copy) {
-            // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_copy
-            @copy($js_source, $js_public);
-        }
-    }
-    if (!is_readable($js_public)) {
-        $js_basename = 'chatbox.js';
-        $js_public = $js_source;
-    }
     $js_ver = $ver;
     if (is_readable($js_public)) {
         $js_ver .= '.' . (string) filemtime($js_public);
@@ -161,7 +181,7 @@ function xabia_enqueue_chatbox_assets_for_project(string $project_id, array $pro
     $style_deps = wp_style_is('xabia-interface', 'registered') || wp_style_is('xabia-interface', 'enqueued')
         ? ['xabia-interface']
         : [];
-    wp_enqueue_style('xabia-frontend-styles', plugins_url('styles.css', __FILE__), $style_deps, $styles_ver);
+    wp_enqueue_style('xabia-frontend-styles', plugins_url($styles_basename, __FILE__), $style_deps, $styles_ver);
     wp_enqueue_style(
         'xabia-material-symbols',
         'https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200',
@@ -473,11 +493,12 @@ function shortcode_xabia_agent_renderer($atts) {
         $qr_auto_json = '';
     }
 
-    if ($is_paused) {
-        return xabia_agent_shortcode_debug_comment(
-            'agente pausado: id="' . $project_id . '". Actívelo en Xabia Agent → Activar y vacíe la caché.'
-        );
+    $agent_available = !$is_paused;
+    if ($agent_available && !$is_lite && class_exists('Xabia_Digixop_Client', false) && Xabia_Digixop_Client::proxy_tokens_depleted()) {
+        $agent_available = false;
     }
+    $presence_online = Xabia_I18n::t('En línea · Respuestas en tiempo real');
+    $presence_offline = Xabia_I18n::t('No disponible');
 
     if (class_exists('Xabia_Interface', false)) {
         Xabia_Interface::mark_chatbox_rendered($project_id);
@@ -528,7 +549,7 @@ function shortcode_xabia_agent_renderer($atts) {
         }
     </style>
 
-    <div id="<?php echo esc_attr($container_id); ?>" class="<?php echo esc_attr($chatbox_classes); ?>" data-project="<?php echo esc_attr($project_id); ?>" data-presentation-mode="<?php echo esc_attr($presentation_mode); ?>" data-endpoint="<?php echo esc_url($ajax_url); ?>" data-ask-endpoint="<?php echo esc_url($ask_url); ?>" data-nonce="<?php echo esc_attr($ask_nonce); ?>" data-scope="<?php echo esc_attr($current_scope); ?>" data-strict-mode="<?php echo $is_strict_mode ? '1' : '0'; ?>" data-ente-id-raw="<?php echo esc_attr($shortcode_tunnel); ?>" data-ente-id="<?php echo esc_attr($data_ente_attr); ?>" data-qr-auto="<?php echo esc_attr($qr_auto_json); ?>" data-starter-questions="<?php echo esc_attr($starter_questions_json); ?>" data-totem-minutes="<?php echo (int) $totem_minutes; ?>" data-totem-reset="<?php echo esc_attr($totem_reset_json); ?>" data-images-base="<?php echo esc_url($images_base_url); ?>" data-lang="<?php echo esc_attr($current_lang); ?>" data-voice="1" data-tts="<?php echo esc_attr($tts_config_json); ?>" data-avatar-name="<?php echo esc_attr($avatar_name); ?>" data-speaking-avatar="<?php echo (int) $speaking_avatar; ?>" data-dots-svg="<?php echo esc_url($dots_svg_url); ?>"<?php echo $scheme_attrs; ?>>
+    <div id="<?php echo esc_attr($container_id); ?>" class="<?php echo esc_attr($chatbox_classes . ($agent_available ? '' : ' is-unavailable')); ?>" data-agent-available="<?php echo $agent_available ? '1' : '0'; ?>" data-project="<?php echo esc_attr($project_id); ?>" data-presentation-mode="<?php echo esc_attr($presentation_mode); ?>" data-endpoint="<?php echo esc_url($ajax_url); ?>" data-ask-endpoint="<?php echo esc_url($ask_url); ?>" data-nonce="<?php echo esc_attr($ask_nonce); ?>" data-scope="<?php echo esc_attr($current_scope); ?>" data-strict-mode="<?php echo $is_strict_mode ? '1' : '0'; ?>" data-ente-id-raw="<?php echo esc_attr($shortcode_tunnel); ?>" data-ente-id="<?php echo esc_attr($data_ente_attr); ?>" data-qr-auto="<?php echo esc_attr($qr_auto_json); ?>" data-starter-questions="<?php echo esc_attr($starter_questions_json); ?>" data-totem-minutes="<?php echo (int) $totem_minutes; ?>" data-totem-reset="<?php echo esc_attr($totem_reset_json); ?>" data-images-base="<?php echo esc_url($images_base_url); ?>" data-lang="<?php echo esc_attr($current_lang); ?>" data-voice="1" data-tts="<?php echo esc_attr($tts_config_json); ?>" data-avatar-name="<?php echo esc_attr($avatar_name); ?>" data-speaking-avatar="<?php echo (int) $speaking_avatar; ?>" data-dots-svg="<?php echo esc_url($dots_svg_url); ?>"<?php echo $scheme_attrs; ?>>
         <template class="xabia-dots-template"><?php echo $dots_svg_markup; ?></template>
 
         <div class="xabia-voice-overlay" hidden>
@@ -575,15 +596,16 @@ function shortcode_xabia_agent_renderer($atts) {
 
         <div class="xabia-immersive-panel">
         <header class="xabia-chat-header">
+            <div class="xabia-chat-header__brand">
+                <span class="xabia-chat-header__status" aria-hidden="true"></span>
+                <span class="xabia-chat-header__identity">
+                    <span class="xabia-chat-header__name"><?php echo esc_html($avatar_name); ?></span>
+                    <span class="xabia-chat-header__presence" data-online="<?php echo esc_attr($presence_online); ?>" data-offline="<?php echo esc_attr($presence_offline); ?>"><?php echo esc_html($agent_available ? $presence_online : $presence_offline); ?></span>
+                </span>
+            </div>
             <button type="button" class="xabia-panel-close" aria-label="<?php echo esc_attr(Xabia_I18n::t('Cerrar')); ?>">
                 <?php echo xabia_material_icon('close'); ?>
             </button>
-            <div class="xabia-chat-header__center">
-                <span class="xabia-chat-header__status" aria-hidden="true"></span>
-                <span class="xabia-chat-header__name"><?php echo esc_html($avatar_name); ?></span>
-                <span class="xabia-chat-header__presence"><?php echo esc_html(Xabia_I18n::t('En línea')); ?></span>
-            </div>
-            <span class="xabia-chat-header__spacer" aria-hidden="true"></span>
         </header>
 
         <div class="xabia-totem-warning" style="display:none;" role="alert"></div>

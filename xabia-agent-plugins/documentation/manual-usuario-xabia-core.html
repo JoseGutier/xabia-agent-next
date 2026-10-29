@@ -384,11 +384,11 @@ img[alt="Xabia"] {
 <body>
 <h1>Manual de usuario — Xabia Agent Core</h1>
 <blockquote>
-<p><strong>Versión del producto:</strong> Xabia Agent Core <strong>v1.0.329</strong> (octubre 2026)<br><strong>Índice de manuales:</strong> <a href="https://xabia.ai/docs/">https://xabia.ai/docs/</a><br><strong>PDF en línea:</strong> <a href="https://xabia.ai/docs/manual-usuario-xabia-core.pdf">https://xabia.ai/docs/manual-usuario-xabia-core.pdf</a><br><strong>HTML en línea:</strong> <a href="https://xabia.ai/docs/manual-usuario-xabia-core.html">https://xabia.ai/docs/manual-usuario-xabia-core.html</a></p>
+<p><strong>Versión del producto:</strong> Xabia Agent Core <strong>v1.0.342</strong> (octubre 2026)<br><strong>Índice de manuales:</strong> <a href="https://xabia.ai/docs/">https://xabia.ai/docs/</a><br><strong>PDF en línea:</strong> <a href="https://xabia.ai/docs/manual-usuario-xabia-core.pdf">https://xabia.ai/docs/manual-usuario-xabia-core.pdf</a><br><strong>HTML en línea:</strong> <a href="https://xabia.ai/docs/manual-usuario-xabia-core.html">https://xabia.ai/docs/manual-usuario-xabia-core.html</a></p>
 </blockquote>
 <h2>Guía rápida de instalación</h2>
 <ol>
-<li>Descargue el ZIP de <strong>Xabia Agent Core</strong> (<code>xabia-agent-core-1.0.329.zip</code> o paquete retail equivalente).</li>
+<li>Descargue el ZIP de <strong>Xabia Agent Core</strong> (<code>xabia-agent-core-1.0.342.zip</code> o paquete retail equivalente).</li>
 <li>En WordPress, vaya a <strong>Plugins → Añadir nuevo → Subir plugin</strong>, seleccione el ZIP y pulse <strong>Instalar ahora → Activar</strong>.</li>
 <li>Abra <strong>Xabia Agent</strong> y configure <strong>Conexión a la IA</strong>: pegue la licencia <code>XABIA--…</code>, elija <strong>Xabia Cloud</strong> (recomendado) o <strong>Infraestructura propia</strong>, y guarde.</li>
 <li>Cree un agente desde <strong>Nuevo agente</strong>. En <strong>Identidad y Tono</strong> escriba nombre, saludo y personalidad; en <strong>Conocimiento</strong> elija la fuente de información.</li>
@@ -816,8 +816,9 @@ img[alt="Xabia"] {
 </tr>
 </tbody></table>
 <p>Guarde con <strong>Guardar agente</strong>. En modo nativo el plugin inyecta disparador y assets en <code>wp_footer</code> automáticamente. En modo shortcode, pegue <code>[xabia_agent id=&quot;su-agente&quot;]</code> o <code>[xabia_launcher id=&quot;su-agente&quot; size=&quot;lg&quot;]</code> donde corresponda.</p>
-<h4>Aspecto del chat (v1.0.197–1.0.201)</h4>
-<p>El panel usa un <strong>layout en stream</strong> (sin burbujas de mensaje), esquinas cuadradas y controles (enviar / micrófono / mute) que se revelan al pasar el ratón sobre la zona de escritura. El texto del usuario puede heredar el color de acento del avatar. Las respuestas del bot admiten <strong>Markdown básico</strong> (<code>**negrita**</code>, listas con viñetas) desde la <strong>v1.0.201</strong>.</p>
+<h4>Aspecto del chat (v1.0.342)</h4>
+<p>La cabecera cubre todo el ancho, sin esquinas redondeadas arriba. A la izquierda va el nombre del agente y el estado: <strong>En línea · Respuestas en tiempo real</strong> cuando puede contestar, o <strong>No disponible</strong> si el agente está pausado, no hay saldo de licencia o el servicio no responde. El botón de cerrar queda a la derecha.</p>
+<p>En la conversación, los mensajes del visitante van en una burbuja a la derecha. Las respuestas admiten <strong>Markdown básico</strong> (<code>**negrita**</code>, listas). Varias fichas seguidas (producto, enlace o reserva) se agrupan en una rejilla de dos columnas en escritorio y en una sola columna en el móvil.</p>
 <h4>Chat embebido con shortcode: halo y foco</h4>
 <p>El chat generado por shortcode conserva la estética del panel nativo: borde luminoso animado y sombra suave. Al hacer foco en el campo de texto, el plugin puede elevar el chat sobre la página y mostrar un <strong>overlay con blur</strong> que tapa el fondo para mejorar la lectura.</p>
 <p>El overlay se cierra haciendo clic fuera del chat, pulsando <strong>Escape</strong> o usando el botón de cierre en móvil. Esta capa es independiente del telón del avatar nativo: el shortcode sigue siendo un chat embebido, no un disparador flotante.</p>
@@ -1580,6 +1581,12 @@ img[alt="Xabia"] {
 <h3>¿Hay saldo en la cartera pero el visitante ve “modo mantenimiento”?</h3>
 <p>Mire en <strong>Comportamiento IA</strong> el <strong>tope diario de tokens por agente</strong>. La barra lateral <strong>Tokens hoy</strong> muestra si ya alcanzó ese techo para el día técnico en curso; al día siguiente ese contador vuelve a cero para el agente, aunque su <strong>cartera global</strong> siga teniendo saldo disponible para otros agentes u otros días.</p>
 <h2>Notas de versión (Core)</h2>
+<h3>Core v1.0.342 (octubre 2026)</h3>
+<ul>
+<li>Cabecera del chat a sangre: identidad y estado a la izquierda, cerrar a la derecha. El estado pasa a <strong>No disponible</strong> si el agente está pausado, el saldo de la licencia está a cero o la respuesta indica que no hay servicio.</li>
+<li>Fichas universales en el chat (<code>[ACTION:CARD]</code>): una sola ficha centrada, o rejilla de dos columnas cuando hay varias seguidas. En móvil ocupan todo el ancho.</li>
+<li>Los assets del chat se publican con el número de versión en el nombre (<code>styles-v…css</code>, <code>chatbox-v…js</code>) para que la CDN no sirva un CSS antiguo.</li>
+</ul>
 <h3>Core v1.0.322 (octubre 2026)</h3>
 <ul>
 <li><strong>Caché de página (LiteSpeed / CDN):</strong> el Core ya <strong>no</strong> abre sesión PHP en cada visita. Solo reanuda la sesión si el visitante ya trae la cookie <code>PHPSESSID</code> (p. ej. tras escribir en el chat o escanear un QR). Las visitas nuevas, sin esa cookie, pueden servirse desde caché.</li>

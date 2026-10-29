@@ -2,18 +2,18 @@
 /**
  * Ficha rica agnóstica en chat: [ACTION:CARD:payload].
  *
- * Payload = base64url(JSON) con claves cortas:
- * - t: título
- * - m: meta (atributos · separados)
- * - p: precio / highlight
- * - i: URL imagen
- * - a: acción CTA (CART:123 | CART_PACK:1,2 | URL:https://… | CALL:+34… | BOOK:…)
- * - l: etiqueta del botón
- * - u: permalink / ficha (opcional)
- * - cu: URL carrito (opcional)
- * - ck: URL checkout (opcional)
- * - rd: redirect tras add («1»/«0», opcional)
- * - mx: cantidad máxima (opcional)
+ * Payload = base64url(JSON) con claves cortas. Los alias largos se aceptan
+ * en normalize()/encode() y se guardan en forma corta:
+ * - t / title: título
+ * - m / meta: badge, categoría o ubicación (· separados)
+ * - d / description: extracto. Si falta, un payload antiguo puede traer el texto en m
+ * - p / highlight / price: precio, precio/noche o fecha
+ * - i / image / img: URL imagen
+ * - a / action: CART:123 | CART_PACK:1,2 | URL:https://… | CALL:+34… | BOOK:… | MAP:…
+ * - at / action_type: cart | link (derivado de a si no viene)
+ * - l / action_text / label: etiqueta del botón
+ * - u / url / permalink: ficha o destino
+ * - cu / cart_url, ck / checkout_url, rd / redirect_behavior, mx / max_qty
  *
  * @package Xabia
  */
@@ -25,22 +25,76 @@ if (!defined('ABSPATH')) {
 class Xabia_Action_Card {
 
     /**
+     * Traduce alias largos a claves cortas y deriva action_type.
+     *
      * @param array<string, mixed> $fields
+     * @return array{t:string,m:string,d:string,p:string,i:string,a:string,at:string,l:string,u:string,cu:string,ck:string,rd:string,mx:string}
      */
-    public static function encode(array $fields): string {
-        $payload = [
-            't' => self::clean_field($fields['t'] ?? $fields['title'] ?? ''),
-            'm' => self::clean_field($fields['m'] ?? $fields['meta'] ?? ''),
-            'p' => self::clean_field($fields['p'] ?? $fields['price'] ?? ''),
-            'i' => self::clean_url($fields['i'] ?? $fields['img'] ?? ''),
-            'a' => self::clean_action($fields['a'] ?? $fields['action'] ?? ''),
-            'l' => self::clean_field($fields['l'] ?? $fields['label'] ?? ''),
-            'u' => self::clean_url($fields['u'] ?? $fields['permalink'] ?? ''),
-            'cu' => self::clean_url($fields['cu'] ?? $fields['cart_url'] ?? ''),
-            'ck' => self::clean_url($fields['ck'] ?? $fields['checkout_url'] ?? ''),
-            'rd' => self::clean_flag($fields['rd'] ?? $fields['redirect_behavior'] ?? ''),
-            'mx' => self::clean_qty($fields['mx'] ?? $fields['max_qty'] ?? ''),
+    public static function normalize(array $fields): array {
+        $t = self::clean_field(self::first_value($fields, ['t', 'title']));
+        $m = self::clean_field(self::first_value($fields, ['m', 'meta']));
+        $d = self::clean_field(self::first_value($fields, ['d', 'description']));
+        $p = self::clean_field(self::first_value($fields, ['p', 'highlight', 'price']));
+        $i = self::clean_url(self::first_value($fields, ['i', 'image', 'img']));
+        $l = self::clean_field(self::first_value($fields, ['l', 'action_text', 'label']));
+        $u = self::clean_url(self::first_value($fields, ['u', 'url', 'permalink']));
+        $cu = self::clean_url(self::first_value($fields, ['cu', 'cart_url']));
+        $ck = self::clean_url(self::first_value($fields, ['ck', 'checkout_url']));
+        $rd = self::clean_flag(self::first_value($fields, ['rd', 'redirect_behavior']));
+        $mx = self::clean_qty(self::first_value($fields, ['mx', 'max_qty']));
+        $a = self::clean_action(self::first_value($fields, ['a', 'action']));
+        $explicit = strtolower(trim(self::first_value($fields, ['at', 'action_type'])));
+        if ($explicit !== 'cart' && $explicit !== 'link') {
+            $explicit = '';
+        }
+        if ($a === '' && $explicit === 'cart') {
+            $id = (int) preg_replace('/\D+/', '', (string) ($fields['id'] ?? $fields['product_id'] ?? ''));
+            if ($id > 0) {
+                $a = self::clean_action('CART:' . $id);
+            }
+        }
+        if ($a === '' && $explicit === 'link' && $u !== '') {
+            $a = self::clean_action('URL:' . $u);
+        }
+        $at = self::derive_action_type($a, $explicit);
+        if ($at === 'cart' && !preg_match('/^CART:\d+/i', $a)) {
+            $a = '';
+            $at = '';
+        }
+        if ($at === 'link' && !preg_match('/^BOOK:/i', $a) && self::link_href($a, $u) === '') {
+            $a = '';
+            $at = '';
+        }
+
+        return [
+            't'  => $t,
+            'm'  => $m,
+            'd'  => $d,
+            'p'  => $p,
+            'i'  => $i,
+            'a'  => $a,
+            'at' => $at,
+            'l'  => $l,
+            'u'  => $u,
+            'cu' => $cu,
+            'ck' => $ck,
+            'rd' => $rd,
+            'mx' => $mx,
         ];
+    }
+
+    /**
+     * @param array<string, mixed> $fields
+     * @param array<string, mixed> $context Datos opacos para los addons (source, project_id). El núcleo no los interpreta.
+     */
+    public static function encode(array $fields, array $context = []): string {
+        $payload = self::normalize($fields);
+        if (function_exists('apply_filters')) {
+            $filtered = apply_filters('xabia_card_payload', $payload, $context);
+            if (is_array($filtered)) {
+                $payload = self::normalize($filtered);
+            }
+        }
         $payload = array_filter($payload, static function ($v) {
             return is_string($v) && $v !== '';
         });
@@ -58,7 +112,7 @@ class Xabia_Action_Card {
     }
 
     /**
-     * @return array{t:string,m:string,p:string,i:string,a:string,l:string,u:string,cu:string,ck:string,rd:string,mx:string}|null
+     * @return array{t:string,m:string,d:string,p:string,i:string,a:string,at:string,l:string,u:string,cu:string,ck:string,rd:string,mx:string}|null
      */
     public static function decode(string $raw): ?array {
         $raw = trim($raw);
@@ -73,24 +127,59 @@ class Xabia_Action_Card {
         if (!is_array($data)) {
             return null;
         }
-        $out = [
-            't'  => self::clean_field($data['t'] ?? $data['title'] ?? ''),
-            'm'  => self::clean_field($data['m'] ?? $data['meta'] ?? ''),
-            'p'  => self::clean_field($data['p'] ?? $data['price'] ?? ''),
-            'i'  => self::clean_url($data['i'] ?? $data['img'] ?? ''),
-            'a'  => self::clean_action($data['a'] ?? $data['action'] ?? ''),
-            'l'  => self::clean_field($data['l'] ?? $data['label'] ?? ''),
-            'u'  => self::clean_url($data['u'] ?? $data['permalink'] ?? ''),
-            'cu' => self::clean_url($data['cu'] ?? $data['cart_url'] ?? ''),
-            'ck' => self::clean_url($data['ck'] ?? $data['checkout_url'] ?? ''),
-            'rd' => self::clean_flag($data['rd'] ?? $data['redirect_behavior'] ?? ''),
-            'mx' => self::clean_qty($data['mx'] ?? $data['max_qty'] ?? ''),
-        ];
+        $out = self::normalize($data);
         if ($out['t'] === '') {
             return null;
         }
 
         return $out;
+    }
+
+    private static function derive_action_type(string $action, string $explicit): string {
+        if (preg_match('/^CART:\d+/i', $action)) {
+            return 'cart';
+        }
+        if (preg_match('/^(URL|BOOK):/i', $action)) {
+            return 'link';
+        }
+        if ($explicit === 'cart' || $explicit === 'link') {
+            return $explicit;
+        }
+
+        return '';
+    }
+
+    private static function link_href(string $action, string $permalink): string {
+        if (preg_match('/^URL:(.+)$/i', $action, $m)) {
+            return self::clean_url($m[1]);
+        }
+
+        return $permalink;
+    }
+
+    /**
+     * Primera clave con valor no vacío. Así un filtro puede rellenar el alias largo
+     * aunque la clave corta ya exista vacía.
+     *
+     * @param array<string, mixed> $fields
+     * @param array<int, string> $keys
+     */
+    private static function first_value(array $fields, array $keys): string {
+        foreach ($keys as $key) {
+            if (!array_key_exists($key, $fields)) {
+                continue;
+            }
+            $value = $fields[$key];
+            if (is_bool($value)) {
+                return $value ? '1' : '0';
+            }
+            $text = trim((string) $value);
+            if ($text !== '') {
+                return $text;
+            }
+        }
+
+        return '';
     }
 
     private static function clean_field($v): string {

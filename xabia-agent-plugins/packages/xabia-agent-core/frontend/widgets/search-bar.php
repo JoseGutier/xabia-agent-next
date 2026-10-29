@@ -87,6 +87,78 @@ function xabia_search_bar_chips_from_rules(array $rules): array {
 }
 
 /**
+ * Preguntas sugeridas del agente: las manuales del admin y, si no hay, las generadas.
+ *
+ * @param array<string, mixed> $rules
+ * @return list<string>
+ */
+function xabia_search_bar_suggested_questions(string $project_id, array $rules): array {
+    $manual = [];
+    if (class_exists('Xabia_Starter_Questions', false)) {
+        $manual = Xabia_Starter_Questions::normalize_manual_list($rules['starter_questions'] ?? []);
+    } else {
+        $manual = xabia_search_bar_normalize_lines($rules['starter_questions'] ?? []);
+    }
+    if ($manual !== []) {
+        return $manual;
+    }
+    if (!class_exists('Xabia_Starter_Questions', false) || !Xabia_Starter_Questions::is_enabled($rules)) {
+        return [];
+    }
+    $dynamic = Xabia_Starter_Questions::for_project($project_id, '', $rules);
+
+    return array_values(array_filter(array_map('strval', is_array($dynamic) ? $dynamic : [])));
+}
+
+/**
+ * Placeholder de la barra: campo propio, si no las preguntas sugeridas, si no el respaldo.
+ *
+ * @param array<string, mixed> $rules
+ * @return list<string>
+ */
+function xabia_search_bar_resolve_placeholders(string $project_id, array $rules): array {
+    $own = xabia_search_bar_placeholders_from_rules($rules);
+    if ($own !== []) {
+        return $own;
+    }
+    $suggested = xabia_search_bar_suggested_questions($project_id, $rules);
+    if ($suggested !== []) {
+        return $suggested;
+    }
+
+    return xabia_search_bar_default_placeholders();
+}
+
+/**
+ * Pastillas: «Etiqueta | consulta» del admin, si no una por pregunta sugerida.
+ *
+ * @param array<string, mixed> $rules
+ * @return list<array{label:string,query:string}>
+ */
+function xabia_search_bar_resolve_chips(string $project_id, array $rules): array {
+    $own = xabia_search_bar_chips_from_rules($rules);
+    if ($own !== []) {
+        return $own;
+    }
+    $chips = [];
+    foreach (xabia_search_bar_suggested_questions($project_id, $rules) as $question) {
+        $question = trim((string) $question);
+        if ($question === '') {
+            continue;
+        }
+        $chips[] = [
+            'label' => $question,
+            'query' => $question,
+        ];
+    }
+    if ($chips !== []) {
+        return $chips;
+    }
+
+    return xabia_search_bar_default_chips();
+}
+
+/**
  * Frases del efecto mecanografía cuando el admin no ha definido ninguna.
  *
  * @return list<string>
@@ -171,14 +243,8 @@ function xabia_search_bar_shortcode($atts): string {
         ? $projects[$project_id]
         : [];
     $rules = (isset($project['rules']) && is_array($project['rules'])) ? $project['rules'] : [];
-    $placeholders = xabia_search_bar_placeholders_from_rules($rules);
-    if ($placeholders === []) {
-        $placeholders = xabia_search_bar_default_placeholders();
-    }
-    $chips = xabia_search_bar_chips_from_rules($rules);
-    if ($chips === []) {
-        $chips = xabia_search_bar_default_chips();
-    }
+    $placeholders = xabia_search_bar_resolve_placeholders($project_id, $rules);
+    $chips = xabia_search_bar_resolve_chips($project_id, $rules);
     $placeholders_json = wp_json_encode(array_values($placeholders));
     if (!is_string($placeholders_json)) {
         $placeholders_json = '[]';

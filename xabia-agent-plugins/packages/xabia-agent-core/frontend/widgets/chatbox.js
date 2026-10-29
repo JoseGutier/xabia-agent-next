@@ -627,11 +627,13 @@
             return {
                 t: String(data.t || data.title || '').trim(),
                 m: String(data.m || data.meta || '').trim(),
-                p: String(data.p || data.price || '').trim(),
-                i: String(data.i || data.img || '').trim(),
+                d: String(data.d || data.description || '').trim(),
+                p: String(data.p || data.highlight || data.price || '').trim(),
+                i: String(data.i || data.image || data.img || '').trim(),
                 a: String(data.a || data.action || '').trim(),
-                l: String(data.l || data.label || '').trim(),
-                u: String(data.u || data.permalink || '').trim(),
+                at: String(data.at || data.action_type || '').trim(),
+                l: String(data.l || data.action_text || data.label || '').trim(),
+                u: String(data.u || data.url || data.permalink || '').trim(),
                 cu: String(data.cu || data.cart_url || '').trim(),
                 ck: String(data.ck || data.checkout_url || '').trim(),
                 rd: String(data.rd || data.redirect_behavior || '').trim(),
@@ -675,7 +677,7 @@
         if (kind === 'URL') {
             var url = decodeHtmlEntities(rest);
             if (!url) return '';
-            return '<a href="' + escAttr(url) + '" class="xabia-entity-card__cta" target="_blank" rel="noopener">' + escAttr(lbl || xabiaI18n('actionOpenLink', 'Abrir enlace')) + '</a>';
+            return '<a href="' + escAttr(url) + '" class="xabia-entity-card__cta xabia-action xabia-action-url" target="_blank" rel="noopener">' + escAttr(lbl || xabiaI18n('actionOpenLink', 'Abrir enlace')) + '</a>';
         }
         if (kind === 'CALL') {
             var tel = rest.replace(/\s+/g, '');
@@ -699,7 +701,8 @@
         return '';
     }
 
-    function renderShopPurchaseModuleHtml(card, escAttr) {
+    function renderShopPurchaseModuleHtml(card, escAttr, opts) {
+        opts = opts || {};
         var a = String(card.a || '').trim();
         var m = a.match(/^CART:(.*)$/i);
         if (!m) return '';
@@ -720,7 +723,7 @@
             + '<input type="number" class="xabia-entity-card__qty-input" value="1" min="1" max="' + escAttr(String(maxQty)) + '" inputmode="numeric" aria-label="' + escAttr(xabiaI18n('actionQuantity', 'Cantidad')) + '">'
             + '<button type="button" class="xabia-entity-card__qty-btn" data-dir="+" aria-label="+">+</button>'
             + '</div>';
-        var infoHtml = permalink
+        var infoHtml = (!opts.compact && permalink)
             ? '<a class="xabia-entity-card__info" href="' + escAttr(permalink) + '" target="_blank" rel="noopener">' + escAttr(infoLbl) + '</a>'
             : '';
         var buyHtml;
@@ -730,7 +733,8 @@
         } else {
             buyHtml = '<button type="button" class="xabia-entity-card__cta xabia-btn-cart" data-id="' + escAttr(pid) + '">' + escAttr(buyLbl) + '</button>';
         }
-        return '<div class="xabia-entity-card__shop"'
+        var shopClass = opts.compact ? ' xabia-entity-card__shop xabia-product-card__shop' : ' xabia-entity-card__shop';
+        return '<div class="' + shopClass.trim() + '"'
             + ' data-product-id="' + escAttr(pid) + '"'
             + ' data-redirect="' + escAttr(redirect) + '"'
             + ' data-cart-url="' + escAttr(cartUrl) + '"'
@@ -741,38 +745,138 @@
             + '</div>';
     }
 
+    function xabiaCardActionType(card) {
+        var action = String((card && card.a) || '').trim();
+        if (/^CART:\d+/i.test(action)) return 'cart';
+        if (/^(URL|BOOK|CALL|MAP):/i.test(action)) return 'link';
+        var explicit = String((card && (card.at || card.action_type)) || '').trim().toLowerCase();
+        if (explicit === 'cart' || explicit === 'link') return explicit;
+        return '';
+    }
+
+    function xabiaUniversalCopy(card) {
+        var desc = xabiaCleanShopDesc(card && card.d);
+        var meta = String((card && card.m) || '').trim();
+        if (!desc && meta) {
+            if (/[·|]/.test(meta) && meta.length < 80 && !/[.!?]$/.test(meta)) {
+                return { desc: '', meta: meta };
+            }
+            return { desc: xabiaCleanShopDesc(meta), meta: '' };
+        }
+        return { desc: desc, meta: meta };
+    }
+
+    function xabiaUniversalMetaHtml(meta, escAttr) {
+        var parts = String(meta || '').split(/\s*[·|]\s*/).map(function(part) {
+            return String(part || '').trim();
+        }).filter(Boolean);
+        if (!parts.length) return '';
+        return '<div class="xabia-card__tags">' + parts.map(function(part) {
+            return '<span class="xabia-card__tag xabia-entity-card__tag">' + escAttr(part) + '</span>';
+        }).join('') + '</div>';
+    }
+
+    function renderUniversalLinkHtml(card, escAttr, decodeHtmlEntities) {
+        var action = String(card.a || '').trim();
+        var decode = (typeof decodeHtmlEntities === 'function') ? decodeHtmlEntities : function(s) { return String(s || ''); };
+        if (/^(BOOK|CALL|MAP|CART_PACK):/i.test(action)) {
+            var special = renderCardCtaHtml(action, card.l, escAttr, decode);
+            return special ? '<div class="xabia-card__buy xabia-product-card__buy">' + special + '</div>' : '';
+        }
+        var href = '';
+        var urlMatch = action.match(/^URL:(.*)$/i);
+        if (urlMatch) href = decode(String(urlMatch[1] || '')).trim();
+        if (!href && String(card.at || card.action_type || '').toLowerCase() === 'link') {
+            href = String(card.u || '').trim();
+        }
+        if (!/^https?:\/\//i.test(href)) return '';
+        var label = String(card.l || '').trim() || xabiaI18n('actionOpenLink', 'Abrir');
+        return '<div class="xabia-card__buy xabia-product-card__buy"><a class="xabia-card__link xabia-entity-card__cta" href="' + escAttr(href) + '" target="_blank" rel="noopener">' + escAttr(label) + '</a></div>';
+    }
+
+    function renderUniversalCardHtml(card, escAttr, imagesBase, decodeHtmlEntities) {
+        var title = String((card && card.t) || '').replace(/\s+/g, ' ').trim();
+        if (!title) return '';
+        var copy = xabiaUniversalCopy(card);
+        var desc = copy.desc;
+        var price = xabiaFormatShopPrice(card.p);
+        if (!price) {
+            var found = desc.match(/(\d{1,5}(?:[.,]\d{1,2})?\s*(?:€|eur))\b/i);
+            if (found) {
+                price = xabiaFormatShopPrice(found[1]);
+                desc = desc.replace(found[0], '').replace(/^[\s,.;:-]+|[\s,.;:-]+$/g, '').trim();
+            }
+        }
+        var src = '';
+        if (card.i) src = resolveActionImgSrc(card.i, imagesBase) || String(card.i);
+        var media = src
+            ? '<div class="xabia-card__media xabia-product-card__media"><img class="xabia-card__img xabia-product-card__img" src="' + escAttr(src) + '" alt="" loading="lazy" decoding="async"></div>'
+            : '';
+        var priceHtml = price ? '<span class="xabia-card__price xabia-product-card__price">' + escAttr(price) + '</span>' : '';
+        var descHtml = desc ? '<p class="xabia-card__desc xabia-product-card__desc">' + escAttr(desc) + '</p>' : '';
+        var permalink = String(card.u || '').trim();
+        var titleHtml = /^https?:\/\//i.test(permalink)
+            ? '<a class="xabia-card__title xabia-product-card__title" href="' + escAttr(permalink) + '" target="_blank" rel="noopener">' + escAttr(title) + '</a>'
+            : '<span class="xabia-card__title xabia-product-card__title">' + escAttr(title) + '</span>';
+        var actionType = xabiaCardActionType(card);
+        var footer = '';
+        if (actionType === 'cart') {
+            var shop = renderShopPurchaseModuleHtml(card, escAttr, { compact: true });
+            if (shop) footer = '<div class="xabia-card__buy xabia-product-card__buy">' + shop + '</div>';
+        } else if (actionType === 'link' || /^(CALL|MAP|CART_PACK):/i.test(String(card.a || ''))) {
+            footer = renderUniversalLinkHtml(card, escAttr, decodeHtmlEntities);
+        }
+        return '<div class="xabia-card xabia-product-card xabia-shop-module">'
+            + '<div class="xabia-card__main xabia-product-card__main">'
+            + media
+            + '<div class="xabia-card__info xabia-product-card__info">'
+            + '<div class="xabia-card__headline xabia-product-card__headline">' + titleHtml + priceHtml + '</div>'
+            + xabiaUniversalMetaHtml(copy.meta, escAttr)
+            + descHtml
+            + '</div></div>'
+            + footer
+            + '</div>';
+    }
+
+    function renderProductCardHtml(card, escAttr, imagesBase) {
+        return renderUniversalCardHtml(card, escAttr, imagesBase);
+    }
+
+    function renderCartPurchaseCardHtml(id, title, escAttr, imagesBase, extras) {
+        extras = extras || {};
+        var pid = String(id || '').replace(/\D/g, '');
+        if (!pid) return '';
+        var name = String(title || extras.titleHint || '').replace(/\s+/g, ' ').trim();
+        if (/^id$/i.test(name)) name = String(extras.titleHint || '').trim();
+        return renderProductCardHtml({
+            t: name,
+            m: extras.desc || '',
+            p: extras.price || '',
+            i: extras.img || '',
+            a: 'CART:' + pid,
+            l: '',
+            u: extras.url || ''
+        }, escAttr, imagesBase);
+    }
+
     function renderActionCardHtml(raw, imagesBase, escAttr, decodeHtmlEntities) {
         var card = decodeActionCardPayload(raw);
         if (!card || !card.t) return '';
-        var imgHtml = '';
-        if (card.i) {
-            var src = resolveActionImgSrc(card.i, imagesBase) || card.i;
-            if (src) {
-                imgHtml = '<div class="xabia-entity-card__media"><img src="' + escAttr(src) + '" alt="" class="xabia-entity-card__img" loading="lazy" decoding="async"></div>';
-            }
+        return renderUniversalCardHtml(card, escAttr, imagesBase, decodeHtmlEntities);
+    }
+
+    function xabiaCardMetaHtml(meta, escAttr) {
+        var raw = String(meta || '').trim();
+        if (!raw) return '';
+        var parts = raw.split(/\s*[·|]\s*/).map(function(part) {
+            return String(part || '').trim();
+        }).filter(Boolean);
+        if (parts.length < 2) {
+            return '<p class="xabia-entity-card__desc">' + escAttr(raw) + '</p>';
         }
-        var body = '<div class="xabia-entity-card__body">'
-            + '<div class="xabia-entity-card__title">' + escAttr(card.t) + '</div>'
-            + (card.m ? '<div class="xabia-entity-card__meta">' + escAttr(card.m) + '</div>' : '')
-            + (card.p ? '<div class="xabia-entity-card__price">' + escAttr(card.p) + '</div>' : '')
-            + '</div>';
-        var isCart = /^CART:/i.test(String(card.a || ''));
-        var shopHtml = '';
-        if (isCart) {
-            shopHtml = renderShopPurchaseModuleHtml(card, escAttr);
-        } else if (card.u) {
-            // Modo solo información (producto no comprable / sin stock): + Info sin Comprar roto.
-            var wcInfo = window.xabiaWooCart || {};
-            var infoOnlyLbl = wcInfo.infoLabel || xabiaI18n('actionMoreInfo', '+ Info');
-            shopHtml = '<div class="xabia-entity-card__shop xabia-entity-card__shop--info-only">'
-                + '<div class="xabia-entity-card__shop-actions">'
-                + '<a class="xabia-entity-card__info" href="' + escAttr(card.u) + '" target="_blank" rel="noopener">' + escAttr(infoOnlyLbl) + '</a>'
-                + '</div></div>';
-        }
-        var cta = shopHtml ? '' : renderCardCtaHtml(card.a, card.l, escAttr, decodeHtmlEntities);
-        var ctaWrap = (shopHtml || cta) ? '<div class="xabia-entity-card__actions">' + (shopHtml || cta) + '</div>' : '';
-        var shopClass = shopHtml ? ' xabia-entity-card--shop' : '';
-        return '<div class="xabia-entity-card' + shopClass + '">' + imgHtml + body + ctaWrap + '</div>';
+        return '<div class="xabia-entity-card__tags">' + parts.map(function(part) {
+            return '<span class="xabia-entity-card__tag">' + escAttr(part) + '</span>';
+        }).join('') + '</div>';
     }
 
     /**
@@ -831,16 +935,27 @@
             return renderActionCardHtml(raw, imagesBase, escAttr, decodeHtmlEntities);
         });
         
-        text = text.replace(/\[ACTION:CART:(\d+)\]/g, function(_, id) {
-            var pid = String(id || '').replace(/\D/g, '');
-            if (!pid) return '';
-            var wc = window.xabiaWooCart || {};
-            if (wc.mode === 'redirect' && wc.urlTemplate && String(wc.urlTemplate).indexOf('{id}') !== -1) {
-                var href = String(wc.urlTemplate).split('{id}').join(pid);
-                var lbl = wc.checkoutLabel || xabiaI18n('actionBuyNow', 'Comprar ahora');
-                return '<a href="' + escAttr(href) + '" class="xabia-action xabia-action-url xabia-btn-cart-remote" target="_blank" rel="noopener">🛒 ' + escAttr(lbl) + '</a>';
-            }
-            return '<button type="button" class="xabia-btn-cart" data-id="' + escAttr(pid) + '">🛒 ' + escAttr(xabiaI18n('actionAddToCart', 'Añadir al carrito')) + '</button>';
+        text = text.replace(/\[ACTION:CART:(?:ID\s*:\s*)?(\d+)\s*(?::\s*([^\]]+))?\]/gi, function(_, id, title) {
+            return renderCartPurchaseCardHtml(id, title, escAttr, imagesBase);
+        });
+        text = text.replace(/\[ACTION:CART:ID:\s*(?!\d)([^\]]+)\]/gi, function(_, title) {
+            var name = String(title || '').replace(/\s+/g, ' ').trim();
+            if (!name || /^id$/i.test(name)) return '';
+            return renderUniversalCardHtml({
+                t: name,
+                d: '',
+                m: '',
+                p: '',
+                i: '',
+                a: '',
+                l: '',
+                u: ''
+            }, escAttr, imagesBase, decodeHtmlEntities);
+        });
+        text = text.replace(/\[ACTION:CART:ID:\s*(?!\d)([^\]]+)\]/gi, function(_, title) {
+            var name = String(title || '').replace(/\s+/g, ' ').trim();
+            if (!name) return '';
+            return renderUniversalCardHtml({ t: name, d: '', m: '', p: '', i: '', a: '', l: '', u: '' }, escAttr, imagesBase, decodeHtmlEntities);
         });
         text = text.replace(/\[ACTION:CART_PACK:([^\]]+)\]/g, function(_, spec) {
             var parts = String(spec || '').trim().split('|');
@@ -1329,6 +1444,8 @@
             t.innerHTML = String(s);
             return t.value;
         }
+        var shopFold = xabiaCollapseShopLeads(text, imagesBase, escAttr, decodeHtmlEntities);
+        text = shopFold.text;
         /* Fichas CARD antes de listas/markdown para que no queden inline dentro de <li>. */
         var cardHolders = [];
         text = text.replace(/\[ACTION:CARD:([^\]]+)\]/g, function(_, rawPayload) {
@@ -1367,13 +1484,374 @@
         text = text.replace(/(?:<br>\s*){3,}/g, '<br><br>');
         text = text.replace(/<br>\s*(<ul\b)/gi, '$1').replace(/(<\/ul>)\s*<br>/gi, '$1');
         text = renderActions(text, imagesBase);
+        if (shopFold.holders.length) {
+            for (var s = 0; s < shopFold.holders.length; s++) {
+                var shopToken = '%%XABIA_SHOP_' + s + '%%';
+                if (text.indexOf(shopToken) !== -1) {
+                    text = text.split(shopToken).join(shopFold.holders[s]);
+                } else {
+                    text += shopFold.holders[s];
+                }
+            }
+        }
         if (cardHolders.length) {
             for (var i = 0; i < cardHolders.length; i++) {
                 text = text.split('%%XABIA_CARD_' + i + '%%').join(cardHolders[i]);
             }
-            text = text.replace(/(?:<br>\s*)+(<div class="xabia-entity-card">)/g, '$1');
+            text = text.replace(/(?:<br>\s*)+(<div class="xabia-entity-card\b)/g, '$1');
+        }
+        if (text.indexOf('xabia-entity-card') !== -1) {
+            text = wrapEntityCardDecks(text);
+        }
+        text = text.replace(/(?:<br>\s*)+(<div class="xabia-(?:card|product-card)\b)/g, '$1');
+        text = text.replace(/(?:^|<br>\s*)-\s*(?=<div class="xabia-(?:card|product-card)\b)/g, '');
+        if (text.indexOf('xabia-card') !== -1 || text.indexOf('xabia-product-card') !== -1) {
+            text = wrapProductCardGrid(text);
         }
         return text;
+    }
+
+    function xabiaIsProductCard(card) {
+        if (!card || !String(card.t || '').trim()) return false;
+        var action = String(card.a || '').trim();
+        if (/^CART:/i.test(action)) return true;
+        if (/^(BOOK|CALL|MAP|URL|CART_PACK):/i.test(action)) return false;
+        return !!(card.u || card.i || card.p);
+    }
+
+    function xabiaCleanShopDesc(raw) {
+        var desc = String(raw || '');
+        desc = desc.replace(/(?:URL:\s*)?https?:\/\/[^\s)]+/gi, ' ');
+        desc = desc.replace(/\s+/g, ' ').replace(/^[\s,.;:)\]|/-]+|[\s,.;:(\[|/-]+$/g, '').trim();
+        return desc;
+    }
+
+    function xabiaFormatShopPrice(raw) {
+        var price = String(raw || '').replace(/\s+/g, ' ').trim();
+        if (!price) return '';
+        var simple = price.match(/^(\d{1,5})(?:[.,](\d{1,2}))?\s*(?:€|eur)?$/i);
+        if (!simple) return price;
+        var cents = simple[2] ? (simple[2] + '00').slice(0, 2) : '';
+        return cents ? (simple[1] + ',' + cents + ' €') : (simple[1] + ' €');
+    }
+
+    function xabiaParseProductBullet(line) {
+        var raw = String(line || '').trim();
+        if (!/^[-*•]\s+\S/.test(raw) || raw.length > 500) return null;
+        var body = raw.replace(/^[-*•]\s+/, '').trim();
+        var img = '';
+        var mdImg = body.match(/!\[[^\]]*\]\((https?:\/\/[^)\s]+)\)/i);
+        if (mdImg && isLikelyImageUrl(mdImg[1])) img = mdImg[1].trim();
+        var avail = body.match(/\[Imagen disponible:\s*(https?:\/\/[^\s\]]+)\s*\]/i);
+        if (!img && avail && isLikelyImageUrl(avail[1])) img = avail[1].trim();
+        var actionImg = body.match(/\[ACTION:IMG:\s*([^\]]+)\]/i);
+        if (!img && actionImg && isLikelyImageUrl(actionImg[1])) img = actionImg[1].trim();
+        body = body.replace(/!\[[^\]]*\]\((https?:\/\/[^)\s]+)\)/gi, ' ');
+        body = body.replace(/\[Imagen disponible:[^\]]*\]/gi, ' ');
+        body = body.replace(/\[ACTION:IMG:[^\]]*\]/gi, ' ');
+        var title = '';
+        var pageUrl = '';
+        var linked = body.match(/\[([^\]]+)\]\(\s*(?:URL:\s*)?(https?:\/\/[^)\s]+)\s*\)/i);
+        if (linked) {
+            title = linked[1];
+            var href = String(linked[2] || '').trim();
+            if (isLikelyImageUrl(href)) {
+                if (!img) img = href;
+            } else {
+                pageUrl = href;
+            }
+            body = body.replace(linked[0], ' ');
+        }
+        var desc = '';
+        var colon = body.match(/:\s*(\S[\s\S]*)$/);
+        if (colon) {
+            desc = colon[1];
+            body = body.slice(0, colon.index);
+        }
+        if (!title) {
+            body = body.replace(/\[([^\]]+)\]\([^)\s]+\)/g, '$1');
+        }
+        title = String(title || body).replace(/[*_]+/g, ' ').replace(/\s+/g, ' ').trim();
+        desc = xabiaCleanShopDesc(desc);
+        if (!title || title.length > 140) return null;
+        if (!linked && !img && !desc && title.length > 80) return null;
+        return { title: title, img: img, desc: desc, url: pageUrl };
+    }
+
+    function xabiaPeelShopLead(before) {
+        var lines = String(before || '').replace(/\s+$/, '').split('\n');
+        var i = lines.length - 1;
+        while (i >= 0 && String(lines[i] || '').trim() === '') i -= 1;
+        if (i < 0) {
+            return { rest: before, img: '', desc: '', titleHint: '', url: '' };
+        }
+        var desc = '';
+        var img = '';
+        var titleHint = '';
+        var pageUrl = '';
+        var sawBullet = false;
+        var sawImg = false;
+        var last = String(lines[i] || '').trim();
+        if (/^:\s*\S/.test(last) && last.length < 400) {
+            desc = last.replace(/^:\s*/, '').trim();
+            i -= 1;
+            while (i >= 0 && String(lines[i] || '').trim() === '') i -= 1;
+            last = i >= 0 ? String(lines[i] || '').trim() : '';
+        }
+        var imgMatch = last.match(/^\[ACTION:IMG:\s*([^\]]+)\]$/i)
+            || last.match(/^\[Imagen disponible:\s*(https?:\/\/[^\s\]]+)\s*\]$/i)
+            || last.match(/^!\[[^\]]*\]\((https?:\/\/[^)\s]+)\)$/i);
+        if (imgMatch && isLikelyImageUrl(imgMatch[1])) {
+            img = String(imgMatch[1] || '').trim();
+            sawImg = true;
+            i -= 1;
+            while (i >= 0 && String(lines[i] || '').trim() === '') i -= 1;
+            last = i >= 0 ? String(lines[i] || '').trim() : '';
+        }
+        var bullet = i >= 0 ? xabiaParseProductBullet(last) : null;
+        if (bullet) {
+            titleHint = bullet.title;
+            if (bullet.img) img = img || bullet.img;
+            if (bullet.url) pageUrl = bullet.url;
+            if (bullet.desc && bullet.desc.length > String(desc || '').length) desc = bullet.desc;
+            sawBullet = true;
+            i -= 1;
+        }
+        if (!sawBullet && !sawImg) {
+            return { rest: before, img: '', desc: '', titleHint: '', url: '' };
+        }
+        return {
+            rest: lines.slice(0, i + 1).join('\n'),
+            img: img,
+            desc: xabiaCleanShopDesc(desc),
+            titleHint: titleHint,
+            url: pageUrl
+        };
+    }
+
+    function xabiaPeelTitleSentence(before, title) {
+        var name = String(title || '').replace(/\s+/g, ' ').trim();
+        if (!name) return { rest: before, desc: '' };
+        var lines = String(before || '').split('\n');
+        var i = lines.length - 1;
+        while (i >= 0 && String(lines[i] || '').trim() === '') i -= 1;
+        if (i < 0) return { rest: before, desc: '' };
+        var line = String(lines[i] || '').trim().replace(/^[-*•]\s+/, '');
+        var escaped = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        var match = line.match(new RegExp('^' + escaped + '\\s*:\\s*(.+)$', 'i'));
+        if (!match) return { rest: before, desc: '' };
+        lines.splice(i, 1);
+        return { rest: lines.join('\n'), desc: xabiaCleanShopDesc(match[1]) };
+    }
+
+    function xabiaRenderFoldedShop(actionBody, lead, imagesBase, escAttr, decodeHtmlEntities) {
+        var body = String(actionBody || '');
+        var card = null;
+        if (/^CARD:/i.test(body)) {
+            card = decodeActionCardPayload(body.slice(5));
+        } else {
+            var cart = body.match(/^CART:(?:ID\s*:\s*)?(\d+)\s*(?::\s*([\s\S]*))?$/i);
+            if (!cart) return '';
+            var name = String(cart[2] || lead.titleHint || '').replace(/\s+/g, ' ').trim();
+            if (/^id$/i.test(name)) name = String(lead.titleHint || '').trim();
+            card = {
+                t: name,
+                m: '',
+                p: '',
+                i: '',
+                a: 'CART:' + cart[1],
+                l: '',
+                u: lead.url || ''
+            };
+        }
+        if (!card) return '';
+        if (!card.t && lead.titleHint) card.t = lead.titleHint;
+        if (lead.img && !card.i) card.i = lead.img;
+        if (lead.url && !card.u) card.u = lead.url;
+        if (lead.desc) card.m = lead.desc;
+        if (!xabiaIsProductCard(card)) {
+            return renderActionCardHtml(body.replace(/^CARD:/i, ''), imagesBase, escAttr, decodeHtmlEntities);
+        }
+        return renderProductCardHtml(card, escAttr, imagesBase);
+    }
+
+    function xabiaCollapseShopLeads(text, imagesBase, escAttr, decodeHtmlEntities) {
+        var source = String(text || '');
+        var re = /\[ACTION:(CARD:[^\]]+|CART:(?:ID\s*:\s*)?[^\]]+)\]/gi;
+        var holders = [];
+        var out = '';
+        var last = 0;
+        var match;
+        while ((match = re.exec(source))) {
+            var kind = match[1];
+            var isShop = /^CART:/i.test(kind);
+            if (!isShop && /^CARD:/i.test(kind)) {
+                isShop = xabiaIsProductCard(decodeActionCardPayload(kind.slice(5)));
+            }
+            if (!isShop) continue;
+            var before = source.slice(last, match.index);
+            var lead = xabiaPeelShopLead(before);
+            var html = xabiaRenderFoldedShop(kind, lead, imagesBase, escAttr, decodeHtmlEntities);
+            var rest = lead.rest;
+            if (!html) {
+                var namedOnly = String(kind).match(/^CART:ID:\s*(?!\d)([\s\S]+)$/i);
+                if (namedOnly) {
+                    var namedTitle = String(namedOnly[1] || '').replace(/\s+/g, ' ').trim();
+                    if (namedTitle) {
+                        var base = (lead.img || lead.desc || lead.titleHint || lead.url) ? lead.rest : before;
+                        var sentence = xabiaPeelTitleSentence(base, namedTitle);
+                        html = renderUniversalCardHtml({
+                            t: namedTitle,
+                            d: lead.desc || sentence.desc,
+                            m: '',
+                            p: '',
+                            i: lead.img || '',
+                            a: '',
+                            l: '',
+                            u: lead.url || ''
+                        }, escAttr, imagesBase, decodeHtmlEntities);
+                        rest = sentence.desc ? sentence.rest : base;
+                    }
+                }
+            }
+            if (!html) continue;
+            out += rest;
+            holders.push(html);
+            out += '\n%%XABIA_SHOP_' + (holders.length - 1) + '%%\n';
+            last = match.index + match[0].length;
+        }
+        out += source.slice(last);
+        return { text: out, holders: holders };
+    }
+
+    function sliceBalancedDiv(html, start) {
+        var depth = 0;
+        var i = start;
+        while (i < html.length) {
+            if (html.slice(i, i + 4) === '<div') {
+                depth += 1;
+                i += 4;
+                continue;
+            }
+            if (html.slice(i, i + 6) === '</div>') {
+                depth -= 1;
+                i += 6;
+                if (depth === 0) {
+                    return html.slice(start, i);
+                }
+                continue;
+            }
+            i += 1;
+        }
+        return html.slice(start);
+    }
+
+    function wrapEntityCardDecks(html) {
+        var source = String(html || '');
+        var re = /<div class="xabia-entity-card\b/g;
+        var cards = [];
+        var match;
+        while ((match = re.exec(source))) {
+            var chunk = sliceBalancedDiv(source, match.index);
+            cards.push({ start: match.index, end: match.index + chunk.length, html: chunk });
+            re.lastIndex = match.index + chunk.length;
+        }
+        if (!cards.length) {
+            return source;
+        }
+        var out = '';
+        var cursor = 0;
+        var i = 0;
+        while (i < cards.length) {
+            var group = [cards[i]];
+            var end = cards[i].end;
+            var j = i + 1;
+            while (j < cards.length) {
+                var between = source.slice(end, cards[j].start);
+                if (!/^(?:\s|<br\s*\/?>)*$/i.test(between)) {
+                    break;
+                }
+                group.push(cards[j]);
+                end = cards[j].end;
+                j += 1;
+            }
+            out += source.slice(cursor, group[0].start);
+            if (group.length > 1) {
+                out += '<div class="xabia-cards-deck">';
+                group.forEach(function(card) {
+                    out += card.html;
+                });
+                out += '</div>';
+            } else {
+                out += group[0].html;
+            }
+            cursor = end;
+            i = j;
+        }
+        out += source.slice(cursor);
+        return out;
+    }
+
+    function wrapProductCardGrid(html) {
+        var source = String(html || '');
+        var re = /<div class="xabia-card\b/g;
+        var cards = [];
+        var match;
+        while ((match = re.exec(source))) {
+            var chunk = sliceBalancedDiv(source, match.index);
+            cards.push({ start: match.index, end: match.index + chunk.length, html: chunk });
+            re.lastIndex = match.index + chunk.length;
+        }
+        if (cards.length < 2) {
+            return source;
+        }
+        var out = '';
+        var cursor = 0;
+        var i = 0;
+        while (i < cards.length) {
+            var group = [cards[i]];
+            var end = cards[i].end;
+            var j = i + 1;
+            while (j < cards.length) {
+                var between = source.slice(end, cards[j].start);
+                if (!/^(?:\s|<br\s*\/?>)*$/i.test(between)) {
+                    break;
+                }
+                group.push(cards[j]);
+                end = cards[j].end;
+                j += 1;
+            }
+            out += source.slice(cursor, group[0].start);
+            if (group.length > 1) {
+                out += '<div class="xabia-cards-grid xabia-products-grid">';
+                group.forEach(function(card) {
+                    out += card.html;
+                });
+                out += '</div>';
+            } else {
+                out += group[0].html;
+            }
+            cursor = end;
+            i = j;
+        }
+        out += source.slice(cursor);
+        return out;
+    }
+
+    function xabiaVisibleStreamRaw(raw) {
+        return String(raw || '').replace(/\[ACTION:(?:CARD|CART_PACK|CART|URL|CALL|BOOK|MAP|IMG):[^\]]*$/i, '');
+    }
+
+    function xabiaPreferCardRaw(server, streamed) {
+        server = String(server || '');
+        streamed = String(streamed || '');
+        function count(text) {
+            return (text.match(/\[ACTION:CARD:[^\]]+\]/g) || []).length;
+        }
+        if (count(streamed) > count(server)) {
+            return streamed;
+        }
+        return server || streamed;
     }
 
     function chatboxImagesBase($box) {
@@ -1389,18 +1867,38 @@
         opts = opts || {};
         var text = String(raw || '');
         var $botDiv = $('<div class="xabia-msg bot"></div>').attr('data-raw', raw);
-        var $content = $('<span class="xabia-msg-content"></span>').html(renderBotHtml(text, chatboxImagesBase($box)));
+        var $content = $('<div class="xabia-msg-content"></div>').html(renderBotHtml(text, chatboxImagesBase($box)));
         $botDiv.append($content);
         $history.append($botDiv);
         finishBotMessage($box, $history, $botDiv, raw, opts);
     }
 
     function finishBotMessage($box, $history, $botDiv, raw, opts) {
+        opts = opts || {};
         $botDiv.removeClass('xabia-msg-typing');
+        $botDiv.find('.xabia-continue').remove();
         attachMsgSpeakButton($box, $botDiv, raw);
+        if (opts.truncated || xabiaReplyLooksCut(raw)) {
+            var $speak = $botDiv.find('.xabia-msg-speak').first();
+            var $more = makeContinueButton();
+            if ($speak.length) {
+                $speak.before($more);
+            } else {
+                $botDiv.append($more);
+            }
+        }
         speakText($box, raw);
         scrollMessages($box);
         syncChatUiState($box);
+    }
+
+    function xabiaReplyLooksCut(raw) {
+        var text = String(raw || '').replace(/\s+$/, '');
+        if (text.length < 40) return false;
+        if (/\[ACTION:(?:CARD|CART_PACK|CART|URL|CALL|BOOK|MAP|IMG):[^\]]*$/i.test(text)) return true;
+        var lines = text.split('\n');
+        var last = String(lines[lines.length - 1] || '').trim();
+        return last === '-' || last === '*' || last === '•' || last === '- **' || last === '**';
     }
 
     /**
@@ -2714,6 +3212,13 @@
             if (opts.cancelMic) {
                 abortMicSession($box);
             }
+            stopAllSpeech($box);
+            $box.find('audio').each(function() {
+                try {
+                    this.pause();
+                    this.currentTime = 0;
+                } catch (eAudio) {}
+            });
             $box.removeClass('xabia-conversation-open');
             if (!$('.xabia-chatbox.xabia-conversation-open').length) {
                 document.body.classList.remove('xabia-conversation-open');
@@ -2894,7 +3399,7 @@
                     if ($content.length) {
                         $content.html(renderBotHtml(merged, chatboxImagesBase($box)));
                     } else {
-                        $lastBot.append($('<span class="xabia-msg-content"></span>').html(renderBotHtml(merged, chatboxImagesBase($box))));
+                        $lastBot.append($('<div class="xabia-msg-content"></div>').html(renderBotHtml(merged, chatboxImagesBase($box))));
                     }
                     if (data.truncated) {
                         $lastBot.append(' ').append(makeContinueButton());
@@ -2912,6 +3417,9 @@
         }
 
         function applyChatFailure($box, $history, errText) {
+            if (xabiaLooksUnavailable(errText, null)) {
+                xabiaSetAgentAvailability($box, false);
+            }
             hideTyping($box);
             $box.find('.xabia-continue').prop('disabled', false);
             var $err = $('<div class="xabia-msg bot xabia-msg--error"></div>');
@@ -2934,6 +3442,9 @@
                     applyChatSuccess($box, $history, r.data, isContinue);
                 } else {
                     var errText = (r && r.data && r.data.message) ? String(r.data.message) : xabiaI18n('errorGeneric', 'Error');
+                    if (xabiaLooksUnavailable(errText, r && r.data)) {
+                        xabiaSetAgentAvailability($box, false);
+                    }
                     applyChatFailure($box, $history, errText);
                 }
             }).fail(function(xhr, status) {
@@ -3003,7 +3514,7 @@
             $bot.attr('data-raw', raw);
             var $content = $bot.find('.xabia-msg-content');
             if (!$content.length) {
-                $content = $('<span class="xabia-msg-content"></span>');
+                $content = $('<div class="xabia-msg-content"></div>');
                 $bot.append($content);
             }
             $content.html(renderBotHtml(String(raw || ''), chatboxImagesBase($box)));
@@ -3093,10 +3604,11 @@
                         }
                         acc += String(json.text);
                         var shown = prevRaw ? (prevRaw + '\n\n' + acc) : acc;
-                        paintStreamingBot($box, $live, shown);
+                        paintStreamingBot($box, $live, xabiaVisibleStreamRaw(shown));
                     } else if (event === 'done' && json) {
                         hideTyping($box);
-                        var finalRaw = String(json.response || (prevRaw ? (prevRaw + '\n\n' + acc) : acc));
+                        var streamedRaw = prevRaw ? (prevRaw + '\n\n' + acc) : acc;
+                        var finalRaw = xabiaPreferCardRaw(json.response, streamedRaw);
                         if ($live && $live.length) {
                             paintStreamingBot($box, $live, finalRaw);
                             $live.find('.xabia-continue').remove();
@@ -3120,14 +3632,43 @@
             });
         }
 
+        function xabiaLooksUnavailable(message, payload) {
+            if (payload && (payload.digixop_insufficient || payload.agent_unavailable)) {
+                return true;
+            }
+            var text = String(message || '').toLowerCase();
+            return text.indexOf('saldo') !== -1
+                || text.indexOf('insufficient') !== -1
+                || text.indexOf('no disponible') !== -1
+                || text.indexOf('unavailable') !== -1
+                || text.indexOf('pausad') !== -1;
+        }
+
+        function xabiaSetAgentAvailability($box, online) {
+            if (!$box || !$box.length) {
+                return;
+            }
+            var $presence = $box.find('.xabia-chat-header__presence').first();
+            var onText = ($presence.attr('data-online') || xabiaI18n('onlineStatus', 'En línea · Respuestas en tiempo real'));
+            var offText = ($presence.attr('data-offline') || xabiaI18n('offlineStatus', 'No disponible'));
+            $box.toggleClass('is-unavailable', !online);
+            $box.attr('data-agent-available', online ? '1' : '0');
+            if ($presence.length) {
+                $presence.text(online ? onText : offText);
+            }
+        }
+
         function submitChatMessage($box, options) {
             options = options || {};
-            if (options.forceContinue) {
+            if ($box.hasClass('is-unavailable') || String($box.attr('data-agent-available') || '1') === '0') {
+                xabiaSetAgentAvailability($box, false);
                 return;
             }
             var $input = $box.find('.xabia-input-field');
             var $history = messagesStream($box);
-            var continuePrompt = $box.data('continuePrompt') || '';
+            var continuePrompt = options.forceContinue
+                ? xabiaI18n('continuePrompt', 'Continúa exactamente desde donde lo dejaste, sin repetir lo anterior.')
+                : ($box.data('continuePrompt') || '');
             var isContinue = !!continuePrompt;
             var val = $.trim(isContinue ? continuePrompt : enforceInputLimits($input));
             if (!val) return;
@@ -3345,7 +3886,9 @@
             }
             var phrases = [];
             try {
-                phrases = JSON.parse($bar.attr('data-placeholders') || '[]');
+                var rawPhrases = String($bar.attr('data-placeholders') || '[]');
+                rawPhrases = rawPhrases.replace(/&quot;/g, '"').replace(/&#039;/g, "'").replace(/&amp;/g, '&');
+                phrases = JSON.parse(rawPhrases);
             } catch (ePhrase) {
                 phrases = [];
             }
@@ -3861,6 +4404,7 @@
                 }
                 setVoiceOn($b, isVoiceOn($b));
                 applyChatboxI18n($b);
+                xabiaSetAgentAvailability($b, String($b.attr('data-agent-available') || '1') !== '0');
                 xabiaApplyColorSchemes();
                 autoSizeInput($b.find('.xabia-input-field'));
                 syncChatUiState($b);

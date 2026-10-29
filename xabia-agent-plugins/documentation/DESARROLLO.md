@@ -423,8 +423,8 @@ El payload `rag_debug` incluye, entre otros:
 
 ## Notas operativas recientes (julio 2026)
 
-- Rebuild Core: `ONLY_SLUG=xabia-agent-core ./scripts/build-plugin-zip.sh` → `dist/xabia-agent-core-1.0.166.zip`
-- Addons: `ONLY_SLUG=xabia-mec` / `xabia-woo` → MEC **1.0.3**, Woo **1.0.4**
+- Rebuild Core: `ONLY_SLUG=xabia-agent-core ./scripts/build-plugin-zip.sh` → `dist/xabia-agent-core-1.0.342.zip`
+- Addons de esta release: `ONLY_SLUG=xabia-woo` → Woo **1.0.15** (MEC se mantiene en su ZIP ya publicado)
 - Manuales: `./scripts/build-modular-manuals-pdf.sh` → subir a `xabia.ai/docs/`
 - Hub: desplegar `central-api` / `hub-real` con compact de anexos (`---` en listados) alineado al Core
 

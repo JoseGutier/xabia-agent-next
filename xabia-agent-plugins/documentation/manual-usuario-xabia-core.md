@@ -1,13 +1,13 @@
 # Manual de usuario — Xabia Agent Core
 
-> **Versión del producto:** Xabia Agent Core **v1.0.332** (octubre 2026)  
+> **Versión del producto:** Xabia Agent Core **v1.0.342** (octubre 2026)  
 > **Índice de manuales:** [https://xabia.ai/docs/](https://xabia.ai/docs/)  
 > **PDF en línea:** [https://xabia.ai/docs/manual-usuario-xabia-core.pdf](https://xabia.ai/docs/manual-usuario-xabia-core.pdf)  
 > **HTML en línea:** [https://xabia.ai/docs/manual-usuario-xabia-core.html](https://xabia.ai/docs/manual-usuario-xabia-core.html)
 
 ## Guía rápida de instalación
 
-1. Descargue el ZIP de **Xabia Agent Core** (`xabia-agent-core-1.0.332.zip` o paquete retail equivalente).
+1. Descargue el ZIP de **Xabia Agent Core** (`xabia-agent-core-1.0.342.zip` o paquete retail equivalente).
 2. En WordPress, vaya a **Plugins → Añadir nuevo → Subir plugin**, seleccione el ZIP y pulse **Instalar ahora → Activar**.
 3. Abra **Xabia Agent** y configure **Conexión a la IA**: pegue la licencia `XABIA--…`, elija **Xabia Cloud** (recomendado) o **Infraestructura propia**, y guarde.
 4. Cree un agente desde **Nuevo agente**. En **Identidad y Tono** escriba nombre, saludo y personalidad; en **Conocimiento** elija la fuente de información.
@@ -271,9 +271,11 @@ El avatar **mira al cursor** con efecto de profundidad: la cabeza se mueve muy p
 
 Guarde con **Guardar agente**. En modo nativo el plugin inyecta disparador y assets en `wp_footer` automáticamente. En modo shortcode, pegue `[xabia_agent id="su-agente"]` o `[xabia_launcher id="su-agente" size="lg"]` donde corresponda.
 
-#### Aspecto del chat (v1.0.197–1.0.201)
+#### Aspecto del chat (v1.0.342)
 
-El panel usa un **layout en stream** (sin burbujas de mensaje), esquinas cuadradas y controles (enviar / micrófono / mute) que se revelan al pasar el ratón sobre la zona de escritura. El texto del usuario puede heredar el color de acento del avatar. Las respuestas del bot admiten **Markdown básico** (`**negrita**`, listas con viñetas) desde la **v1.0.201**.
+La cabecera cubre todo el ancho, sin esquinas redondeadas arriba. A la izquierda va el nombre del agente y el estado: **En línea · Respuestas en tiempo real** cuando puede contestar, o **No disponible** si el agente está pausado, no hay saldo de licencia o el servicio no responde. El botón de cerrar queda a la derecha.
+
+En la conversación, los mensajes del visitante van en una burbuja a la derecha. Las respuestas admiten **Markdown básico** (`**negrita**`, listas). Varias fichas seguidas (producto, enlace o reserva) se agrupan en una rejilla de dos columnas en escritorio y en una sola columna en el móvil.
 
 #### Chat embebido con shortcode: halo y foco
 
@@ -977,6 +979,11 @@ Depende de **condiciones contractuales**: dos direcciones públicas distintas a 
 Mire en **Comportamiento IA** el **tope diario de tokens por agente**. La barra lateral **Tokens hoy** muestra si ya alcanzó ese techo para el día técnico en curso; al día siguiente ese contador vuelve a cero para el agente, aunque su **cartera global** siga teniendo saldo disponible para otros agentes u otros días.
 
 ## Notas de versión (Core)
+
+### Core v1.0.342 (octubre 2026)
+- Cabecera del chat a sangre: identidad y estado a la izquierda, cerrar a la derecha. El estado pasa a **No disponible** si el agente está pausado, el saldo de la licencia está a cero o la respuesta indica que no hay servicio.
+- Fichas universales en el chat (`[ACTION:CARD]`): una sola ficha centrada, o rejilla de dos columnas cuando hay varias seguidas. En móvil ocupan todo el ancho.
+- Los assets del chat se publican con el número de versión en el nombre (`styles-v…css`, `chatbox-v…js`) para que la CDN no sirva un CSS antiguo.
 
 ### Core v1.0.322 (octubre 2026)
 - **Caché de página (LiteSpeed / CDN):** el Core ya **no** abre sesión PHP en cada visita. Solo reanuda la sesión si el visitante ya trae la cookie `PHPSESSID` (p. ej. tras escribir en el chat o escanear un QR). Las visitas nuevas, sin esa cookie, pueden servirse desde caché.

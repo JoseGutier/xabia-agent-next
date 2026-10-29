@@ -254,6 +254,14 @@ final class Xabia_I18n {
                 'eu' => 'Linean',
                 'en' => 'Online',
             ],
+            'En línea · Respuestas en tiempo real' => [
+                'eu' => 'Linean · Erantzunak denbora errealean',
+                'en' => 'Online · Real-time replies',
+            ],
+            'No disponible' => [
+                'eu' => 'Ez dago erabilgarri',
+                'en' => 'Unavailable',
+            ],
             'Cerrar' => [
                 'eu' => 'Itxi',
                 'en' => 'Close',
@@ -314,7 +322,8 @@ final class Xabia_I18n {
             'voiceIdlePrompt'      => 'Dime qué quieres saber.',
             'voiceHelp'            => '¿En qué puedo ayudarte?',
             'overlayPlaceholder'   => 'Pregunta lo que quieras...',
-            'onlineStatus'         => 'En línea',
+            'onlineStatus'         => 'En línea · Respuestas en tiempo real',
+            'offlineStatus'        => 'No disponible',
             'closeOverlay'         => 'Cerrar',
         ];
     }

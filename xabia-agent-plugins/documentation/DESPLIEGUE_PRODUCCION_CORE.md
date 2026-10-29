@@ -1,6 +1,6 @@
 # Despliegue completo en producción — Xabia Agent Core + Hub
 
-Checklist operativo para publicar **Xabia Agent Core v1.0.322+** (sesión PHP lazy / caché LiteSpeed-CDN, streaming, fichas [ACTION:CARD], postproceso Woo, catálogo nativo, URLs RAG, actualizaciones WP, Polar checkout, UI chat, RAG Hub, WPML/DTP) y el **Hub central** en `xabia.ai`.
+Checklist operativo para publicar **Xabia Agent Core v1.0.342** (cabecera del chat, fichas universales, assets versionados para CDN) y **Xabia Woo v1.0.15** (stock y fichas de compra), junto al **Hub central** en `xabia.ai`.
 
 Use este documento como **lista de verificación** antes de dar por cerrado un despliegue.
 
@@ -11,7 +11,7 @@ Use este documento como **lista de verificación** antes de dar por cerrado un d
 | Componente | Dónde vive | Quién lo toca |
 |------------|------------|---------------|
 | **Core ZIP** | WordPress del cliente (`/wp-content/plugins/xabia-agent-core/`) | Instalador / admin WP |
-| **Addons** | MEC (ZIP en `dist/`), Woo **1.0.7** | Admin WP |
+| **Addons** | Woo **1.0.15** (esta release). MEC y Avirato solo si su ZIP cambió | Admin WP |
 | **Hub PHP** (`central-api/src/`) | Servidor privado `central-api/` (búnker) | DevOps / hosting Xabia |
 | **Gateway** (`public_html/api/index.php`) | Solo si cambia el front controller | DevOps |
 | **Base de datos Hub** | MySQL del hub (`xabia_licenses`, addons, wallets…) | SQL / phpMyAdmin |
@@ -30,15 +30,15 @@ ONLY_SLUG=xabia-mec ./scripts/build-plugin-zip.sh
 ONLY_SLUG=xabia-woo ./scripts/build-plugin-zip.sh
 ```
 
-**Salida:** `xabia-agent-plugins/dist/xabia-agent-core-1.0.322.zip` (versión leída de `xabia-intelligence.php`), más ZIPs MEC/Woo.
+**Salida:** `xabia-agent-plugins/dist/xabia-agent-core-1.0.342.zip` (versión leída de `xabia-intelligence.php`), más el ZIP Woo **1.0.15**.
 
 **Atajo (build + producción + docs + Git):**
 
 ```bash
-./xabia-build.sh 1.0.322
-./xabia-build-addons.sh woo 1.0.7
+./xabia-build.sh 1.0.342
+./xabia-build-addons.sh woo 1.0.15
 ./scripts/build-retail-plugin-zips.sh
-./xabia-deploy.sh 1.0.329
+./xabia-deploy.sh 1.0.342
 ./xabia-deploy-addons.sh
 ./scripts/wp-create-manual-pages.sh   # xabia.ai/documentacion/
 ```
@@ -112,12 +112,12 @@ Con licencia y firma HMAC válidas → `{"ok":true,"dtp":true,"translations":{..
 En `.env` del hub, alinear con la versión publicada:
 
 ```env
-XABIA_CORE_LATEST_VERSION=1.0.322
-XABIA_CORE_UPDATE_PACKAGE=https://xabia.ai/downloads/xabia-agent-core-1.0.322.zip
+XABIA_CORE_LATEST_VERSION=1.0.342
+XABIA_CORE_UPDATE_PACKAGE=https://xabia.ai/downloads/xabia-agent-core-1.0.342.zip
 XABIA_MEC_LATEST_VERSION=1.0.3
 XABIA_MEC_UPDATE_PACKAGE=https://xabia.ai/downloads/xabia-mec-1.0.3.zip
-XABIA_WOO_LATEST_VERSION=1.0.7
-XABIA_WOO_UPDATE_PACKAGE=https://xabia.ai/downloads/xabia-woo-1.0.7.zip
+XABIA_WOO_LATEST_VERSION=1.0.15
+XABIA_WOO_UPDATE_PACKAGE=https://xabia.ai/downloads/xabia-woo-1.0.15.zip
 ```
 
 Subir el ZIP al path público indicado.
@@ -287,7 +287,7 @@ El pipeline `./xabia-deploy.sh` publica el ZIP en **xabia.ai/downloads/** (actua
 
 ```bash
 ./scripts/build-retail-plugin-zips.sh
-# → xabia-agent-plugins/dist/retail/xabia-agent-core-1.0.322-retail.zip
+# → xabia-agent-plugins/dist/retail/xabia-agent-core-1.0.342-retail.zip
 ```
 
 `./xabia-deploy.sh` sube el retail a Polar automáticamente si `.env.local` tiene `POLAR_ACCESS_TOKEN` y `POLAR_CORE_BENEFIT_ID` (script `scripts/polar-upload-retail.py`). Si faltan credenciales, súbalo a mano en el panel de Polar.
@@ -310,7 +310,7 @@ Las opciones `xabia_*` en `wp_options` se conservan entre versiones del Core sal
 
 ---
 
-## Orden recomendado de despliegue (Hub + Core 1.0.329)
+## Orden recomendado de despliegue (Hub + Core 1.0.342 + Woo 1.0.15)
 
 ```
 1. Hub: migraciones 016 + 017 en MySQL (si aún no aplicadas)
@@ -318,12 +318,12 @@ Las opciones `xabia_*` en `wp_options` se conservan entre versiones del Core sal
 3. Hub: activar cron vectorizer (cada 5 min)
 4. Hub: subir handlers DTP / VertexForwarder si cambiaron
 5. curl smoke test DTP → 401/403 (no 404)
-6. ./xabia-build.sh 1.0.329 && ./xabia-build-addons.sh && ./scripts/build-retail-plugin-zips.sh && ./scripts/build-modular-manuals-pdf.sh
-7. ./xabia-deploy.sh 1.0.329   # ZIP downloads + Hub .env + docs + Polar retail + Git tag
-8. ./xabia-deploy-addons.sh    # Avirato/MEC/Woo a downloads + Hub .env
-9. WordPress cliente: actualizar Core (Plugins → Actualizar o ZIP manual)
-10. Vaciar caché LiteSpeed/CDN; probar portada en incógnito (sin PHPSESSID → HIT/cacheable)
-11. Probar chat (sesión solo al escribir) + Reservas/QR si aplica
+6. ./xabia-build.sh 1.0.342 && ONLY_SLUG=xabia-woo ./scripts/build-plugin-zip.sh && ./scripts/build-retail-plugin-zips.sh && ./scripts/build-modular-manuals-pdf.sh
+7. ./xabia-deploy.sh 1.0.342   # ZIP downloads + Hub .env + docs + Polar retail + Git tag
+8. ./xabia-deploy-addons.sh    # Woo (y el resto de addons con ZIP en dist/) a downloads + Hub .env
+9. WordPress cliente: actualizar Core y Woo (Plugins → Actualizar o ZIP manual)
+10. Vaciar caché LiteSpeed/CDN; en el HTML deben salir styles-v1.0.342.css y chatbox-v1.0.342.js
+11. Probar cabecera del chat, una ficha de producto y un catálogo con stock
 ```
 
 ---

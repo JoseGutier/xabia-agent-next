@@ -1,11 +1,11 @@
 # Manual de usuario — Xabia Woo (addon WooCommerce)
 
-> **Addon:** Xabia Woo **v1.0.4** · **Core requerido:** **≥ 1.0.166** (recomendado)
+> **Addon:** Xabia Woo **v1.0.15** · **Core requerido:** **≥ 1.0.342** (recomendado)
 
 ## Guía rápida de instalación
 
-1. Instale y active **Xabia Agent Core** (`v1.0.166` o superior recomendado).
-2. Instale y active **Xabia Woo** (`xabia-woo-1.0.4.zip`) desde **Plugins → Añadir nuevo → Subir plugin**.
+1. Instale y active **Xabia Agent Core** (`v1.0.342` o superior recomendado).
+2. Instale y active **Xabia Woo** (`xabia-woo-1.0.15.zip`) desde **Plugins → Añadir nuevo → Subir plugin**.
 3. En **Xabia Agent → Addons**, active o sincronice la suscripción **xabia-woo** hasta ver **Hub Polar: activa**.
 4. Si la tienda está en el mismo WordPress, confirme que **WooCommerce** está activo y tiene productos publicados.
 5. Si la tienda está en otra web, rellene las credenciales SQL remotas y la **URL pública de la tienda Woo (remoto)** en el agente.
@@ -26,7 +26,7 @@
 - **Sincronizar** productos publicados hacia la **base de conocimiento** del agente (texto y, si lo configura, vectores para búsqueda semántica).
 - Responder con **títulos, precios, ofertas, stock, SKU, categorías** y enlaces de ficha tomados de WooCommerce.
 - Gestionar **productos variables** (atributos y variaciones con precio/stock en el campo **Resumen** enriquecido).
-- Mostrar **fichas de producto** en el chat (imagen, título, meta, precio y CTA) cuando el Core emite **`[ACTION:CARD:…]`**, normalmente a partir de **`[ACTION:CART:ID]`** (ID = columna **ID** del conector). El visitante ve «Añadir al carrito» / «Comprar ahora» dentro de la ficha, no un botón suelto en medio del texto.
+- Mostrar **fichas de producto** en el chat (foto, título, descripción breve, precio y **Comprar**) cuando el Core emite **`[ACTION:CARD:…]`**, normalmente a partir de **`[ACTION:CART:711]`** (el número es el ID del producto, nunca la palabra «ID»). El título enlaza a la ficha. Dos o más productos seguidos se muestran en rejilla.
 - **Sugerir cupones** publicados y vigentes cuando la IA lo considere oportuno (solo códigos reales obtenidos de la tienda; la IA no debe inventarlos).
 - Registrar **conversiones** ligadas al chat (cuando el visitante compra tras una recomendación en la misma sesión) en la tabla de conversiones del Core.
 
@@ -179,7 +179,8 @@ Tras cambiar precios o stock en masa, **vuelva a sincronizar** (y entrene si usa
 ## Parte 7 — Experiencia del visitante en el chat
 
 - La IA recibe **reglas de ventas** y un resumen de productos recientes cuando el proyecto usa **Woo**.  
-- Si recomienda un producto, el frontend muestra una **ficha** con botón de compra (**`[ACTION:CARD]`** / carrito; requiere WooCommerce activo en la página del chat, o enlace remoto si el catálogo es externo).  
+- Si recomienda un producto, el frontend muestra una **ficha compacta** con botón **Comprar** (**`[ACTION:CARD]`** / carrito; requiere WooCommerce activo en la página del chat, o enlace remoto si el catálogo es externo).
+- **Stock:** el descubrimiento en vivo solo ofrece productos **en stock**. En el índice, un producto agotado queda marcado **[AGOTADO / SIN STOCK]** y el agente no debe recomendarlo como opción preferida; para un síntoma habitual propone dos o tres alternativas disponibles. Tras actualizar a **1.0.15**, vuelva a **Sincronizar** para que el índice recoja esa marca.  
 - **Productos variables:** a veces hace falta elegir variación en la **ficha**; el **Resumen** puede incluir líneas que oriente al visitante.  
 - Tras añadir al carrito, el visitante puede completar el pedido en WooCommerce; si la compra sigue a una recomendación en sesión, puede registrarse una conversión interna (véase la siguiente parte).
 - Si el catálogo está en una tienda remota, las fichas, carrito y cupones se resuelven en el dominio configurado como **URL pública de la tienda Woo (remoto)**.

@@ -579,7 +579,7 @@ function xabia_woo_build_crosssell_control_preamble(bool $intent_active): string
         . 'intención_activa: ' . ($intent_active ? 'SÍ' : 'NO') . "\n";
     if (!$intent_active) {
         $mochila .= "Instrucción: NO cites Productos_Recomendados ni propongas complementos (ni en la primera respuesta informativa ni si el usuario solo pide datos). Mantén el foco en el producto preguntado.\n"
-            . "Aunque intención_activa sea NO, si ofreces productos del catálogo incluye siempre [ACTION:CART:ID:TITULO] de cada uno (mismo Nombre+ID de la fila). Sigue la ESTRUCTURA OBLIGATORIA DE RESPUESTA. Eso no es cross-sell.\n";
+            . "Aunque intención_activa sea NO, si ofreces productos del catálogo incluye siempre [ACTION:CART:711:TITULO] de cada uno, con el número real de la columna ID y el Titulo de esa misma fila. Nunca escribas la palabra ID dentro de la etiqueta. Sigue la ESTRUCTURA OBLIGATORIA DE RESPUESTA. Eso no es cross-sell.\n";
 
         return $mochila;
     }
@@ -614,8 +614,8 @@ function xabia_woo_extract_products_from_context(string $context): array {
     }
     // Bloques por párrafos; si no hay, trocea por líneas de cabecera de ente.
     $parts = preg_split('/\n\n+/u', $context) ?: [$context];
-    if (count($parts) <= 1 && preg_match('/\b(?:ID(?:\s+del\s+producto)?|EMPRESA|Nombre del producto)\s*:/iu', $context)) {
-        $alt = preg_split('/(?=\b(?:ID(?:\s+del\s+producto)?|EMPRESA|Nombre del producto)\s*:)/iu', $context) ?: [];
+    if (count($parts) <= 1 && preg_match('/(?:^|\n)\s*(?:ID(?:\s+del\s+producto)?|EMPRESA)\s*:/iu', $context)) {
+        $alt = preg_split('/(?=(?:^|\n)\s*(?:ID(?:\s+del\s+producto)?|EMPRESA)\s*:)/iu', $context) ?: [];
         $alt = array_values(array_filter(array_map('trim', $alt)));
         if (count($alt) > 1) {
             $parts = $alt;
@@ -682,8 +682,8 @@ function xabia_woo_extract_products_from_context(string $context): array {
             $st = strtolower(trim((string) $sm[1]));
             if ($st === 'instock' || $st === 'in stock') {
                 $meta_bits[] = 'En stock';
-            } elseif ($st === 'outofstock' || $st === 'out of stock') {
-                $meta_bits[] = 'Sin stock';
+            } elseif ($st === 'outofstock' || $st === 'out of stock' || strpos($st, 'agotado') !== false) {
+                $meta_bits[] = '[AGOTADO / SIN STOCK]';
             } elseif ($st !== '') {
                 $meta_bits[] = trim(wp_strip_all_tags((string) $sm[1]));
             }
@@ -1375,6 +1375,87 @@ function xabia_woo_find_product_by_title_cue(string $cue, array $products): ?arr
 }
 
 /**
+ * Busca en la tienda (Woo local o BD remota) un producto publicado cuyo título
+ * coincida con el nombre que el modelo escribió en [ACTION:CART:ID:Título].
+ *
+ * @param array<string, mixed> $config
+ * @return array{id:int,title:string,title_n:string,price:string,img:string,meta:string}|null
+ */
+function xabia_woo_lookup_product_fields_by_title(string $title, array $config = []): ?array {
+    $title = trim(wp_strip_all_tags($title));
+    $len = function_exists('mb_strlen') ? mb_strlen($title, 'UTF-8') : strlen($title);
+    if ($len < 4) {
+        return null;
+    }
+    $rows = [];
+    $remote = function_exists('xabia_woo_is_remote_catalog') && xabia_woo_is_remote_catalog($config);
+    if (!$remote && function_exists('wc_get_products')) {
+        $found = wc_get_products([
+            'status' => 'publish',
+            'limit'  => 8,
+            's'      => $title,
+        ]);
+        if (is_array($found)) {
+            foreach ($found as $product) {
+                if (!is_object($product) || !method_exists($product, 'get_id') || !method_exists($product, 'get_name')) {
+                    continue;
+                }
+                $name = trim((string) $product->get_name());
+                $id = (int) $product->get_id();
+                if ($id < 1 || $name === '') {
+                    continue;
+                }
+                $rows[] = [
+                    'id'      => $id,
+                    'title'   => $name,
+                    'title_n' => xabia_woo_normalize_match_text($name),
+                    'price'   => method_exists($product, 'get_price') ? (string) $product->get_price() : '',
+                    'img'     => '',
+                    'meta'    => '',
+                ];
+            }
+        }
+    } elseif ($remote) {
+        $sql_cfg = isset($config['sql_config']) && is_array($config['sql_config']) ? $config['sql_config'] : [];
+        $db = xabia_woo_remote_wpdb($sql_cfg);
+        if ($db) {
+            $prefix = xabia_woo_remote_table_prefix($db, $sql_cfg);
+            $like = '%' . $db->esc_like($title) . '%';
+            $sql = $db->prepare(
+                "SELECT ID, post_title FROM {$prefix}posts WHERE post_type = 'product' AND post_status = 'publish' AND post_title LIKE %s ORDER BY post_modified DESC LIMIT 8",
+                $like
+            );
+            $got = $db->get_results($sql, ARRAY_A);
+            if (is_array($got)) {
+                foreach ($got as $row) {
+                    if (!is_array($row)) {
+                        continue;
+                    }
+                    $name = trim((string) ($row['post_title'] ?? ''));
+                    $id = (int) ($row['ID'] ?? 0);
+                    if ($id < 1 || $name === '') {
+                        continue;
+                    }
+                    $rows[] = [
+                        'id'      => $id,
+                        'title'   => $name,
+                        'title_n' => xabia_woo_normalize_match_text($name),
+                        'price'   => '',
+                        'img'     => '',
+                        'meta'    => '',
+                    ];
+                }
+            }
+        }
+    }
+    if ($rows === []) {
+        return null;
+    }
+
+    return xabia_woo_find_product_by_title_cue($title, $rows);
+}
+
+/**
  * Producto del contexto mejor mencionado en la prosa del asistente (CART en línea aparte).
  *
  * @param list<array{id:int,title:string,title_n:string,price:string,img:string,meta:string}> $products
@@ -1449,20 +1530,36 @@ function xabia_woo_find_best_product_mentioned_in_response(string $response, arr
  */
 function xabia_woo_parse_cart_actions(string $response): array {
     $out = [];
-    if ($response === '' || !preg_match_all('/\[ACTION:CART:(\d+)(?::([^\]]+))?\]/u', $response, $m, PREG_SET_ORDER)) {
+    if ($response === '') {
         return $out;
     }
-    foreach ($m as $row) {
-        $id = (int) ($row[1] ?? 0);
-        if ($id < 1) {
-            continue;
+    if (preg_match_all('/\[ACTION:CART:(?:ID\s*:\s*)?(\d+)(?::([^\]]+))?\]/u', $response, $m, PREG_SET_ORDER)) {
+        foreach ($m as $row) {
+            $id = (int) ($row[1] ?? 0);
+            if ($id < 1) {
+                continue;
+            }
+            $title = isset($row[2]) ? trim(wp_strip_all_tags((string) $row[2])) : '';
+            $out[] = [
+                'id'    => $id,
+                'title' => $title,
+                'raw'   => (string) ($row[0] ?? ''),
+            ];
         }
-        $title = isset($row[2]) ? trim(wp_strip_all_tags((string) $row[2])) : '';
-        $out[] = [
-            'id'    => $id,
-            'title' => $title,
-            'raw'   => (string) ($row[0] ?? ''),
-        ];
+    }
+    // La plantilla antigua decía [ACTION:CART:ID:TITULO] y el modelo copia la palabra ID.
+    if (preg_match_all('/\[ACTION:CART:ID:\s*(?!\d+\b)([^\]]+)\]/u', $response, $named, PREG_SET_ORDER)) {
+        foreach ($named as $row) {
+            $title = trim(wp_strip_all_tags((string) ($row[1] ?? '')));
+            if ($title === '' || strcasecmp($title, 'ID') === 0) {
+                continue;
+            }
+            $out[] = [
+                'id'    => 0,
+                'title' => $title,
+                'raw'   => (string) ($row[0] ?? ''),
+            ];
+        }
     }
 
     return $out;
@@ -1689,12 +1786,13 @@ function xabia_woo_resolve_product_card_fields(
  */
 function xabia_woo_conversion_few_shot_block(): string {
     return "ESTRUCTURA OBLIGATORIA DE RESPUESTA:\n"
-        . "Cuando recomiendes productos, debes seguir ESTE formato exacto sin omitir la etiqueta de acción al final de cada uno:\n\n"
+        . "Cuando recomiendes productos, el número de la etiqueta es el de la columna ID de esa misma fila. Nunca escribas la palabra ID.\n"
+        . "Formato exacto, una etiqueta por producto:\n\n"
         . "- **[Nombre del Producto Principal](URL_PRODUCTO)**: Beneficio clave en una línea.\n"
-        . "[ACTION:CART:ID:Nombre del Producto Principal]\n\n"
-        . "- (Opcional) Si buscas una alternativa: **[Nombre Alternativa](URL_PRODUCTO)**: Breve descripción.\n"
-        . "[ACTION:CART:ID:Nombre Alternativa]\n\n"
-        . "Usa el Titulo y el ID numérico de la misma fila del catálogo. Queda prohibido recomendar en texto plano sin la etiqueta [ACTION:CART:ID:TITULO].";
+        . "[ACTION:CART:711:Nombre del Producto Principal]\n\n"
+        . "- **[Nombre Alternativa](URL_PRODUCTO)**: Breve descripción.\n"
+        . "[ACTION:CART:712:Nombre Alternativa]\n\n"
+        . "711 y 712 son un ejemplo. Sustituye cada número por el ID real de la fila y el título exacto. Queda prohibido emitir [ACTION:CART:ID:...] con la palabra ID y prohibido recomendar en texto plano sin la etiqueta.";
 }
 
 /**
@@ -1832,7 +1930,46 @@ function xabia_woo_maybe_append_cart_actions(string $response, string $context, 
         $cid = (int) ($act['id'] ?? 0);
         $raw = (string) ($act['raw'] ?? '');
         $claimed = (string) ($act['title'] ?? '');
-        if ($cid < 1 || $raw === '' || isset($replaced_raws[$raw])) {
+        if ($raw === '' || isset($replaced_raws[$raw])) {
+            continue;
+        }
+        if ($cid < 1 && $claimed !== '' && $products !== []) {
+            $by_title = xabia_woo_find_product_by_title_cue($claimed, $products);
+            if ($by_title !== null) {
+                $cid = (int) ($by_title['id'] ?? 0);
+            }
+        }
+        if ($cid < 1 && $claimed !== '') {
+            $live = xabia_woo_lookup_product_fields_by_title($claimed, $config);
+            if ($live !== null) {
+                $cid = (int) ($live['id'] ?? 0);
+                if ($cid > 0) {
+                    $by_id[$cid] = $live;
+                    $products[] = $live;
+                }
+            }
+        }
+        if ($cid < 1) {
+            if ($claimed !== '' && $raw !== '') {
+                $desc = '';
+                $quoted_title = preg_quote($claimed, '/');
+                if (preg_match('/' . $quoted_title . '\s*:\s*([^\n]+)/iu', $response, $dm)) {
+                    $desc = trim(wp_strip_all_tags((string) ($dm[1] ?? '')));
+                    $response = (string) preg_replace('/[ \t]*' . $quoted_title . '\s*:\s*[^\n]+/iu', '', $response, 1);
+                }
+                $fallback = Xabia_Action_Card::encode([
+                    't' => $claimed,
+                    'd' => $desc,
+                ]);
+                $replacement = $fallback !== '' ? "\n\n" . $fallback . "\n\n" : "\n\n";
+                $response = (string) preg_replace(
+                    '/\s*' . preg_quote($raw, '/') . '\s*/u',
+                    $replacement,
+                    $response,
+                    1
+                );
+                $replaced_raws[$raw] = true;
+            }
             continue;
         }
         $fields = xabia_woo_resolve_product_card_fields(
@@ -1930,6 +2067,10 @@ function xabia_woo_maybe_append_cart_actions(string $response, string $context, 
 
     if ($append !== []) {
         $response = rtrim($response) . "\n\n" . implode("\n", $append);
+    }
+
+    if ($matched !== [] || $have_card !== [] || $append !== []) {
+        $response = (string) preg_replace('/\[ACTION:CART:ID:\s*(?!\d+\b)[^\]]+\]/u', '', $response);
     }
 
     // Limpiar espacios raros dejados al cortar frases / etiquetas inválidas.
@@ -2107,13 +2248,14 @@ class Xabia_Woo_Connector {
             . "\n - REGLA WOO — MOCHILA / CROSS-SELL: Los datos en Productos_Recomendados están en el contexto de forma silenciosa. NO los uses en respuestas solo informativas ni en el primer contacto sobre el artículo. Solo si CONTROL_DE_INTENCION_COMPRA indica intención_activa: SÍ (o el mensaje del usuario lo revela con frases del tipo «me interesa», «lo quiero», «añadir al carrito»), puedes sugerir como máximo un complemento, breve y al final."
             . "\n - REGLA WOO — VARIABLES: Si tipo_producto es variable, el campo Resumen incluye las opciones de variación (atributos) y puede incluir stock por variante; ayuda a responder talla/color sin inventar combinaciones no listadas."
             . "\n - REGLA WOO — PACKS: Si tipo_producto es grouped, bundle, composite, woosb o similar, usa Pack_Componentes para explicar qué incluye el pack. No inventes componentes no listados."
-            . "\n - REGLA WOO — OFERTAS: Si descuento_porcentaje tiene valor numérico, el producto tiene precio rebajado frente a Precio_regular. Preséntalo siempre como **Oferta especial** (no como simple «descuento» genérico) e indica el porcentaje y el precio actual (Precio).";
+            . "\n - REGLA WOO — OFERTAS: Si descuento_porcentaje tiene valor numérico, el producto tiene precio rebajado frente a Precio_regular. Preséntalo siempre como **Oferta especial** (no como simple «descuento» genérico) e indica el porcentaje y el precio actual (Precio)."
+            . "\n - REGLA WOO — STOCK: NUNCA recomiendes como opción preferente un producto agotado (Stock_estado outofstock, «Sin stock» o [AGOTADO / SIN STOCK]). Si el usuario describe un síntoma o una necesidad habitual, propone de 2 a 3 alternativas que figuren en stock y estén listas para comprar. Un agotado solo puede mencionarse al final, y solo si no hay suficientes alternativas con stock, dejando claro que no se puede comprar ahora.";
         $extra .= "\n - REGLA WOO — INTEGRIDAD FILA-PRODUCTO: Queda terminantemente prohibido mezclar el nombre de un producto con el ID de otro. Si recomiendas un producto, usa exactamente el Nombre (Titulo) y el ID que pertenecen a la misma fila del catálogo inyectado."
             . "\n - " . str_replace("\n", "\n   ", xabia_woo_conversion_few_shot_block());
         if (xabia_woo_is_remote_catalog($cfg)) {
-            $extra .= "\n - REGLA WOO — CARRITO (TIENDA REMOTA): Tras cada producto, en su propia línea [ACTION:CART:ID:TITULO_EXACTO]. El chat mostrará el módulo de compra. No esperes a «quiero comprar».";
+            $extra .= "\n - REGLA WOO — CARRITO (TIENDA REMOTA): Tras cada producto, en su propia línea [ACTION:CART:711:TITULO_EXACTO], con el número real de la columna ID. Nunca escribas la palabra ID. El chat mostrará el módulo de compra. No esperes a «quiero comprar».";
         } else {
-            $extra .= "\n - REGLA WOO — CARRITO: Tras cada producto, en su propia línea [ACTION:CART:ID:TITULO_EXACTO]. No esperes a «quiero comprar». El ID es el del producto padre salvo variación explícita en Resumen.";
+            $extra .= "\n - REGLA WOO — CARRITO: Tras cada producto, en su propia línea [ACTION:CART:711:TITULO_EXACTO], con el número real de la columna ID. Nunca escribas la palabra ID. No esperes a «quiero comprar». El ID es el del producto padre salvo variación explícita en Resumen.";
         }
 
         return $base . $extra;
@@ -2153,7 +2295,10 @@ SELECT
     )
     ELSE NULL
   END AS descuento_porcentaje,
-  COALESCE(stock_stat.meta_value, '') AS Stock_estado,
+  CASE
+    WHEN LOWER(COALESCE(stock_stat.meta_value, '')) IN ('outofstock', 'out of stock') THEN '[AGOTADO / SIN STOCK]'
+    ELSE COALESCE(stock_stat.meta_value, '')
+  END AS Stock_estado,
   COALESCE(stock_qty.meta_value, '') AS Stock_cantidad,
   COALESCE(upsell.meta_value, '') AS upsell_ids_raw,
   COALESCE(crosssell.meta_value, '') AS crosssell_ids_raw,
@@ -2274,7 +2419,7 @@ ORDER BY p.post_modified DESC
             if ($price !== '') {
                 $line .= ' — precio ' . $price;
             }
-            $line .= ' — stock ' . $st;
+            $line .= ' — stock ' . ($st === 'outofstock' ? '[AGOTADO / SIN STOCK]' : $st);
             if ($qty !== '') {
                 $line .= ' (uds: ' . $qty . ')';
             }
@@ -2434,6 +2579,12 @@ SELECT p.ID, p.post_title,
 FROM {$posts} p
 INNER JOIN {$pm} pm ON p.ID = pm.post_id AND pm.meta_key IN ('_price','_stock_status','_thumbnail_id')
 WHERE p.post_type = 'product' AND p.post_status = 'publish'
+AND EXISTS (
+  SELECT 1 FROM {$pm} stock_ok
+  WHERE stock_ok.post_id = p.ID
+    AND stock_ok.meta_key = '_stock_status'
+    AND stock_ok.meta_value = 'instock'
+)
 GROUP BY p.ID, p.post_title
 ORDER BY MAX(p.post_modified) DESC
 LIMIT %d
@@ -2455,7 +2606,10 @@ LIMIT %d
             continue;
         }
         $price = isset($row['price_val']) ? (string) $row['price_val'] : '';
-        $stock = isset($row['stock_status']) ? (string) $row['stock_status'] : '';
+        $stock = isset($row['stock_status']) ? strtolower(trim((string) $row['stock_status'])) : '';
+        if ($stock !== 'instock') {
+            continue;
+        }
         $thumb_id = isset($row['thumb_id']) ? (int) $row['thumb_id'] : 0;
         $img_url = $thumb_id > 0 ? (string) wp_get_attachment_image_url($thumb_id, 'medium') : '';
         $url = (string) get_permalink($id);
@@ -2495,6 +2649,12 @@ SELECT p.ID, p.post_title, p.post_name,
 FROM {$posts} p
 INNER JOIN {$pm} pm ON p.ID = pm.post_id AND pm.meta_key IN ('_price','_stock_status')
 WHERE p.post_type = 'product' AND p.post_status = 'publish'
+AND EXISTS (
+  SELECT 1 FROM {$pm} stock_ok
+  WHERE stock_ok.post_id = p.ID
+    AND stock_ok.meta_key = '_stock_status'
+    AND stock_ok.meta_value = 'instock'
+)
 GROUP BY p.ID, p.post_title, p.post_name
 ORDER BY MAX(p.post_modified) DESC
 LIMIT %d
@@ -2515,7 +2675,10 @@ LIMIT %d
             continue;
         }
         $price = isset($row['price_val']) ? (string) $row['price_val'] : '';
-        $stock = isset($row['stock_status']) ? (string) $row['stock_status'] : '';
+        $stock = isset($row['stock_status']) ? strtolower(trim((string) $row['stock_status'])) : '';
+        if ($stock !== 'instock') {
+            continue;
+        }
         $url = '—';
         if ($shop !== '') {
             $url = $shop . '/?p=' . $id;
@@ -2605,6 +2768,7 @@ add_filter(
             . ' Si intención_activa es SÍ, una sola mención breve (una frase) al final, opcional, sin robar protagonismo. Oferta especial cuando descuento_porcentaje aplique.'
             . ' Si aparece «CARRITO CONVERSACIONAL», úsalo con tacto para continuidad, sin rellenar con sugerencias no pedidas.'
             . ' BREVEDAD: máximo 2–3 productos por respuesta; frases cortas (ahorra tokens y facilita la compra).'
+            . ' STOCK: NUNCA recomiendes como opción preferente un producto agotado (Stock_estado outofstock, «Sin stock» o [AGOTADO / SIN STOCK]). Para un síntoma o necesidad habitual, propone de 2 a 3 alternativas con stock listas para comprar. Un agotado solo se menciona al final, y solo si no hay suficientes alternativas en stock, dejando claro que ahora no se puede comprar.'
             . ' INTEGRIDAD FILA-PRODUCTO: prohibido mezclar el nombre de un producto con el ID de otro; Nombre e ID deben ser de la misma fila del catálogo.';
         if (xabia_woo_is_remote_catalog($config)) {
             $sales .= ' Pack conjunto: [ACTION:CART_PACK:ID_principal,ID_complemento] solo si aceptan ambos.';

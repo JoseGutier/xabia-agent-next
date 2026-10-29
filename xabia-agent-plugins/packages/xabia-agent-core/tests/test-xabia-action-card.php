@@ -12,6 +12,16 @@ if (!function_exists('wp_strip_all_tags')) {
     }
 }
 
+if (!function_exists('apply_filters')) {
+    function apply_filters($tag, $value) {
+        $args = func_get_args();
+        if ($tag === 'xabia_card_payload' && isset($GLOBALS['xabia_test_card_filter']) && is_callable($GLOBALS['xabia_test_card_filter'])) {
+            return call_user_func($GLOBALS['xabia_test_card_filter'], $value, isset($args[2]) && is_array($args[2]) ? $args[2] : []);
+        }
+        return $value;
+    }
+}
+
 require_once dirname(__DIR__) . '/core/class-xabia-action-card.php';
 
 $tag = Xabia_Action_Card::encode([
@@ -39,8 +49,88 @@ assert($decoded['cu'] === 'https://example.com/cart/', 'cart url');
 assert($decoded['ck'] === 'https://example.com/checkout/', 'checkout url');
 assert($decoded['rd'] === '1', 'redirect flag');
 assert($decoded['mx'] === '12', 'max qty');
+assert($decoded['d'] === '', 'legacy payload has no description');
+assert($decoded['at'] === 'cart', 'legacy CART derives action_type');
+assert($decoded['m'] === 'Circulación · En stock', 'legacy meta kept');
 
 $bad = Xabia_Action_Card::encode(['t' => '']);
 assert($bad === '', 'empty title rejected');
+
+$aliases = Xabia_Action_Card::normalize([
+    'title' => 'Habitación marina',
+    'image' => 'https://example.com/room.jpg',
+    'highlight' => '89 €/noche',
+    'meta' => 'Vistas al mar',
+    'description' => 'Cama king y terraza.',
+    'action_type' => 'link',
+    'action_text' => 'Reservar',
+    'url' => 'https://example.com/book',
+]);
+assert($aliases['t'] === 'Habitación marina', 'alias title');
+assert($aliases['i'] === 'https://example.com/room.jpg', 'alias image');
+assert($aliases['p'] === '89 €/noche', 'alias highlight');
+assert($aliases['m'] === 'Vistas al mar', 'alias meta');
+assert($aliases['d'] === 'Cama king y terraza.', 'alias description');
+assert($aliases['l'] === 'Reservar', 'alias action_text');
+assert($aliases['u'] === 'https://example.com/book', 'alias url');
+assert($aliases['a'] === 'URL:https://example.com/book', 'link action built from url');
+assert($aliases['at'] === 'link', 'explicit link');
+
+$aliasTag = Xabia_Action_Card::encode([
+    'title' => 'Habitación marina',
+    'description' => 'Cama king y terraza.',
+    'highlight' => '89 €/noche',
+    'meta' => 'Vistas al mar',
+    'action_type' => 'link',
+    'action_text' => 'Reservar',
+    'url' => 'https://example.com/book',
+]);
+$aliasRaw = substr($aliasTag, strlen('[ACTION:CARD:'), -1);
+$aliasDecoded = Xabia_Action_Card::decode($aliasRaw);
+assert(is_array($aliasDecoded), 'alias decode');
+assert($aliasDecoded['d'] === 'Cama king y terraza.', 'roundtrip description');
+assert($aliasDecoded['at'] === 'link', 'roundtrip action_type');
+assert($aliasDecoded['p'] === '89 €/noche', 'roundtrip highlight');
+
+$byId = Xabia_Action_Card::normalize([
+    'title' => 'Caléndula',
+    'action_type' => 'cart',
+    'product_id' => 711,
+]);
+assert($byId['a'] === 'CART:711', 'cart id from product_id');
+assert($byId['at'] === 'cart', 'cart type from product_id');
+
+$noCart = Xabia_Action_Card::normalize(['title' => 'Sin id', 'action_type' => 'cart']);
+assert($noCart['a'] === '' && $noCart['at'] === '', 'cart without id is dropped');
+
+$noLink = Xabia_Action_Card::normalize(['title' => 'Sin url', 'action_type' => 'link']);
+assert($noLink['a'] === '' && $noLink['at'] === '', 'link without url is dropped');
+
+$book = Xabia_Action_Card::normalize([
+    'title' => 'Fisioterapia',
+    'action' => 'BOOK:amelia:15',
+    'action_text' => 'Pedir cita',
+    'highlight' => '45 min',
+]);
+assert($book['a'] === 'BOOK:amelia:15', 'book action preserved');
+assert($book['at'] === 'link', 'book is a link-shaped action');
+
+$info = Xabia_Action_Card::normalize([
+    't' => 'Solo ficha',
+    'u' => 'https://example.com/product/solo/',
+    'l' => 'Comprar',
+]);
+assert($info['a'] === '' && $info['at'] === '', 'permalink alone does not invent a button');
+
+$GLOBALS['xabia_test_card_filter'] = static function ($payload, $context) {
+    assert(($context['source'] ?? '') === 'woo', 'filter receives context');
+    $payload['description'] = 'Extracto suave';
+    return $payload;
+};
+$filteredTag = Xabia_Action_Card::encode(['t' => 'Caléndula', 'a' => 'CART:7'], ['source' => 'woo']);
+unset($GLOBALS['xabia_test_card_filter']);
+$filtered = Xabia_Action_Card::decode(substr($filteredTag, strlen('[ACTION:CARD:'), -1));
+assert(is_array($filtered) && $filtered['d'] === 'Extracto suave', 'filter can add description');
+assert($filtered['at'] === 'cart', 'filter keeps cart type');
 
 echo "OK xabia action card\n";

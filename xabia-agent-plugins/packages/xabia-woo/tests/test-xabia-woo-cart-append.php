@@ -269,4 +269,34 @@ $GLOBALS['xabia_test_pll_lang'] = false;
 // Alias legacy.
 assert(xabia_woo_localize_product_id(42) === 42, 'legacy alias works monolingual');
 
+// El modelo copia la plantilla [ACTION:CART:ID:Titulo] sin número.
+$literal = "En saludavida.com te recomiendo:\nPropolium Gola Spray: Este spray es ideal para la garganta.\n[ACTION:CART:ID:Propolium Gola Spray]";
+$literal_ctx = "ID del producto: 880 | Nombre del producto: Propolium Gola Spray | Precio: 14.50 | Categorias: Garganta | Stock_estado: instock";
+$out_literal = xabia_woo_maybe_append_cart_actions($literal, $literal_ctx, 'tienes propóleo para la garganta');
+assert(strpos($out_literal, '[ACTION:CART:ID:') === false, 'literal ID token must be replaced');
+assert(strpos($out_literal, '[ACTION:CARD:') !== false, 'literal ID token becomes a card');
+$literal_ok = false;
+if (preg_match_all('/\[ACTION:CARD:([^\]]+)\]/', $out_literal, $literal_cards)) {
+    foreach ($literal_cards[1] as $payload) {
+        $d = Xabia_Action_Card::decode((string) $payload);
+        if (is_array($d) && ($d['a'] ?? '') === 'CART:880' && stripos((string) ($d['t'] ?? ''), 'Propolium') !== false) {
+            $literal_ok = true;
+        }
+    }
+}
+assert($literal_ok, 'literal ID token resolves Propolium to 880');
+
+$missing = "En saludavida.com te recomiendo:\nPropolium Gola Spray: Este spray es ideal para la garganta.\n[ACTION:CART:ID:Propolium Gola Spray]";
+$out_missing = xabia_woo_maybe_append_cart_actions($missing, '', 'tienes propóleo');
+assert(strpos($out_missing, '[ACTION:CART:ID:') === false, 'unresolved literal ID token is not left raw');
+assert(strpos($out_missing, '[ACTION:CARD:') !== false, 'unresolved literal ID token still becomes a card');
+assert(strpos($out_missing, 'Propolium Gola Spray: Este spray') === false, 'title sentence is folded into the card');
+$missing_card = null;
+if (preg_match('/\[ACTION:CARD:([^\]]+)\]/', $out_missing, $mm)) {
+    $missing_card = Xabia_Action_Card::decode((string) $mm[1]);
+}
+assert(is_array($missing_card) && stripos((string) $missing_card['t'], 'Propolium') !== false, 'fallback card keeps the title');
+assert((string) ($missing_card['d'] ?? '') !== '', 'fallback card keeps the sentence');
+assert((string) ($missing_card['a'] ?? '') === '', 'fallback card does not invent a cart id');
+
 echo "OK xabia-woo cart append cards\n";
