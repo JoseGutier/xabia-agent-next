@@ -128,6 +128,11 @@ function xabia_search_bar_shortcode($atts): string {
     if (function_exists('xabia_enqueue_chatbox_assets_for_project')) {
         xabia_enqueue_chatbox_assets_for_project($project_id, $project);
     }
+    if (wp_script_is('xabia-chatbox', 'enqueued')) {
+        wp_localize_script('xabia-chatbox', 'xabia_settings', [
+            'nonce' => wp_create_nonce('wp_rest'),
+        ]);
+    }
 
     $mic_label = class_exists('Xabia_I18n', false)
         ? Xabia_I18n::t('Toca para hablar o mantén pulsado')

@@ -184,6 +184,9 @@ function xabia_enqueue_chatbox_assets_for_project(string $project_id, array $pro
             ]
         )
     );
+    wp_localize_script('xabia-chatbox', 'xabia_settings', [
+        'nonce' => wp_create_nonce('wp_rest'),
+    ]);
 
     $woo_cart = apply_filters('xabia_chatbox_woo_cart_payload', null, $project_id, $project_data);
     if (is_array($woo_cart) && !empty($woo_cart['mode'])) {
@@ -495,6 +498,9 @@ function shortcode_xabia_agent_renderer($atts) {
             ]
         )
     );
+    wp_localize_script('xabia-chatbox', 'xabia_settings', [
+        'nonce' => wp_create_nonce('wp_rest'),
+    ]);
 
     ob_start(); ?>
 

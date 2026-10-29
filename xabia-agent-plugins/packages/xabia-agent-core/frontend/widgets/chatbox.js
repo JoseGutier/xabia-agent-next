@@ -16,6 +16,19 @@
         return (typeof window.XabiaSettings === 'object' && window.XabiaSettings !== null) ? window.XabiaSettings : {};
     }
 
+    function xabiaRestNonce() {
+        var bag = (typeof window.xabia_settings === 'object' && window.xabia_settings !== null) ? window.xabia_settings : {};
+        return bag.nonce ? String(bag.nonce) : '';
+    }
+
+    function xabiaWithRestNonce(headers) {
+        var nonce = xabiaRestNonce();
+        if (nonce) {
+            headers['X-WP-Nonce'] = nonce;
+        }
+        return headers;
+    }
+
     function xabiaIsLiteMode() {
         return !!xabiaChatSettings().liteMode;
     }
@@ -2915,7 +2928,13 @@
 
         function postChatJson($box, $history, payload, isContinue) {
             var endpoint = $box.attr('data-ask-endpoint') || $box.data('endpoint');
-            return $.post(endpoint, payload, null, 'json').done(function(r) {
+            return $.ajax({
+                url: endpoint,
+                type: 'POST',
+                data: payload,
+                dataType: 'json',
+                headers: xabiaWithRestNonce({})
+            }).done(function(r) {
                 if (r && r.success && r.data) {
                     applyChatSuccess($box, $history, r.data, isContinue);
                 } else {
@@ -3033,10 +3052,10 @@
             return fetch(askUrl, {
                 method: 'POST',
                 credentials: 'same-origin',
-                headers: {
+                headers: xabiaWithRestNonce({
                     'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
                     'Accept': 'text/event-stream, application/json'
-                },
+                }),
                 body: $.param(streamPayload)
             }).then(function(res) {
                 var ct = String(res.headers.get('content-type') || '').toLowerCase();
