@@ -2145,3 +2145,258 @@ body.xabia-conversation-open .xabia-sticky-footer-box:not(.xabia-trigger--inline
 .xabia-sticky-footer-box[data-theme="dark"]:not(.xabia-trigger--inline) .xabia-trigger-pill__label {
     color: var(--xabia-text, #f4f4f5);
 }
+
+button.xabia-launcher {
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    gap: 0 !important;
+    width: 56px !important;
+    height: 56px !important;
+    min-width: 56px !important;
+    min-height: 56px !important;
+    max-width: 56px !important;
+    max-height: 56px !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    border: 1px solid rgba(0, 0, 0, 0.08) !important;
+    border-radius: 50% !important;
+    background: #ffffff !important;
+    color: #111111 !important;
+    cursor: pointer;
+    box-shadow: 0 16px 40px rgba(0, 0, 0, 0.08) !important;
+    pointer-events: auto;
+    line-height: 1 !important;
+    overflow: hidden !important;
+    appearance: none;
+    -webkit-appearance: none;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    transition: width 0.55s cubic-bezier(0.16, 1, 0.3, 1), max-width 0.55s cubic-bezier(0.16, 1, 0.3, 1), padding 0.55s cubic-bezier(0.16, 1, 0.3, 1), gap 0.55s cubic-bezier(0.16, 1, 0.3, 1), border-radius 0.55s cubic-bezier(0.16, 1, 0.3, 1), transform 0.35s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.35s ease, box-shadow 0.25s ease, border-color 0.25s ease;
+}
+button.xabia-launcher::before {
+    content: none !important;
+    display: none !important;
+}
+button.xabia-launcher:hover,
+button.xabia-launcher:focus,
+button.xabia-launcher:focus-visible,
+button.xabia-launcher:active {
+    background: #ffffff !important;
+    color: #111111 !important;
+    border-color: rgba(0, 0, 0, 0.14) !important;
+    box-shadow: 0 10px 28px rgba(0, 0, 0, 0.08), 0 0 16px color-mix(in srgb, var(--xabia-accent, #111111) 18%, transparent), 0 0 14px rgba(0, 0, 0, 0.07) !important;
+    transform: translateY(-2px);
+}
+button.xabia-launcher.xabia-launcher--bottom-center:hover,
+button.xabia-launcher.xabia-launcher--bottom-center:focus,
+button.xabia-launcher.xabia-launcher--bottom-center:active {
+    transform: translateX(-50%) translateY(-2px);
+}
+button.xabia-launcher .xabia-launcher__spark {
+    flex: 0 0 auto;
+    font-size: 22px !important;
+    line-height: 1 !important;
+    color: #111111 !important;
+    font-variation-settings: "FILL" 0, "wght" 500, "GRAD" 0, "opsz" 24;
+}
+button.xabia-launcher .xabia-launcher__label {
+    min-width: 0;
+    max-width: 0;
+    opacity: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 0.92rem;
+    font-weight: 500;
+    line-height: 1.2;
+    color: #111111 !important;
+    transition: max-width 0.55s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.4s ease;
+}
+button.xabia-launcher .xabia-launcher__desk,
+button.xabia-launcher .xabia-launcher__mic {
+    display: none;
+}
+@media (min-width: 769px) {
+    button.xabia-launcher:not(.xabia-launcher--inline) {
+        justify-content: flex-start !important;
+        gap: 10px !important;
+        width: max-content !important;
+        max-width: min(78vw, 340px) !important;
+        height: 56px !important;
+        max-height: 56px !important;
+        padding: 0 18px 0 14px !important;
+        border-radius: 999px !important;
+    }
+    button.xabia-launcher:not(.xabia-launcher--inline) .xabia-launcher__label {
+        max-width: 260px;
+        opacity: 1;
+    }
+    button.xabia-launcher:not(.xabia-launcher--inline) .xabia-launcher__spark {
+        font-size: 22px !important;
+    }
+}
+.xabia-launcher--bottom-right { position: fixed; bottom: 24px; right: 24px; z-index: 999990; }
+.xabia-launcher--bottom-left  { position: fixed; bottom: 24px; left: 24px; z-index: 999990; }
+.xabia-launcher--bottom-center{ position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); z-index: 999990; }
+button.xabia-launcher.footer-hidden {
+    opacity: 0 !important;
+    visibility: hidden;
+    pointer-events: none !important;
+    transform: translateY(18px);
+}
+button.xabia-launcher.xabia-launcher--bottom-center.footer-hidden,
+button.xabia-launcher.xabia-launcher--bottom-center.footer-hidden:hover {
+    transform: translateX(-50%) translateY(18px);
+}
+body.xabia-open .xabia-launcher--bottom-right,
+body.xabia-open .xabia-launcher--bottom-left,
+body.xabia-open .xabia-launcher--bottom-center {
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+}
+@media (max-width: 768px) {
+    button.xabia-launcher,
+    button.xabia-launcher.is-expanded {
+        justify-content: center !important;
+        gap: 0 !important;
+        width: 56px !important;
+        height: 56px !important;
+        min-width: 56px !important;
+        min-height: 56px !important;
+        max-width: 56px !important;
+        max-height: 56px !important;
+        padding: 0 !important;
+        border-radius: 50% !important;
+    }
+    button.xabia-launcher .xabia-launcher__label,
+    button.xabia-launcher.is-expanded .xabia-launcher__label {
+        display: none !important;
+    }
+    button.xabia-launcher .xabia-launcher__spark {
+        font-size: 26px !important;
+    }
+}
+@media (max-width: 600px) {
+    button.xabia-launcher:not(.xabia-launcher--inline) {
+        z-index: 999999 !important;
+        touch-action: manipulation;
+        cursor: pointer;
+        justify-content: flex-start !important;
+        gap: 9px !important;
+        width: max-content !important;
+        min-width: 0 !important;
+        max-width: calc(100vw - 32px) !important;
+        height: 44px !important;
+        min-height: 44px !important;
+        max-height: 44px !important;
+        padding: 0 8px 0 14px !important;
+        border-radius: 9999px !important;
+        background: #ffffff !important;
+        color: #0f172a !important;
+        border: 1px solid rgba(5, 150, 105, 0.25) !important;
+        box-shadow: 0 10px 28px rgba(15, 23, 42, 0.16) !important;
+        bottom: 22px;
+    }
+    button.xabia-launcher:not(.xabia-launcher--inline) .xabia-launcher__label {
+        display: none !important;
+    }
+    button.xabia-launcher:not(.xabia-launcher--inline) .xabia-launcher__desk {
+        display: block;
+        font-size: 13px;
+        font-weight: 600;
+        letter-spacing: -0.01em;
+        line-height: 1;
+        white-space: nowrap;
+        color: #0f172a;
+    }
+    button.xabia-launcher:not(.xabia-launcher--inline) .xabia-launcher__spark {
+        font-size: 18px !important;
+        color: #059669 !important;
+    }
+    button.xabia-launcher:not(.xabia-launcher--inline) .xabia-launcher__mic {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        flex: 0 0 24px;
+        width: 24px;
+        height: 24px;
+        border-radius: 9999px;
+        background: #059669;
+        color: #ffffff;
+    }
+    button.xabia-launcher:not(.xabia-launcher--inline).is-collapsed {
+        justify-content: center !important;
+        gap: 0 !important;
+        width: 50px !important;
+        min-width: 50px !important;
+        max-width: 50px !important;
+        height: 50px !important;
+        min-height: 50px !important;
+        max-height: 50px !important;
+        padding: 0 !important;
+        border-radius: 9999px !important;
+        background: #059669 !important;
+        border-color: transparent !important;
+        box-shadow: 0 10px 24px rgba(5, 150, 105, 0.35) !important;
+    }
+    button.xabia-launcher:not(.xabia-launcher--inline).is-collapsed .xabia-launcher__desk,
+    button.xabia-launcher:not(.xabia-launcher--inline).is-collapsed .xabia-launcher__mic {
+        display: none !important;
+    }
+    button.xabia-launcher:not(.xabia-launcher--inline).is-collapsed .xabia-launcher__spark {
+        color: #ffffff !important;
+        font-size: 22px !important;
+    }
+    button.xabia-launcher:not(.xabia-launcher--inline).is-behind-hero {
+        opacity: 0 !important;
+        visibility: hidden;
+        pointer-events: none !important;
+        transform: translateY(18px);
+    }
+}
+@media (prefers-reduced-motion: reduce) {
+    button.xabia-launcher,
+    button.xabia-launcher .xabia-launcher__label {
+        transition: none;
+    }
+    button.xabia-launcher:hover,
+    button.xabia-launcher:focus,
+    button.xabia-launcher:focus-visible,
+    button.xabia-launcher:active {
+        transform: none;
+    }
+    button.xabia-launcher.xabia-launcher--bottom-center,
+    button.xabia-launcher.xabia-launcher--bottom-center:hover,
+    button.xabia-launcher.xabia-launcher--bottom-center:focus,
+    button.xabia-launcher.xabia-launcher--bottom-center:active {
+        transform: translateX(-50%);
+    }
+}
+.xabia-chatbox.xabia-panel-shell.layout-full-screen.is-active:not(.xabia-present-kiosk),
+.xabia-chatbox.xabia-ui-modern.xabia-panel-shell.layout-drawer.is-active:not(.xabia-present-kiosk),
+.xabia-chatbox.xabia-ui-modern.xabia-panel-shell.is-active.xabia-chatbox--fullscreen:not(.xabia-present-kiosk) {
+    position: fixed !important;
+    inset: 0 !important;
+    top: 0 !important;
+    right: 0 !important;
+    bottom: 0 !important;
+    left: 0 !important;
+    width: 100vw !important;
+    width: 100dvw !important;
+    height: 100vh !important;
+    height: 100dvh !important;
+    max-width: none !important;
+    max-height: none !important;
+    margin: 0 !important;
+    border-radius: 0 !important;
+    transform: none !important;
+    z-index: 999991 !important;
+}
+
+@media (max-width: 768px) {
+    body.xabia-open.xabia-mobile-chat-stack .xabia-chatbox.xabia-ui-modern.xabia-panel-shell.is-active.layout-full-screen:not(.xabia-present-kiosk),
+    body.xabia-open.xabia-mobile-chat-stack .xabia-chatbox.xabia-ui-modern.xabia-panel-shell.is-active.xabia-chatbox--fullscreen:not(.xabia-present-kiosk) {
+        z-index: 999991 !important;
+    }
+}

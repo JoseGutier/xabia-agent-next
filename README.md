@@ -4,7 +4,7 @@ Plugin de WordPress: asistente conversacional con **RAG**, memoria de sesión, v
 
 **Código y manuales de producto** viven en **`xabia-agent-plugins/`** (plugins instalables, documentación, salida de ZIPs).
 
-**Versión actual (Core):** **v1.0.342** — `XABIA_VERSION` / cabecera de [`xabia-intelligence.php`](xabia-agent-plugins/packages/xabia-agent-core/xabia-intelligence.php). Addon Woo de esta release: **1.0.15**. Incluye cabecera del chat a sangre, fichas universales en rejilla, stock Woo (no recomendar agotados) y publicación de CSS/JS versionados para la CDN.
+**Versión actual (Core):** **v1.0.368** — `XABIA_VERSION` / cabecera de [`xabia-intelligence.php`](xabia-agent-plugins/packages/xabia-agent-core/xabia-intelligence.php). Addon Woo de esta release: **1.0.24**. Incluye el botón flotante (pastilla en el móvil), el saludo solo en el primer turno, las listas de páginas del idioma original y hasta cuatro fichas de producto con precio.
 
 ## Instalación desde ZIP
 

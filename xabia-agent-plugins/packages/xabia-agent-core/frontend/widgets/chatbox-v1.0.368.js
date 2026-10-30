@@ -1,0 +1,4718 @@
+/**
+ * Xabia chatbox: enviar, micrófono, voz (TTS). Lee config de data-* del .xabia-chatbox.
+ */
+(function() {
+    'use strict';
+
+    function xabiaI18n(key, fallback) {
+        var bag = (typeof window.xabiaI18n === 'object' && window.xabiaI18n !== null) ? window.xabiaI18n : {};
+        if (Object.prototype.hasOwnProperty.call(bag, key) && bag[key] !== null && String(bag[key]) !== '') {
+            return String(bag[key]);
+        }
+        return fallback !== undefined && fallback !== null ? String(fallback) : '';
+    }
+
+    function xabiaChatSettings() {
+        return (typeof window.XabiaSettings === 'object' && window.XabiaSettings !== null) ? window.XabiaSettings : {};
+    }
+
+    function xabiaRestNonce() {
+        var bag = (typeof window.xabia_settings === 'object' && window.xabia_settings !== null) ? window.xabia_settings : {};
+        return bag.nonce ? String(bag.nonce) : '';
+    }
+
+    function xabiaWithRestNonce(headers) {
+        var nonce = xabiaRestNonce();
+        if (nonce) {
+            headers['X-WP-Nonce'] = nonce;
+        }
+        return headers;
+    }
+
+    function xabiaIsLiteMode() {
+        return !!xabiaChatSettings().liteMode;
+    }
+
+    function xabiaChatAjaxAction() {
+        var settings = xabiaChatSettings();
+        if (settings.liteMode) {
+            return settings.ajaxAction || 'xabia_lite_ask_ai';
+        }
+        return 'xabia_ask_ai';
+    }
+
+    /**
+     * Identificador anónimo estable por proyecto (localStorage). El Core lo usa
+     * para el límite de tokens por sesión / anti-bot.
+     */
+    function xabiaVisitorKey(projectId) {
+        var pid = String(projectId || 'default').replace(/[^a-zA-Z0-9_-]/g, '') || 'default';
+        var storageKey = 'xabia_visitor_key_' + pid;
+        try {
+            var existing = window.localStorage ? localStorage.getItem(storageKey) : '';
+            if (existing && /^[a-zA-Z0-9_-]{8,64}$/.test(existing)) {
+                return existing;
+            }
+            var next = '';
+            if (window.crypto && typeof window.crypto.randomUUID === 'function') {
+                next = String(window.crypto.randomUUID()).replace(/-/g, '');
+            } else {
+                var i;
+                for (i = 0; i < 32; i++) {
+                    next += Math.floor(Math.random() * 16).toString(16);
+                }
+            }
+            next = String(next).replace(/[^a-zA-Z0-9]/g, '').substring(0, 64);
+            if (next.length < 8) {
+                next = (next + 'xabiafall') .substring(0, 16);
+            }
+            if (window.localStorage) {
+                localStorage.setItem(storageKey, next);
+            }
+            return next;
+        } catch (eVk) {
+            return '';
+        }
+    }
+
+    function xabiaChatboxMain($) {
+
+    var SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+
+    /**
+     * Seguimiento de intención de compra (clics en añadir al carrito / pack) por proyecto.
+     * window.xabiaWooCartIntent.getItems(projectId), .recordSingle(projectId, id), .recordPack(...), .getSummaryText(projectId), .clear(projectId)
+     */
+    window.xabiaWooCartIntent = (function() {
+        function storageKey(projectId) {
+            return 'xabia_woo_cart_intent_' + String(projectId || 'default');
+        }
+        function load(projectId) {
+            try {
+                var raw = sessionStorage.getItem(storageKey(projectId));
+                var arr = raw ? JSON.parse(raw) : [];
+                return Array.isArray(arr) ? arr : [];
+            } catch (e) {
+                return [];
+            }
+        }
+        function save(projectId, items) {
+            try {
+                sessionStorage.setItem(storageKey(projectId), JSON.stringify(items.slice(-40)));
+            } catch (e2) {}
+        }
+        function record(projectId, entry) {
+            var items = load(projectId);
+            items.push(entry);
+            save(projectId, items);
+        }
+        return {
+            recordSingle: function(projectId, productId, label) {
+                var id = parseInt(productId, 10);
+                if (!id) return;
+                record(String(projectId || 'default'), { id: id, t: Date.now(), label: label || '', kind: 'single' });
+            },
+            recordPack: function(projectId, ids, quantities, label) {
+                var pids = (ids || []).map(function(x) { return parseInt(x, 10); }).filter(function(n) { return n > 0; });
+                if (!pids.length) return;
+                record(String(projectId || 'default'), {
+                    ids: pids,
+                    qty: quantities || [],
+                    t: Date.now(),
+                    label: label || '',
+                    kind: 'pack'
+                });
+            },
+            getItems: function(projectId) {
+                return load(projectId);
+            },
+            clear: function(projectId) {
+                try {
+                    sessionStorage.removeItem(storageKey(projectId));
+                } catch (e3) {}
+            },
+            getSummaryText: function(projectId) {
+                var items = load(projectId);
+                if (!items.length) return '';
+                var lines = [];
+                var byPack = {};
+                var byId = {};
+                items.forEach(function(it) {
+                    if (it && Array.isArray(it.ids) && it.ids.length) {
+                        var k = it.ids.join('-');
+                        byPack[k] = (byPack[k] || 0) + 1;
+                    } else if (it && it.id) {
+                        var id = it.id;
+                        byId[id] = (byId[id] || 0) + 1;
+                    }
+                });
+                Object.keys(byId).forEach(function(id) {
+                    lines.push('ID ' + id + ' ×' + byId[id]);
+                });
+                Object.keys(byPack).forEach(function(k) {
+                    lines.push('Pack [' + k.replace(/-/g, ', ') + '] ×' + byPack[k]);
+                });
+                return lines.length ? (xabiaI18n('sessionCartClicks', 'Clics de compra en esta sesión:') + ' ' + lines.join('; ')) : '';
+            }
+        };
+    })();
+
+    /** Locale BCP-47 (data-lang) o código ISO → BCP47 para Speech API / utterance (alineado con chatbox.php). */
+    var XABIA_LANG_BCP47 = { es: 'es-ES', eu: 'eu-ES', en: 'en-US', fr: 'fr-FR', ca: 'ca-ES', gl: 'gl-ES', pt: 'pt-PT', de: 'de-DE', it: 'it-IT' };
+    function xabiaShortLangFromLang(code) {
+        var s = String(code || 'es').trim().toLowerCase();
+        if (s.indexOf('-') >= 0) {
+            return s.split('-')[0].replace(/[^a-z]/g, '').substring(0, 2) || 'es';
+        }
+        return s.replace(/[^a-z]/g, '').substring(0, 2) || 'es';
+    }
+    function xabiaBcp47FromLang(code) {
+        var s = String(code || 'es').trim();
+        if (s.indexOf('-') >= 0) {
+            var parts = s.split('-');
+            var base = parts[0].toLowerCase().replace(/[^a-z]/g, '').substring(0, 2) || 'es';
+            var region = (parts[1] || base.toUpperCase()).replace(/[^a-zA-Z]/g, '').substring(0, 2).toUpperCase();
+            return base + '-' + region;
+        }
+        var c = s.toLowerCase().replace(/[^a-z]/g, '').substring(0, 2) || 'es';
+        return XABIA_LANG_BCP47[c] || (c + '-' + c.toUpperCase());
+    }
+
+    function parseTtsConfig($box) {
+        var raw = $box.data('tts');
+        if (!raw) return { voice: 'default', rate: 1, clean: { bold: false, italic: false, actions: false, emojis: false, patterns: [] } };
+        try { return typeof raw === 'string' ? JSON.parse(raw) : raw; } catch (e) { return { voice: 'default', rate: 1, clean: {} }; }
+    }
+
+    /** jQuery .data('voice') y el attr HTML pueden desincronizarse; unificar lectura. */
+    function isVoiceOn($box) {
+        if (!$box || !$box.length) return false;
+        var v = $box.data('voice');
+        if (v === true || v === 1 || v === '1') return true;
+        var attr = $box.attr('data-voice');
+        return attr === '1' || attr === 'true';
+    }
+
+    function setVoiceOn($box, on) {
+        var val = on ? 1 : 0;
+        $box.data('voice', val);
+        $box.attr('data-voice', String(val));
+        var $btn = $box.find('.xabia-mute');
+        if (on) {
+            $btn.addClass('is-voice-on')
+                .attr('title', xabiaI18n('voiceDisable', 'Desactivar voz'))
+                .attr('aria-label', xabiaI18n('voiceDisable', 'Desactivar voz'));
+        } else {
+            $btn.removeClass('is-voice-on')
+                .attr('title', xabiaI18n('voiceEnable', 'Activar voz (lectura en alto)'))
+                .attr('aria-label', xabiaI18n('voiceEnableShort', 'Activar voz'));
+        }
+        /* Layout immersive no depende del mute; solo sincroniza por si el panel estaba cerrado */
+        try {
+            if (window.XabiaInterfaceApi && typeof window.XabiaInterfaceApi.syncImmersive === 'function') {
+                window.XabiaInterfaceApi.syncImmersive($box[0]);
+            }
+        } catch (eSync) {}
+    }
+
+    /**
+     * Desbloquear salida de audio (Safari/Chrome) + pitido breve de confirmación.
+     * Si el usuario no oye el pitido, el problema es del sistema/navegador, no del TTS.
+     */
+    var xabiaAudioCtx = null;
+    function unlockSpeechSynthesis(opts) {
+        opts = opts || {};
+        if (!window.speechSynthesis) return;
+        try { window.speechSynthesis.resume(); } catch (eUnlock) {}
+        try {
+            var Ctx = window.AudioContext || window.webkitAudioContext;
+            if (!Ctx) return;
+            if (!xabiaAudioCtx) xabiaAudioCtx = new Ctx();
+            if (xabiaAudioCtx.state === 'suspended') {
+                xabiaAudioCtx.resume();
+            }
+            if (opts.beep) {
+                var o = xabiaAudioCtx.createOscillator();
+                var g = xabiaAudioCtx.createGain();
+                o.type = 'sine';
+                o.frequency.value = 880;
+                g.gain.value = 0.0001;
+                g.gain.exponentialRampToValueAtTime(0.12, xabiaAudioCtx.currentTime + 0.02);
+                g.gain.exponentialRampToValueAtTime(0.0001, xabiaAudioCtx.currentTime + 0.18);
+                o.connect(g);
+                g.connect(xabiaAudioCtx.destination);
+                o.start();
+                o.stop(xabiaAudioCtx.currentTime + 0.2);
+            }
+        } catch (eAc) {}
+    }
+
+    function attachMsgSpeakButton($box, $botDiv, raw) {
+        if (!$botDiv || !$botDiv.length) return;
+        $botDiv.find('.xabia-msg-speak').remove();
+        var $btn = $('<button type="button" class="xabia-msg-speak"></button>')
+            .attr('title', xabiaI18n('voiceListen', 'Escuchar'))
+            .attr('aria-label', xabiaI18n('voiceListen', 'Escuchar'))
+            .html('<span class="xabia-msg-speak__icon" aria-hidden="true"></span>');
+        $btn.on('click', function(e) {
+            e.preventDefault();
+            e.stopPropagation();
+            unlockSpeechSynthesis({ beep: false });
+            setVoiceOn($box, true);
+            speakText($box, raw || lastBotRawText($box), null, { immediate: true, force: true });
+        });
+        $botDiv.append($btn);
+    }
+
+    function lastBotRawText($box) {
+        var $last = $box.find('.xabia-msg.bot').last();
+        if (!$last.length) return '';
+        var raw = $last.attr('data-raw');
+        if (raw) return String(raw);
+        var $c = $last.find('.xabia-msg-content');
+        return String(($c.length ? $c.text() : $last.text()) || '').trim();
+    }
+
+    function clearSpeechResumeWatch() {
+        if (xabiaLipSync.resumeWatch) {
+            clearInterval(xabiaLipSync.resumeWatch);
+            xabiaLipSync.resumeWatch = 0;
+        }
+    }
+
+    function startSpeechResumeWatch() {
+        clearSpeechResumeWatch();
+        /* Chrome: speechSynthesis se pausa solo tras ~15s sin resume() */
+        xabiaLipSync.resumeWatch = setInterval(function() {
+            try {
+                if (window.speechSynthesis && window.speechSynthesis.speaking && window.speechSynthesis.paused) {
+                    window.speechSynthesis.resume();
+                }
+            } catch (eR) {}
+        }, 4000);
+    }
+
+    function cleanTextForTts(text, clean) {
+        if (!text) return '';
+        text = String(text).replace(/<br\s*\/?>/gi, '\n').replace(/<[^>]+>/g, ' ');
+        text = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+        /* Siempre quitar etiquetas de acción: no deben oírse */
+        text = text.replace(/\[(?:ACTION|IMAGE|CART|BOOK)[^\]]*\]/gi, ' ');
+        text = text.replace(/\[Imagen disponible:[^\]]*\]/gi, ' ');
+        if (!clean || typeof clean !== 'object') {
+            return text.replace(/[^\S\n]+/g, ' ').replace(/\n{3,}/g, '\n\n').trim();
+        }
+        if (clean.bold) text = text.replace(/\*\*/g, '');
+        if (clean.italic) text = text.replace(/\*/g, '');
+        if (clean.emojis) {
+            text = text.replace(/[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}\u{FE0F}\u{200D}]/gu, ' ');
+        }
+        if (Array.isArray(clean.patterns)) {
+            clean.patterns.forEach(function(p) { if (p) text = text.split(p).join(' '); });
+        }
+        return text.replace(/[^\S\n]+/g, ' ').replace(/\n{3,}/g, '\n\n').trim();
+    }
+
+    function spellNumberEuClient(n) {
+        n = parseInt(n, 10);
+        if (isNaN(n) || n < 0) return String(n);
+        if (n === 0) return 'zero';
+        if (n < 20) {
+            var m = ['', 'bat', 'bi', 'hiru', 'lau', 'bost', 'sei', 'zazpi', 'zortzi', 'bederatzi',
+                'hamar', 'hamaika', 'hamabi', 'hamahiru', 'hamalau', 'hamabost', 'hamasei',
+                'hamazortzi', 'hemezortzi', 'hemeretzi'];
+            return m[n] || String(n);
+        }
+        if (n < 100) {
+            if (n === 20) return 'hogei';
+            if (n === 30) return 'hogeita hamar';
+            if (n === 40) return 'berrogei';
+            if (n === 50) return 'berrogeita hamar';
+            if (n === 60) return 'hirurogei';
+            if (n === 70) return 'hirurogeita hamar';
+            if (n === 80) return 'laurogei';
+            if (n === 90) return 'laurogeita hamar';
+            var t = Math.floor(n / 10);
+            var u = n % 10;
+            if (t === 3) return 'hogeita ' + spellNumberEuClient(10 + u);
+            if (t === 5) return 'berrogeita ' + spellNumberEuClient(10 + u);
+            if (t === 7) return 'hirurogeita ' + spellNumberEuClient(10 + u);
+            if (t === 9) return 'laurogeita ' + spellNumberEuClient(10 + u);
+            var prefix = { 2: 'hogeita', 4: 'berrogeita', 6: 'hirurogeita', 8: 'laurogeita' }[t];
+            if (!prefix) return String(n);
+            return prefix + ' ' + (u === 1 ? 'bat' : spellNumberEuClient(u));
+        }
+        if (n < 1000) {
+            var h = Math.floor(n / 100);
+            var rest = n % 100;
+            var hundred = { 1: 'ehun', 2: 'berrehun', 3: 'hirurehun', 4: 'laurehun', 5: 'bostehun',
+                6: 'seiehun', 7: 'zazpiehun', 8: 'zortzirehun', 9: 'bederatziehun' }[h] || (h + 'ehun');
+            if (rest === 0) return hundred;
+            if (rest === 1) return hundred + ' eta bat';
+            return hundred + ' eta ' + spellNumberEuClient(rest);
+        }
+        if (n < 1000000) {
+            var th = Math.floor(n / 1000);
+            var r = n % 1000;
+            var thousand = (th === 1) ? 'mila' : (spellNumberEuClient(th) + ' mila');
+            if (r === 0) return thousand;
+            return thousand + ' ' + spellNumberEuClient(r);
+        }
+        return String(n);
+    }
+
+    function localizeTextForTtsClient(text, langCode) {
+        text = String(text || '');
+        var lang = xabiaShortLangFromLang(langCode);
+        if (lang !== 'eu') {
+            return text;
+        }
+        var esNum = {
+            cero: 'zero', uno: 'bat', una: 'bat', dos: 'bi', tres: 'hiru', cuatro: 'lau', cinco: 'bost',
+            seis: 'sei', siete: 'zazpi', ocho: 'zortzi', nueve: 'bederatzi', diez: 'hamar', once: 'hamaika',
+            doce: 'hamabi', trece: 'hamahiru', catorce: 'hamalau', quince: 'hamabost', dieciséis: 'hamasei',
+            dieciseis: 'hamasei', diecisiete: 'hamazortzi', dieciocho: 'hemezortzi', diecinueve: 'hemeretzi',
+            veinte: 'hogei', treinta: 'hogeita hamar', cuarenta: 'berrogei', cincuenta: 'berrogeita hamar',
+            sesenta: 'hirurogei', setenta: 'hirurogeita hamar', ochenta: 'laurogei', noventa: 'laurogeita hamar',
+            cien: 'ehun', ciento: 'ehun', mil: 'mila'
+        };
+        Object.keys(esNum).forEach(function(es) {
+            text = text.replace(new RegExp('\\b' + es + '\\b', 'gi'), esNum[es]);
+        });
+        text = text.replace(/\ba las (\d{1,2}):(\d{2})\b/gi, '$1:$2ean');
+        text = text.replace(/\b(\d{2,3}(?:\s+\d{2,3}){2,})\b/g, function(m) {
+            return m.trim().split(/\s+/).map(function(p) {
+                return spellNumberEuClient(parseInt(p, 10));
+            }).join(' … ');
+        });
+        text = text.replace(/\b(\d{4})-(\d{2})-(\d{2})\b/g, function(m, y, mo, d) {
+            try {
+                var dt = new Date(parseInt(y, 10), parseInt(mo, 10) - 1, parseInt(d, 10));
+                if (isNaN(dt.getTime())) return m;
+                return new Intl.DateTimeFormat('eu-ES', { dateStyle: 'long' }).format(dt)
+                    .replace(/\(([a-z])\)/gi, '$1');
+            } catch (eD) { return m; }
+        });
+        text = text.replace(/\b(\d{1,2}):(\d{2})\b/g, function(m, h, min) {
+            h = parseInt(h, 10); min = parseInt(min, 10);
+            if (min === 0) return h + 'etan';
+            return h + ':' + (min < 10 ? '0' : '') + min + 'ean';
+        });
+        text = text.replace(/\b(\d{1,5})\b/g, function(m, d) {
+            return spellNumberEuClient(parseInt(d, 10));
+        });
+        return text;
+    }
+
+    function insertStructuralTtsBreaks(text) {
+        text = String(text || '');
+        if (!text) return text;
+        var labels = 'Data|Lekua|Noiz|Non|Deskribapena|Antolatzailea|Informazioa(?: eta erreserbak)?|Helbidea|Ordua|Sarrera|Prezioa|'
+            + 'Fecha|Lugar|Hora|Descripción|Descripcion|Organizador|Información|Informacion|Ubicación|Ubicacion|'
+            + 'Date|Time|Location|Place|Description|Organizer|Price|Address';
+        text = text.replace(new RegExp('\\s+(?=(?:' + labels + ')\\s*:)', 'gi'), '\n');
+        text = text.replace(new RegExp('([.!?…])\\s+(?=(?:' + labels + ')\\s*:)', 'g'), '$1\n');
+        text = text.replace(new RegExp('(:)\\s+(?=(?:' + labels + ')\\s*:)', 'g'), '$1\n');
+        text = text.replace(/\s+(?=[-*•]\s)/g, '\n');
+        text = text.replace(/\s+(?=\d+\.\s)/g, '\n');
+        text = text.replace(/\s+(?=(?:Ba al duzu|¿|Zer |Nola |Non |Zein ))/gi, '\n');
+        return text.replace(/\n{3,}/g, '\n\n').trim();
+    }
+
+    function splitTtsSegments(text) {
+        return String(text || '').split(/\n+| … /).map(function(s) { return s.trim(); }).filter(Boolean);
+    }
+
+    function prepareTtsTextForSpeech(rawText, tts, $box) {
+        var text = cleanTextForTts(rawText, tts.clean);
+        text = insertStructuralTtsBreaks(text);
+        text = localizeTextForTtsClient(text, $box.data('lang'));
+        var segments = splitTtsSegments(text);
+        return {
+            segments: segments,
+            serverText: segments.join(' … '),
+            displayText: text
+        };
+    }
+
+    function injectTtsPausesClient(text) {
+        text = String(text || '');
+        var parts = splitTtsSegments(text);
+        if (!parts.length) return text;
+        return parts.join(' … ');
+    }
+
+    function scoreVoice(voice, langCode, preference) {
+        var wanted = String(langCode || 'es-ES').toLowerCase();
+        var base = wanted.split('-')[0];
+        var voiceLang = String(voice.lang || '').toLowerCase();
+        var name = String(voice.name || '');
+        var normalizedName = name.normalize ? name.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase() : name.toLowerCase();
+        var score = 0;
+
+        if (voiceLang === wanted) score += 120;
+        else if (voiceLang.indexOf(base + '-') === 0) score += 35;
+        else if (voiceLang.indexOf(base) === 0) score += 15;
+
+        if (wanted === 'es-es') {
+            if (/spanish \(spain\)|espanol \(espana\)|castellano|google espanol/i.test(normalizedName)) score += 35;
+            if (/paulina|penelope|miguel|sabina|dalia|latino|latin|mexico|mexican|estados unidos|united states|us spanish|es-419/i.test(normalizedName) || /es-(mx|us|419|ar|cl|co|pe|ve|uy|bo|ec|gt|hn|ni|pa|pr|py|sv)/.test(voiceLang)) {
+                score -= 100;
+            }
+        }
+        if (wanted === 'eu-es' || base === 'eu') {
+            if (/^es(-|_|$)/.test(voiceLang) || /spanish|espanol|castellano|monica|jorge|paulina|penelope/i.test(normalizedName)) {
+                score -= 500;
+            }
+            if (/basque|euskera|euskara|eu-/i.test(normalizedName + voiceLang)) score += 200;
+        }
+
+        if (preference === 'female') {
+            if (/female|woman|mujer|femenin|helena|lucia|lucía|marta|marisol|elvira|laura|sara|carmen|isabel/i.test(normalizedName)) score += 130;
+            if ((wanted !== 'eu-es' && base !== 'eu') && /male|man|hombre|masculin|jorge|alvaro|enrique|diego|pablo|carlos|juan|miguel|monica/i.test(normalizedName)) score -= 180;
+            if ((wanted === 'eu-es' || base === 'eu') && /monica|jorge|spanish|espanol/i.test(normalizedName)) score -= 300;
+        } else if (preference === 'male') {
+            if (/male|man|hombre|masculin|jorge|alvaro|alvaro|enrique|diego|pablo|carlos|juan|miguel/i.test(normalizedName)) score += 130;
+            if (/female|woman|mujer|femenin|monica|helena|lucia|lucía|marta|marisol|elvira|laura|sara|carmen|isabel/i.test(normalizedName)) score -= 180;
+        } else {
+            if (/google|natural|premium|neural|enhanced|samantha|paulina|monica|helena|lucia|jorge|marta/i.test(normalizedName)) score += 45;
+            if (/espeak|compact|android|samsung|microsoft.*desktop|fred|junior|bad/i.test(normalizedName)) score -= 120;
+        }
+
+        if (voice.localService) {
+            score += 80;
+        } else {
+            /* Voces remotas de Chrome a veces quedan mudas en macOS */
+            score -= 20;
+        }
+
+        return score;
+    }
+
+    function pickVoice(langCode, preference) {
+        var list = window.speechSynthesis.getVoices();
+        if (!list || !list.length) return null;
+        var ranked = list.slice().sort(function(a, b) {
+            return scoreVoice(b, langCode, preference) - scoreVoice(a, langCode, preference);
+        });
+        return ranked[0] || list[0];
+    }
+
+    /** Fuerza la carga de voces del navegador (Chrome/Safari las cargan async). */
+    function preloadSpeechVoices() {
+        try {
+            if (!window.speechSynthesis) return;
+            window.speechSynthesis.getVoices();
+        } catch (eVoices) {}
+    }
+
+    function joinImagesBase(base, path) {
+        base = String(base || '').trim().replace(/\/+$/, '');
+        path = String(path || '').trim().replace(/^\/+/, '');
+        if (!path) return '';
+        if (!base) return path;
+        return base + '/' + path;
+    }
+
+    function resolveActionImgSrc(raw, imagesBase) {
+        var url = String(raw || '').trim();
+        if (!url || url.indexOf(' ') !== -1) return '';
+        if (/^https?:\/\//i.test(url)) return url;
+        if (url.indexOf('//') === 0) return 'https:' + url;
+        if (url.charAt(0) === '/') return url;
+        return joinImagesBase(imagesBase, url);
+    }
+
+    function xabiaAmeliaBookingUrl(serviceId) {
+        var sid = String(serviceId || '').replace(/\D/g, '');
+        if (!sid) return '';
+        var tpl = window.xabiaReservas && window.xabiaReservas.ameliaTriggerUrl ? String(window.xabiaReservas.ameliaTriggerUrl) : '';
+        if (tpl.indexOf('{service}') !== -1) {
+            return tpl.split('{service}').join(sid);
+        }
+        return '';
+    }
+
+    function xabiaAmeliaTryNativeOpen(serviceId) {
+        var sid = String(serviceId || '').replace(/\D/g, '');
+        if (!sid) return false;
+        var selectors = [
+            '[data-amelia-service-id="' + sid + '"]',
+            '[data-service-id="' + sid + '"]',
+            '.amelia-v2-booking[data-service="' + sid + '"]',
+            '#amelia-app-booking',
+            '.amelia-app-booking',
+            '[class*="amelia"][class*="booking"]'
+        ];
+        for (var i = 0; i < selectors.length; i++) {
+            var el = document.querySelector(selectors[i]);
+            if (el) {
+                try {
+                    el.click();
+                    return true;
+                } catch (eClick) {}
+            }
+        }
+        return false;
+    }
+
+    function xabiaAmeliaDispatchBookingOpen(serviceId) {
+        var sid = parseInt(serviceId, 10);
+        if (!sid) return;
+        var detail = { serviceId: sid, service_id: sid };
+        try {
+            window.dispatchEvent(new CustomEvent('xabia-amelia-booking-open', { detail: detail, bubbles: true }));
+        } catch (eWin) {}
+        try {
+            document.dispatchEvent(new CustomEvent('xabia-amelia-booking-open', { detail: detail, bubbles: true }));
+        } catch (eDoc) {}
+        if (typeof jQuery !== 'undefined') {
+            jQuery(document.body).trigger('xabia-amelia-booking-open', [sid]);
+        }
+    }
+
+    function xabiaAmeliaHandleBookingOpen(serviceId, opts) {
+        opts = opts || {};
+        var sid = parseInt(serviceId, 10);
+        if (!sid) return false;
+        if (!opts.skipEvent) {
+            xabiaAmeliaDispatchBookingOpen(sid);
+        }
+        if (xabiaAmeliaTryNativeOpen(sid)) return true;
+        var url = xabiaAmeliaBookingUrl(sid);
+        if (url) {
+            window.location.href = url;
+            return true;
+        }
+        var anchor = document.querySelector('#amelia-app-booking, .amelia-v2-booking, [id*="amelia"]');
+        if (anchor && typeof anchor.scrollIntoView === 'function') {
+            anchor.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            return true;
+        }
+        return false;
+    }
+
+    window.addEventListener('xabia-amelia-booking-open', function(ev) {
+        if (!ev || ev.defaultPrevented) return;
+        var sid = ev.detail ? (ev.detail.serviceId || ev.detail.service_id) : null;
+        if (!sid) return;
+        xabiaAmeliaHandleBookingOpen(sid, { skipEvent: true });
+    });
+
+    function renderActionImgHtml(url, imagesBase, escAttr) {
+        var resolved = resolveActionImgSrc(url, imagesBase);
+        if (!resolved) return '';
+        return '<button type="button" class="xabia-action-img-wrap" data-full="' + escAttr(resolved) + '" aria-label="' + escAttr(xabiaI18n('imageEnlarge', 'Ampliar imagen')) + '">'
+            + '<img src="' + escAttr(resolved) + '" alt="" class="xabia-action-img" loading="lazy" decoding="async">'
+            + '</button>';
+    }
+
+    function isLikelyImageUrl(url) {
+        var u = String(url || '').trim().split('?')[0].split('#')[0];
+        return /\.(jpe?g|png|gif|webp|svg|avif)(\/)?$/i.test(u) || /\/wp-content\/uploads\//i.test(u);
+    }
+
+    function decodeActionCardPayload(raw) {
+        var s = String(raw || '').trim();
+        if (!s) return null;
+        try {
+            var b64 = s.replace(/-/g, '+').replace(/_/g, '/');
+            while (b64.length % 4) b64 += '=';
+            var bin = atob(b64);
+            var json = decodeURIComponent(Array.prototype.map.call(bin, function(c) {
+                return '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2);
+            }).join(''));
+            var data = JSON.parse(json);
+            if (!data || typeof data !== 'object') return null;
+            var imageUrl = String(data.image || data.img || data.i || data.imagen || data.imagen_url || data.Imagen_URL || '').trim();
+            return {
+                t: String(data.t || data.title || '').trim(),
+                m: String(data.m || data.meta || '').trim(),
+                d: String(data.d || data.description || '').trim(),
+                p: String(data.p || data.highlight || data.price || '').trim(),
+                i: imageUrl,
+                image: imageUrl,
+                img: imageUrl,
+                a: String(data.a || data.action || '').trim(),
+                at: String(data.at || data.action_type || '').trim(),
+                l: String(data.l || data.action_text || data.label || '').trim(),
+                u: String(data.u || data.url || data.permalink || '').trim(),
+                cu: String(data.cu || data.cart_url || '').trim(),
+                ck: String(data.ck || data.checkout_url || '').trim(),
+                rd: String(data.rd || data.redirect_behavior || '').trim(),
+                mx: String(data.mx || data.max_qty || '').trim()
+            };
+        } catch (e) {
+            return null;
+        }
+    }
+
+    function renderCardCtaHtml(action, label, escAttr, decodeHtmlEntities) {
+        var a = String(action || '').trim();
+        if (!a) return '';
+        var lbl = String(label || '').trim();
+        var m = a.match(/^(CART|CART_PACK|URL|CALL|BOOK|MAP):(.*)$/i);
+        if (!m) return '';
+        var kind = String(m[1] || '').toUpperCase();
+        var rest = String(m[2] || '').trim();
+        if (kind === 'CART_PACK') {
+            var parts = rest.split('|');
+            var idsPart = (parts[0] || '').trim();
+            var qtyPart = (parts[1] || '').trim();
+            var ids = idsPart.split(',').map(function(x) { return String(x).replace(/\D/g, ''); }).filter(Boolean);
+            if (!ids.length) return '';
+            var quantities = [];
+            if (qtyPart) {
+                qtyPart.split(',').forEach(function(x) {
+                    var n = parseInt(String(x).trim(), 10);
+                    quantities.push(isNaN(n) || n < 1 ? 1 : n);
+                });
+            }
+            while (quantities.length < ids.length) quantities.push(1);
+            quantities = quantities.slice(0, ids.length);
+            var wcPack = window.xabiaWooCart || {};
+            var tpl = wcPack.packUrlTemplate;
+            if (!tpl || String(tpl).indexOf('{ids}') === -1) return '';
+            var packHref = String(tpl).replace('{ids}', ids.join(',')).replace('{quantities}', quantities.join(','));
+            var packLbl = lbl || wcPack.packCheckoutLabel || xabiaI18n('actionBuyPack', 'Comprar pack');
+            return '<a href="' + escAttr(packHref) + '" class="xabia-entity-card__cta xabia-btn-cart-pack-remote" target="_blank" rel="noopener" data-pack-ids="' + escAttr(ids.join(',')) + '">' + escAttr(packLbl) + '</a>';
+        }
+        if (kind === 'URL') {
+            var url = decodeHtmlEntities(rest);
+            if (!url) return '';
+            return '<a href="' + escAttr(url) + '" class="xabia-entity-card__cta xabia-action xabia-action-url" target="_blank" rel="noopener">' + escAttr(lbl || xabiaI18n('actionOpenLink', 'Abrir enlace')) + '</a>';
+        }
+        if (kind === 'CALL') {
+            var tel = rest.replace(/\s+/g, '');
+            if (!tel) return '';
+            return '<a href="tel:' + escAttr(tel) + '" class="xabia-entity-card__cta">' + escAttr(lbl || xabiaI18n('actionCall', 'Llamar')) + '</a>';
+        }
+        if (kind === 'BOOK') {
+            var sid = rest.replace(/\D/g, '');
+            if (!sid) return '';
+            var bookHref = (typeof xabiaAmeliaBookingUrl === 'function') ? xabiaAmeliaBookingUrl(sid) : '';
+            var bookLbl = lbl || xabiaI18n('actionBook', 'Reservar');
+            if (bookHref) {
+                return '<a href="' + escAttr(bookHref) + '" class="xabia-entity-card__cta xabia-btn-book xabia-book-amelia--link" data-engine="amelia" data-service-id="' + escAttr(sid) + '" target="_blank" rel="noopener">' + escAttr(bookLbl) + '</a>';
+            }
+            return '<button type="button" class="xabia-entity-card__cta xabia-btn-book xabia-book-amelia" data-engine="amelia" data-service-id="' + escAttr(sid) + '">' + escAttr(bookLbl) + '</button>';
+        }
+        if (kind === 'MAP') {
+            var mapQ = encodeURIComponent(rest);
+            return '<a href="https://www.google.com/maps/search/?api=1&query=' + mapQ + '" class="xabia-entity-card__cta" target="_blank" rel="noopener">' + escAttr(lbl || xabiaI18n('actionViewMap', 'Ver en mapa')) + '</a>';
+        }
+        return '';
+    }
+
+    function renderShopPurchaseModuleHtml(card, escAttr, opts) {
+        opts = opts || {};
+        var a = String(card.a || '').trim();
+        var m = a.match(/^CART:(.*)$/i);
+        if (!m) return '';
+        var pid = String(m[1] || '').replace(/\D/g, '');
+        if (!pid) return '';
+        var wc = window.xabiaWooCart || {};
+        var buyLbl = String(card.l || '').trim() || wc.buyLabel || wc.checkoutLabel || xabiaI18n('actionBuy', 'Comprar');
+        var infoLbl = wc.infoLabel || xabiaI18n('actionMoreInfo', '+ Info');
+        var maxQty = parseInt(card.mx || '99', 10);
+        if (isNaN(maxQty) || maxQty < 1) maxQty = 99;
+        if (maxQty > 99) maxQty = 99;
+        var redirect = (card.rd === '1' || card.rd === 'true' || wc.redirectAfterAdd) ? '1' : '0';
+        var permalink = String(card.u || '').trim();
+        var cartUrl = String(card.cu || wc.cartUrl || '').trim();
+        var checkoutUrl = String(card.ck || wc.checkoutUrl || '').trim();
+        var qtyHtml = '<div class="xabia-entity-card__qty" role="group" aria-label="' + escAttr(xabiaI18n('actionQuantity', 'Cantidad')) + '">'
+            + '<button type="button" class="xabia-entity-card__qty-btn" data-dir="-" aria-label="-">−</button>'
+            + '<input type="number" class="xabia-entity-card__qty-input" value="1" min="1" max="' + escAttr(String(maxQty)) + '" inputmode="numeric" aria-label="' + escAttr(xabiaI18n('actionQuantity', 'Cantidad')) + '">'
+            + '<button type="button" class="xabia-entity-card__qty-btn" data-dir="+" aria-label="+">+</button>'
+            + '</div>';
+        var infoHtml = (!opts.compact && permalink)
+            ? '<a class="xabia-entity-card__info" href="' + escAttr(permalink) + '" target="_blank" rel="noopener">' + escAttr(infoLbl) + '</a>'
+            : '';
+        var buyHtml;
+        if (wc.mode === 'redirect' && wc.urlTemplate && String(wc.urlTemplate).indexOf('{id}') !== -1) {
+            var href = String(wc.urlTemplate).split('{id}').join(pid).split('{qty}').join('1');
+            buyHtml = '<a href="' + escAttr(href) + '" class="xabia-entity-card__cta xabia-btn-cart xabia-btn-cart-remote" data-id="' + escAttr(pid) + '" data-url-template="' + escAttr(String(wc.urlTemplate)) + '" target="_blank" rel="noopener">' + escAttr(buyLbl) + '</a>';
+        } else {
+            buyHtml = '<button type="button" class="xabia-entity-card__cta xabia-btn-cart" data-id="' + escAttr(pid) + '">' + escAttr(buyLbl) + '</button>';
+        }
+        var shopClass = opts.compact ? ' xabia-entity-card__shop xabia-product-card__shop' : ' xabia-entity-card__shop';
+        return '<div class="' + shopClass.trim() + '"'
+            + ' data-product-id="' + escAttr(pid) + '"'
+            + ' data-redirect="' + escAttr(redirect) + '"'
+            + ' data-cart-url="' + escAttr(cartUrl) + '"'
+            + ' data-checkout-url="' + escAttr(checkoutUrl) + '"'
+            + ' data-max="' + escAttr(String(maxQty)) + '">'
+            + qtyHtml
+            + '<div class="xabia-entity-card__shop-actions">' + infoHtml + buyHtml + '</div>'
+            + '</div>';
+    }
+
+    function xabiaCardActionType(card) {
+        var action = String((card && card.a) || '').trim();
+        if (/^CART:\d+/i.test(action)) return 'cart';
+        if (/^(URL|BOOK|CALL|MAP):/i.test(action)) return 'link';
+        var explicit = String((card && (card.at || card.action_type)) || '').trim().toLowerCase();
+        if (explicit === 'cart' || explicit === 'link') return explicit;
+        return '';
+    }
+
+    function xabiaUniversalCopy(card) {
+        var desc = xabiaCleanShopDesc(card && card.d);
+        var meta = String((card && card.m) || '').trim();
+        if (!desc && meta) {
+            if (/[·|]/.test(meta) && meta.length < 80 && !/[.!?]$/.test(meta)) {
+                return { desc: '', meta: meta };
+            }
+            return { desc: xabiaCleanShopDesc(meta), meta: '' };
+        }
+        return { desc: desc, meta: meta };
+    }
+
+    function xabiaUniversalMetaHtml(meta, escAttr) {
+        var parts = String(meta || '').split(/\s*[·|]\s*/).map(function(part) {
+            return String(part || '').trim();
+        }).filter(Boolean);
+        if (!parts.length) return '';
+        return '<div class="xabia-card__tags">' + parts.map(function(part) {
+            return '<span class="xabia-card__tag xabia-entity-card__tag">' + escAttr(part) + '</span>';
+        }).join('') + '</div>';
+    }
+
+    function renderUniversalLinkHtml(card, escAttr, decodeHtmlEntities) {
+        var action = String(card.a || '').trim();
+        var decode = (typeof decodeHtmlEntities === 'function') ? decodeHtmlEntities : function(s) { return String(s || ''); };
+        if (/^(BOOK|CALL|MAP|CART_PACK):/i.test(action)) {
+            var special = renderCardCtaHtml(action, card.l, escAttr, decode);
+            return special ? '<div class="xabia-card__buy xabia-product-card__buy">' + special + '</div>' : '';
+        }
+        var href = '';
+        var urlMatch = action.match(/^URL:(.*)$/i);
+        if (urlMatch) href = decode(String(urlMatch[1] || '')).trim();
+        if (!href && String(card.at || card.action_type || '').toLowerCase() === 'link') {
+            href = String(card.u || '').trim();
+        }
+        if (!/^https?:\/\//i.test(href)) return '';
+        var label = String(card.l || '').trim() || xabiaI18n('actionOpenLink', 'Abrir');
+        return '<div class="xabia-card__buy xabia-product-card__buy"><a class="xabia-card__link xabia-entity-card__cta" href="' + escAttr(href) + '" target="_blank" rel="noopener">' + escAttr(label) + '</a></div>';
+    }
+
+    function renderUniversalCardHtml(card, escAttr, imagesBase, decodeHtmlEntities) {
+        var title = String((card && card.t) || '').replace(/\s+/g, ' ').trim();
+        if (!title) return '';
+        var copy = xabiaUniversalCopy(card);
+        var desc = copy.desc;
+        var price = xabiaFormatShopPrice(card.p);
+        var metaLeft = copy.meta;
+        if (!price) {
+            var priceSource = desc + ' ' + String((card && card.m) || '');
+            var found = priceSource.match(/((?:€|\$)\s*\d{1,5}(?:[.,]\d{1,2})?|\d{1,5}(?:[.,]\d{1,2})?\s*(?:€|eur))/i);
+            if (found) {
+                price = xabiaFormatShopPrice(found[1]);
+                desc = desc.replace(found[0], '').replace(/^[\s,.;:-]+|[\s,.;:-]+$/g, '').trim();
+                metaLeft = String(metaLeft || '').replace(found[0], '').replace(/\s*[·|]\s*(?:[·|]\s*)+/g, ' · ').replace(/^\s*[·|]\s*|\s*[·|]\s*$/g, '').trim();
+            }
+        }
+        var imageUrl = String((card && (card.image || card.img || card.i || card.imagen)) || '').trim();
+        var src = imageUrl ? (resolveActionImgSrc(imageUrl, imagesBase) || imageUrl) : '';
+        var media = src
+            ? '<div class="xabia-card__media xabia-product-card__media"><img src="' + escAttr(src) + '" alt="' + escAttr(title) + '" class="xabia-card__thumb xabia-card__img xabia-product-card__img" /></div>'
+            : '';
+        var priceHtml = price ? '<span class="xabia-card__price xabia-product-card__price">' + escAttr(price) + '</span>' : '';
+        var descHtml = desc ? '<p class="xabia-card__desc xabia-product-card__desc">' + escAttr(desc) + '</p>' : '';
+        var permalink = String(card.u || '').trim();
+        var titleHtml = /^https?:\/\//i.test(permalink)
+            ? '<a class="xabia-card__title xabia-product-card__title" href="' + escAttr(permalink) + '" target="_blank" rel="noopener">' + escAttr(title) + '</a>'
+            : '<span class="xabia-card__title xabia-product-card__title">' + escAttr(title) + '</span>';
+        var actionType = xabiaCardActionType(card);
+        var footer = '';
+        if (actionType === 'cart') {
+            var shop = renderShopPurchaseModuleHtml(card, escAttr, { compact: true });
+            if (shop) footer = '<div class="xabia-card__buy xabia-product-card__buy">' + shop + '</div>';
+        } else if (actionType === 'link' || /^(CALL|MAP|CART_PACK):/i.test(String(card.a || ''))) {
+            footer = renderUniversalLinkHtml(card, escAttr, decodeHtmlEntities);
+        }
+        return '<div class="xabia-card xabia-product-card xabia-shop-module">'
+            + '<div class="xabia-card__main xabia-product-card__main">'
+            + media
+            + '<div class="xabia-card__info xabia-product-card__info">'
+            + '<div class="xabia-card__headline xabia-product-card__headline">' + titleHtml + priceHtml + '</div>'
+            + xabiaUniversalMetaHtml(metaLeft, escAttr)
+            + descHtml
+            + '</div></div>'
+            + footer
+            + '</div>';
+    }
+
+    function renderProductCardHtml(card, escAttr, imagesBase) {
+        return renderUniversalCardHtml(card, escAttr, imagesBase);
+    }
+
+    function renderCartPurchaseCardHtml(id, title, escAttr, imagesBase, extras) {
+        extras = extras || {};
+        var pid = String(id || '').replace(/\D/g, '');
+        if (!pid) return '';
+        var name = String(title || extras.titleHint || '').replace(/\s+/g, ' ').trim();
+        if (/^id$/i.test(name)) name = String(extras.titleHint || '').trim();
+        return renderProductCardHtml({
+            t: name,
+            m: extras.desc || '',
+            p: extras.price || '',
+            i: extras.img || '',
+            a: 'CART:' + pid,
+            l: '',
+            u: extras.url || ''
+        }, escAttr, imagesBase);
+    }
+
+    function renderActionCardHtml(raw, imagesBase, escAttr, decodeHtmlEntities) {
+        var card = decodeActionCardPayload(raw);
+        if (!card || !card.t) return '';
+        return renderUniversalCardHtml(card, escAttr, imagesBase, decodeHtmlEntities);
+    }
+
+    function xabiaCardMetaHtml(meta, escAttr) {
+        var raw = String(meta || '').trim();
+        if (!raw) return '';
+        var parts = raw.split(/\s*[·|]\s*/).map(function(part) {
+            return String(part || '').trim();
+        }).filter(Boolean);
+        if (parts.length < 2) {
+            return '<p class="xabia-entity-card__desc">' + escAttr(raw) + '</p>';
+        }
+        return '<div class="xabia-entity-card__tags">' + parts.map(function(part) {
+            return '<span class="xabia-entity-card__tag">' + escAttr(part) + '</span>';
+        }).join('') + '</div>';
+    }
+
+    /**
+     * Convierte la respuesta del bot en HTML: enlaces, teléfono, imágenes, mapa.
+     * [ACTION:CALL:num] -> enlace tel:; [ACTION:URL:url] -> enlace; [ACTION:IMG:url] -> img; [ACTION:MAP:...] -> enlace a mapa.
+     */
+    function renderActions(text, imagesBase) {
+        if (!text) return '';
+        text = String(text);
+        imagesBase = String(imagesBase || '').trim();
+        function escAttr(s) {
+            return String(s).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/'/g, '&#39;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+        }
+        function decodeHtmlEntities(s) {
+            if (!s) return '';
+            var t = document.createElement('textarea');
+            t.innerHTML = String(s);
+            return t.value;
+        }
+        function renderAmeliaBookControl(serviceId) {
+            var sid = String(serviceId || '').replace(/\D/g, '');
+            if (!sid) return '';
+            var label = escAttr(xabiaI18n('actionBook', 'Reservar'));
+            var href = xabiaAmeliaBookingUrl(sid);
+            if (href) {
+                return '<a href="' + escAttr(href) + '" class="xabia-btn-book xabia-book-amelia xabia-book-amelia--link" data-engine="amelia" data-service-id="' + escAttr(sid) + '" target="_blank" rel="noopener">📅 ' + label + '</a>';
+            }
+            return '<button type="button" class="xabia-btn-book xabia-book-amelia" data-engine="amelia" data-service-id="' + escAttr(sid) + '">📅 ' + label + '</button>';
+        }
+        text = text.replace(/\[Imagen disponible:\s*\[ACTION:URL:([^\]]+)\]\s*\]/gi, function(_, url) {
+            return '[ACTION:IMG:' + String(url || '').trim() + ']';
+        });
+        text = text.replace(/\[Imagen disponible:\s*(https?:\/\/[^\s\]]+)\s*\]/gi, function(_, url) {
+            return renderActionImgHtml(url, imagesBase, escAttr);
+        });
+        text = text.replace(/\[ACTION:CALL:([^\]]+)\]/g, function(_, num) {
+            var tel = (num || '').replace(/\s+/g, '');
+            return '<a href="tel:' + escAttr(tel) + '" class="xabia-action xabia-action-call">📞 ' + escAttr(xabiaI18n('actionCall', 'Llamar')) + '</a>';
+        });
+        text = text.replace(/\[ACTION:URL:([^\]]+)\]/g, function(_, url) {
+            var href = decodeHtmlEntities((url || '').trim());
+            if (isLikelyImageUrl(href)) {
+                return renderActionImgHtml(href, imagesBase, escAttr);
+            }
+            return '<a href="' + escAttr(href) + '" target="_blank" rel="noopener" class="xabia-action xabia-action-url">🌐 ' + escAttr(xabiaI18n('actionOpenLink', 'Abrir enlace')) + '</a>';
+        });
+        text = text.replace(/\[ACTION:IMG:([^\]]+)\]/g, function(_, src) {
+            return renderActionImgHtml(src, imagesBase, escAttr);
+        });
+        text = text.replace(/\[ACTION:MAP:([^\]]+)\]/g, function(_, q) {
+            var query = encodeURIComponent((q || '').trim());
+            return '<a href="https://www.google.com/maps/search/?api=1&query=' + query + '" target="_blank" rel="noopener" class="xabia-action xabia-action-map">📍 ' + escAttr(xabiaI18n('actionViewMap', 'Ver en mapa')) + '</a>';
+        });
+
+        text = text.replace(/\[ACTION:CARD:([^\]]+)\]/g, function(_, raw) {
+            return renderActionCardHtml(raw, imagesBase, escAttr, decodeHtmlEntities);
+        });
+        
+        text = text.replace(/\[ACTION:CART:(?:ID\s*:\s*)?(\d+)\s*(?::\s*([^\]]+))?\]/gi, function(_, id, title) {
+            return renderCartPurchaseCardHtml(id, title, escAttr, imagesBase);
+        });
+        text = text.replace(/\[ACTION:CART:ID:\s*(?!\d)([^\]]+)\]/gi, function(_, title) {
+            var name = String(title || '').replace(/\s+/g, ' ').trim();
+            if (!name || /^id$/i.test(name)) return '';
+            return renderUniversalCardHtml({
+                t: name,
+                d: '',
+                m: '',
+                p: '',
+                i: '',
+                a: '',
+                l: '',
+                u: ''
+            }, escAttr, imagesBase, decodeHtmlEntities);
+        });
+        text = text.replace(/\[ACTION:CART:ID:\s*(?!\d)([^\]]+)\]/gi, function(_, title) {
+            var name = String(title || '').replace(/\s+/g, ' ').trim();
+            if (!name) return '';
+            return renderUniversalCardHtml({ t: name, d: '', m: '', p: '', i: '', a: '', l: '', u: '' }, escAttr, imagesBase, decodeHtmlEntities);
+        });
+        text = text.replace(/\[ACTION:CART_PACK:([^\]]+)\]/g, function(_, spec) {
+            var parts = String(spec || '').trim().split('|');
+            var idsPart = (parts[0] || '').trim();
+            var qtyPart = (parts[1] || '').trim();
+            var ids = idsPart.split(',').map(function(s) { return String(s).replace(/\D/g, ''); }).filter(Boolean);
+            if (!ids.length) return '';
+            var quantities = [];
+            if (qtyPart) {
+                qtyPart.split(',').forEach(function(s) {
+                    var n = parseInt(String(s).trim(), 10);
+                    quantities.push(isNaN(n) || n < 1 ? 1 : n);
+                });
+            }
+            while (quantities.length < ids.length) {
+                quantities.push(1);
+            }
+            quantities = quantities.slice(0, ids.length);
+            var wc = window.xabiaWooCart || {};
+            var tpl = wc.packUrlTemplate;
+            if (!tpl || String(tpl).indexOf('{ids}') === -1) {
+                return '';
+            }
+            var href = String(tpl).replace('{ids}', ids.join(',')).replace('{quantities}', quantities.join(','));
+            var lbl = wc.packCheckoutLabel || xabiaI18n('actionBuyPack', 'Comprar pack');
+            return '<a href="' + escAttr(href) + '" class="xabia-action xabia-action-url xabia-btn-cart-pack-remote" target="_blank" rel="noopener" data-pack-ids="' + escAttr(ids.join(',')) + '">🛒 ' + escAttr(lbl) + '</a>';
+        });
+        function xabiaDecodeUrlB64(b64) {
+            try {
+                var raw = String(b64 || '');
+                var pad = raw.length % 4 ? 4 - (raw.length % 4) : 0;
+                var s = raw.replace(/-/g, '+').replace(/_/g, '/') + (pad ? '==='.slice(0, pad) : '');
+                return atob(s);
+            } catch (e) { return ''; }
+        }
+        
+        text = text.replace(/\[ACTION:BOOK:[a-z0-9_-]+:(\d+):([^\]]+)\]/gi, function(_, id, b64) {
+            var href = xabiaDecodeUrlB64(b64);
+            if (!href) return '';
+            return '<a href="' + escAttr(href) + '" class="xabia-btn-book" data-id="' + escAttr(String(id)) + '" target="_blank" rel="noopener">📅 ' + escAttr(xabiaI18n('actionBook', 'Reservar')) + '</a>';
+        });
+        
+        text = text.replace(/\[ACTION:BOOK:amelia:(\d+)\]/g, function(_, id) {
+            return renderAmeliaBookControl(id);
+        });
+        
+        text = text.replace(/\[ACTION:BOOK:(\d+)\]/g, function(_, id) {
+            var pid = String(id || '').replace(/\D/g, '');
+            if (!pid) return '';
+            var eng = (window.xabiaReservas && window.xabiaReservas.engine) ? String(window.xabiaReservas.engine) : '';
+            if (eng === 'amelia') {
+                return renderAmeliaBookControl(pid);
+            }
+            if (eng !== 'amelia') {
+                var remote = (window.xabiaReservas && window.xabiaReservas.remoteSiteUrl) ? String(window.xabiaReservas.remoteSiteUrl).replace(/\/$/, '') : '';
+                var home = (window.xabiaReservas && window.xabiaReservas.homeUrl) ? String(window.xabiaReservas.homeUrl) : '';
+                var href = '';
+                if (remote) {
+                    // Remoto: el servidor debe enriquecer BOOK con URL completa; no inventar /?p=ID en el agente.
+                    href = remote + '/';
+                } else if (home) {
+                    var base = home.replace(/\/$/, '');
+                    var sep = base.indexOf('?') >= 0 ? '&' : '?';
+                    href = base + sep + 'p=' + pid;
+                }
+                if (!href) return '';
+                return '<a href="' + escAttr(href) + '" class="xabia-btn-book" data-id="' + escAttr(pid) + '" target="_blank" rel="noopener">📅 ' + escAttr(xabiaI18n('actionBook', 'Reservar')) + '</a>';
+            }
+            return '';
+        });
+        text = text.replace(/\[Imagen disponible:[^\]]*\]/gi, '');
+        return text;
+    }
+
+    function openXabiaImageLightbox(src) {
+        if (!src) return;
+        var $existing = $('#xabia-img-lightbox');
+        if ($existing.length) $existing.remove();
+        function escAttrLightbox(s) {
+            return String(s).replace(/"/g, '&quot;');
+        }
+        var $lb = $('<div id="xabia-img-lightbox" class="xabia-img-lightbox" role="dialog" aria-modal="true"></div>');
+        var $btn = $('<button type="button" class="xabia-img-lightbox__close" aria-label="' + escAttrLightbox(xabiaI18n('closeChat', 'Cerrar chat')) + '">&times;</button>');
+        var $img = $('<img class="xabia-img-lightbox__img" alt="">').attr('src', src);
+        $lb.append($btn, $img);
+        $('body').append($lb);
+        function closeLb() {
+            $lb.remove();
+            $(document).off('keydown.xabiaLightbox');
+        }
+        $lb.on('click', function(e) {
+            if (e.target === this || $(e.target).is('.xabia-img-lightbox__close')) closeLb();
+        });
+        $(document).on('keydown.xabiaLightbox', function(e) {
+            if (e.key === 'Escape') closeLb();
+        });
+    }
+
+    function applyChatboxI18n($box) {
+        if (!$box || !$box.length) return;
+        var ph = xabiaI18n('inputPlaceholder', 'Escribe aquí o pulsa el micro para hablar...');
+        $box.find('.xabia-input-field').attr('placeholder', ph);
+        $box.find('.xabia-voice-overlay__input').attr('placeholder', ph);
+        $box.find('.xabia-voice-overlay__close').attr('aria-label', xabiaI18n('closeOverlay', 'Cerrar'));
+    }
+
+    function makeContinueButton() {
+        return $('<button type="button" class="xabia-continue button button-small"></button>').text(xabiaI18n('continue', 'Continuar'));
+    }
+
+    function userInputMaxLines() {
+        var n = parseInt(xabiaChatSettings().inputMaxLines, 10);
+        return (n > 0 && n <= 20) ? n : 8;
+    }
+
+    function userInputMaxChars() {
+        var n = parseInt(xabiaChatSettings().inputMaxChars, 10);
+        return (n >= 80 && n <= 4000) ? n : 800;
+    }
+
+    function countInputLines(text) {
+        var val = String(text || '');
+        if (val === '') {
+            return 1;
+        }
+        return val.split(/\r\n|\r|\n/).length;
+    }
+
+    function clampUserInputText(text) {
+        text = String(text || '');
+        var maxChars = userInputMaxChars();
+        var maxLines = userInputMaxLines();
+        if (text.length > maxChars) {
+            text = text.substring(0, maxChars);
+        }
+        var lines = text.split(/\r\n|\r|\n/);
+        if (lines.length > maxLines) {
+            text = lines.slice(0, maxLines).join('\n');
+        }
+        return text;
+    }
+
+    function getInputLineMetrics(el) {
+        var cs = window.getComputedStyle(el);
+        var lineHeight = parseFloat(cs.lineHeight);
+        if (!lineHeight || isNaN(lineHeight)) {
+            lineHeight = (parseFloat(cs.fontSize) || 16) * 1.45;
+        }
+        var padTop = parseFloat(cs.paddingTop) || 0;
+        var padBottom = parseFloat(cs.paddingBottom) || 0;
+        var borderTop = parseFloat(cs.borderTopWidth) || 0;
+        var borderBottom = parseFloat(cs.borderBottomWidth) || 0;
+        return {
+            lineHeight: lineHeight,
+            verticalPad: padTop + padBottom + borderTop + borderBottom
+        };
+    }
+
+    function getInputMaxHeightPx($input) {
+        var el = $input[0];
+        var metrics = getInputLineMetrics(el);
+        return Math.ceil(metrics.lineHeight * userInputMaxLines() + metrics.verticalPad);
+    }
+
+    function syncInputLimitState($input) {
+        var $box = $input.closest('.xabia-chatbox');
+        var val = String($input.val() || '');
+        var atLimit = countInputLines(val) >= userInputMaxLines() || val.length >= userInputMaxChars();
+        $input.toggleClass('xabia-input-at-limit', atLimit);
+        if ($box.length) {
+            $box.toggleClass('xabia-input-at-limit', atLimit);
+        }
+        if (atLimit) {
+            $input.attr('title', xabiaI18n('inputTooLong', 'Máximo 8 líneas por mensaje.'));
+        } else {
+            $input.removeAttr('title');
+        }
+    }
+
+    function enforceInputLimits($input) {
+        if (!$input || !$input.length) {
+            return '';
+        }
+        var raw = String($input.val() || '');
+        var clamped = clampUserInputText(raw);
+        if (clamped !== raw) {
+            $input.val(clamped);
+        }
+        syncInputLimitState($input);
+        return clamped;
+    }
+
+    function autoSizeInput($input) {
+        if (!$input || !$input.length) return;
+        var el = $input[0];
+        var $box = $input.closest('.xabia-chatbox');
+        var metrics = getInputLineMetrics(el);
+        var minPx = Math.ceil(metrics.lineHeight + metrics.verticalPad);
+        var lineCap = getInputMaxHeightPx($input);
+
+        el.style.maxHeight = lineCap + 'px';
+        el.style.height = '0px';
+        el.style.overflowY = 'hidden';
+        var scrollHeight = el.scrollHeight;
+        el.style.height = Math.max(minPx, Math.min(scrollHeight, lineCap)) + 'px';
+        el.style.overflowY = 'hidden';
+
+        if ($box.length) {
+            if (document.activeElement === el || $box.find('.xabia-mic-listening').length) {
+                scrollMessages($box);
+            } else {
+                scrollMessages($box, { onlyIfNearBottom: true });
+            }
+        }
+    }
+
+    function messagesStream($box) {
+        var $stream = $box.find('.xabia-messages-stream');
+        return $stream.length ? $stream : $box.find('.xabia-chat-history');
+    }
+
+    function textScrollPane($box) {
+        var $pane = $box.find('.xabia-text-scroll').first();
+        if ($pane.length) {
+            return $pane;
+        }
+        return $box.find('.xabia-chat-messages, .xabia-chat-history').first();
+    }
+
+    function isTextScrollNearBottom($pane, threshold) {
+        threshold = typeof threshold === 'number' ? threshold : 56;
+        var el = $pane && $pane[0];
+        if (!el) {
+            return true;
+        }
+        return (el.scrollHeight - el.scrollTop - el.clientHeight) <= threshold;
+    }
+
+    function scrollMessages($box, opts) {
+        opts = opts || {};
+        var $pane = textScrollPane($box);
+        if (!$pane.length) {
+            return;
+        }
+        if (opts.onlyIfNearBottom && !isTextScrollNearBottom($pane)) {
+            return;
+        }
+        var el = $pane[0];
+        el.scrollTop = el.scrollHeight;
+    }
+
+    function chatIsOpenForGreeting($box) {
+        return $box.hasClass('is-active')
+            || $box.hasClass('xabia-chatbox--fullscreen')
+            || $box.hasClass('xabia-chatbox-shortcode-focus');
+    }
+
+    function maybeSpeakGreetingOnOpen($box) {
+        return;
+    }
+
+    function appendPendingVoiceMessage($box, transcript) {
+        var text = $.trim(String(transcript || ''));
+        if (!text) return;
+        var $history = messagesStream($box);
+        var $msg = $('<div class="xabia-msg user xabia-msg-pending-voice" data-xabia-pending="1"></div>');
+        $msg.append($('<span class="xabia-msg-content"></span>').text(text));
+        $history.append($msg);
+        scrollMessages($box);
+        syncChatUiState($box);
+    }
+
+    function countUserMessages($box) {
+        return messagesStream($box).find('.xabia-msg.user').length;
+    }
+
+    function parseStarterQuestions($box) {
+        var raw = $box.attr('data-starter-questions');
+        if (!raw) {
+            return [];
+        }
+        try {
+            var arr = JSON.parse(raw);
+            if (!Array.isArray(arr)) {
+                return [];
+            }
+            return arr.map(function(q) { return String(q || '').trim(); }).filter(Boolean);
+        } catch (e0) {
+            return [];
+        }
+    }
+
+    function starterSuggestionsEl($box) {
+        return $box.find('.xabia-starter-suggestions');
+    }
+
+    function hideStarterSuggestions($box) {
+        starterSuggestionsEl($box).attr('hidden', 'hidden').empty();
+    }
+
+    function renderStarterSuggestions($box, list) {
+        var $el = starterSuggestionsEl($box);
+        if (!$el.length) {
+            return;
+        }
+        $el.empty();
+        if (!list || !list.length || countUserMessages($box) > 0) {
+            $el.attr('hidden', 'hidden');
+            return;
+        }
+        list.forEach(function(q) {
+            var text = String(q || '').trim();
+            if (!text) {
+                return;
+            }
+            var $btn = $('<button type="button" class="xabia-starter-chip"></button>')
+                .attr('data-question', text)
+                .text(text);
+            $el.append($btn);
+        });
+        if ($el.children().length) {
+            $el.removeAttr('hidden');
+        } else {
+            $el.attr('hidden', 'hidden');
+        }
+    }
+
+    function syncStarterSuggestions($box) {
+        if (!$box || !$box.length) {
+            return;
+        }
+        if (countUserMessages($box) > 0) {
+            hideStarterSuggestions($box);
+            return;
+        }
+        renderStarterSuggestions($box, parseStarterQuestions($box));
+    }
+
+    function syncChatUiState($box) {
+        if (!$box || !$box.length || !$box.hasClass('xabia-ui-modern')) {
+            return;
+        }
+        var $input = $box.find('.xabia-input-field');
+        var textLen = $.trim($input.val()).length;
+        var hasConversation = countUserMessages($box) > 0;
+        var isEmpty = textLen === 0 && !hasConversation;
+        $box.toggleClass('xabia-state-empty', isEmpty);
+        $box.toggleClass('xabia-state-typing', !isEmpty);
+        var $hero = $box.find('.xabia-voice-hero');
+        if ($hero.length) {
+            var heroHidden = !isEmpty || $box.hasClass('xabia-conversation-open') || $box.hasClass('xabia-voice-open');
+            $hero.attr('aria-hidden', heroHidden ? 'true' : 'false');
+        }
+        syncStarterSuggestions($box);
+    }
+
+    function xabiaFindChatbox($, projectId) {
+        var id = String(projectId || '');
+        var $box = id ? $('#xabia-chatbox-' + id) : $();
+        if (!$box.length && id) {
+            $box = $('.xabia-chatbox[data-project="' + id.replace(/"/g, '') + '"]').first();
+        }
+        return $box;
+    }
+
+    function xabiaThinkingMarkHtml($box) {
+        var tpl = $box.find('template.xabia-dots-template').get(0);
+        if (tpl && tpl.innerHTML && String(tpl.innerHTML).indexOf('<svg') !== -1) {
+            return '<span class="xabia-thinking-mark" aria-hidden="true">' + tpl.innerHTML + '</span>';
+        }
+        var url = String($box.attr('data-dots-svg') || '');
+        if (!url) {
+            return '';
+        }
+        return '<img class="xabia-thinking-mark" src="' + url.replace(/"/g, '') + '" alt="" width="72" height="26">';
+    }
+
+    function xabiaSetThinkingPhase($box, phase) {
+        $box.find('.xabia-thinking-turn').attr('data-phase', String(phase));
+    }
+
+    function openVoiceOverlay($, $box, originEl) {
+        if (!$box || !$box.length) {
+            return false;
+        }
+        var overlay = $box.find('.xabia-voice-overlay').get(0);
+        if (!overlay) {
+            return false;
+        }
+        $box.addClass('xabia-voice-open');
+        document.body.classList.add('xabia-voice-open');
+        var rect = originEl && originEl.getBoundingClientRect ? originEl.getBoundingClientRect() : null;
+        var originX = rect ? (rect.left + rect.width / 2) : (window.innerWidth / 2);
+        var originY = rect ? (rect.top + rect.height / 2) : (window.innerHeight / 2);
+        overlay.hidden = false;
+        overlay.removeAttribute('hidden');
+        overlay.classList.remove('is-active');
+        overlay.style.clipPath = 'circle(0% at ' + originX + 'px ' + originY + 'px)';
+        void overlay.offsetWidth;
+        overlay.classList.add('is-active');
+        if (typeof window.requestAnimationFrame === 'function') {
+            window.requestAnimationFrame(function() {
+                overlay.style.clipPath = 'circle(160% at ' + originX + 'px ' + originY + 'px)';
+            });
+        } else {
+            overlay.style.clipPath = 'circle(160% at ' + originX + 'px ' + originY + 'px)';
+        }
+        $box.find('.xabia-voice-overlay__title').text(xabiaI18n('voiceListeningTitle', 'Te escucho...'));
+        var $live = $box.find('.xabia-voice-overlay__transcript');
+        if (!$live.text() || $live.attr('data-idle') === '1') {
+            $live.attr('data-idle', '1').text('');
+        }
+        return true;
+    }
+
+    function closeVoiceOverlay($, $box) {
+        if (!$box || !$box.length) {
+            return;
+        }
+        var overlay = $box.find('.xabia-voice-overlay').get(0);
+        if (!overlay || !overlay.classList.contains('is-active')) {
+            $box.removeClass('xabia-voice-open');
+            if (!$('.xabia-chatbox.xabia-voice-open').length) {
+                document.body.classList.remove('xabia-voice-open');
+            }
+            return;
+        }
+        overlay.style.clipPath = 'circle(0% at 50% 50%)';
+        window.setTimeout(function() {
+            overlay.classList.remove('is-active');
+            overlay.hidden = true;
+            $box.removeClass('xabia-voice-open');
+            if (!$('.xabia-chatbox.xabia-voice-open').length) {
+                document.body.classList.remove('xabia-voice-open');
+            }
+        }, 450);
+    }
+
+    function enterConversation($, $box) {
+        if (!$box || !$box.length) {
+            return;
+        }
+        var kiosk = $box.hasClass('xabia-present-kiosk');
+        if (!kiosk) {
+            $box.addClass('xabia-conversation-open');
+            document.body.classList.add('xabia-conversation-open');
+        }
+        closeVoiceOverlay($, $box);
+    }
+
+    function xabiaApplyColorSchemes() {
+        var mq = window.matchMedia ? window.matchMedia('(prefers-color-scheme: dark)') : null;
+        function paint() {
+            document.querySelectorAll('[data-color-scheme]').forEach(function(el) {
+                var scheme = el.getAttribute('data-color-scheme') || 'light';
+                if (scheme === 'dark' || (scheme === 'auto' && mq && mq.matches)) {
+                    el.setAttribute('data-theme', 'dark');
+                    return;
+                }
+                el.removeAttribute('data-theme');
+            });
+        }
+        paint();
+        if (mq && !window.__xabiaSchemeBound) {
+            window.__xabiaSchemeBound = true;
+            if (mq.addEventListener) {
+                mq.addEventListener('change', paint);
+            } else if (mq.addListener) {
+                mq.addListener(paint);
+            }
+        }
+    }
+
+    function renderBotHtml(raw, imagesBase) {
+        if (!raw) return '';
+        var text = String(raw);
+        /* El modelo a veces emite la secuencia literal \n. Si se pierde la barra queda "nn". */
+        text = text.replace(/\\r\\n/g, '\n').replace(/\\n/g, '\n').replace(/\\r/g, '\n');
+        imagesBase = String(imagesBase || '').trim();
+        function escAttr(s) {
+            return String(s).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/'/g, '&#39;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+        }
+        function decodeHtmlEntities(s) {
+            if (!s) return '';
+            var t = document.createElement('textarea');
+            t.innerHTML = String(s);
+            return t.value;
+        }
+        var shopFold = xabiaCollapseShopLeads(text, imagesBase, escAttr, decodeHtmlEntities);
+        text = shopFold.text;
+        /* Fichas CARD antes de listas/markdown para que no queden inline dentro de <li>. */
+        var cardHolders = [];
+        text = text.replace(/\[ACTION:CARD:([^\]]+)\]/g, function(_, rawPayload) {
+            var html = renderActionCardHtml(rawPayload, imagesBase, escAttr, decodeHtmlEntities);
+            if (!html) return '';
+            var token = '%%XABIA_CARD_' + cardHolders.length + '%%';
+            cardHolders.push(html);
+            return '\n\n' + token + '\n\n';
+        });
+        /* Desescapar strong ya enviada por el servidor. */
+        text = text.replace(/&lt;strong&gt;/gi, '<strong>').replace(/&lt;\/strong&gt;/gi, '</strong>');
+        text = text.replace(/&lt;em&gt;/gi, '<em>').replace(/&lt;\/em&gt;/gi, '</em>');
+        /* Viñetas markdown en línea ("…: * **Título** … * **Otro**") → una por línea. */
+        text = text.replace(/([^\n])\s+\*\s+(?=\*\*)/g, '$1\n* ');
+        text = text.replace(/([^\n])\s+[-•]\s+(?=\*\*)/g, '$1\n- ');
+        /* Negrita / cursiva markdown. */
+        text = text.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+        text = text.replace(/(^|[^\*])\*([^*\n]+)\*(?!\*)/g, '$1<em>$2</em>');
+        /* Markdown [label](https://…) → ACTION:URL para el botón 🌐. */
+        text = text.replace(/\[([^\]]*)\]\((https?:\/\/[^\s\)]+)\)/g, function(_, _label, url) {
+            var href = String(url || '').replace(/[.,;)]+$/, '');
+            return href ? ('[ACTION:URL:' + href + ']') : _;
+        });
+        /* Listas "- …" / "* …" en líneas propias → <ul>. */
+        text = text.replace(/(?:^|\n)((?:\s*[-*•]\s+.+(?:\n|$))+)/g, function(_, block) {
+            var items = String(block).trim().split(/\n/).map(function(line) {
+                return line.replace(/^\s*[-*•]\s+/, '').trim();
+            }).filter(Boolean);
+            if (!items.length) return block;
+            return '\n<ul class="xabia-msg-list">' + items.map(function(it) {
+                return '<li>' + it + '</li>';
+            }).join('') + '</ul>\n';
+        });
+        /* Saltos de línea restantes (sin romper listas). */
+        text = text.replace(/\n/g, '<br>');
+        text = text.replace(/(?:<br>\s*){3,}/g, '<br><br>');
+        text = text.replace(/<br>\s*(<ul\b)/gi, '$1').replace(/(<\/ul>)\s*<br>/gi, '$1');
+        text = renderActions(text, imagesBase);
+        if (shopFold.holders.length) {
+            for (var s = 0; s < shopFold.holders.length; s++) {
+                var shopToken = '%%XABIA_SHOP_' + s + '%%';
+                if (text.indexOf(shopToken) !== -1) {
+                    text = text.split(shopToken).join(shopFold.holders[s]);
+                } else {
+                    text += shopFold.holders[s];
+                }
+            }
+        }
+        if (cardHolders.length) {
+            for (var i = 0; i < cardHolders.length; i++) {
+                text = text.split('%%XABIA_CARD_' + i + '%%').join(cardHolders[i]);
+            }
+            text = text.replace(/(?:<br>\s*)+(<div class="xabia-entity-card\b)/g, '$1');
+        }
+        if (text.indexOf('xabia-entity-card') !== -1) {
+            text = wrapEntityCardDecks(text);
+        }
+        text = text.replace(/(?:<br>\s*)+(<div class="xabia-(?:card|product-card)\b)/g, '$1');
+        text = text.replace(/(?:^|<br>\s*)-\s*(?=<div class="xabia-(?:card|product-card)\b)/g, '');
+        if (text.indexOf('xabia-card') !== -1 || text.indexOf('xabia-product-card') !== -1) {
+            text = wrapProductCardGrid(text);
+        }
+        return text;
+    }
+
+    function xabiaIsProductCard(card) {
+        if (!card || !String(card.t || '').trim()) return false;
+        var action = String(card.a || '').trim();
+        if (/^CART:/i.test(action)) return true;
+        if (/^(BOOK|CALL|MAP|URL|CART_PACK):/i.test(action)) return false;
+        return !!(card.u || card.i || card.p);
+    }
+
+    function xabiaCleanShopDesc(raw) {
+        var desc = String(raw || '');
+        desc = desc.replace(/(?:URL:\s*)?https?:\/\/[^\s)]+/gi, ' ');
+        desc = desc.replace(/\s+/g, ' ').replace(/^[\s,.;:)\]|/-]+|[\s,.;:(\[|/-]+$/g, '').trim();
+        return desc;
+    }
+
+    function xabiaFormatShopPrice(raw) {
+        var price = String(raw || '').replace(/\s+/g, ' ').trim();
+        if (!price) return '';
+        var simple = price.match(/^(\d{1,5})(?:[.,](\d{1,2}))?\s*(?:€|eur)?$/i);
+        if (!simple) return price;
+        var cents = simple[2] ? (simple[2] + '00').slice(0, 2) : '';
+        return cents ? (simple[1] + ',' + cents + ' €') : (simple[1] + ' €');
+    }
+
+    function xabiaParseProductBullet(line) {
+        var raw = String(line || '').trim();
+        if (!/^[-*•]\s+\S/.test(raw) || raw.length > 500) return null;
+        var body = raw.replace(/^[-*•]\s+/, '').trim();
+        var img = '';
+        var mdImg = body.match(/!\[[^\]]*\]\((https?:\/\/[^)\s]+)\)/i);
+        if (mdImg && isLikelyImageUrl(mdImg[1])) img = mdImg[1].trim();
+        var avail = body.match(/\[Imagen disponible:\s*(https?:\/\/[^\s\]]+)\s*\]/i);
+        if (!img && avail && isLikelyImageUrl(avail[1])) img = avail[1].trim();
+        var actionImg = body.match(/\[ACTION:IMG:\s*([^\]]+)\]/i);
+        if (!img && actionImg && isLikelyImageUrl(actionImg[1])) img = actionImg[1].trim();
+        body = body.replace(/!\[[^\]]*\]\((https?:\/\/[^)\s]+)\)/gi, ' ');
+        body = body.replace(/\[Imagen disponible:[^\]]*\]/gi, ' ');
+        body = body.replace(/\[ACTION:IMG:[^\]]*\]/gi, ' ');
+        var title = '';
+        var pageUrl = '';
+        var linked = body.match(/\[([^\]]+)\]\(\s*(?:URL:\s*)?(https?:\/\/[^)\s]+)\s*\)/i);
+        if (linked) {
+            title = linked[1];
+            var href = String(linked[2] || '').trim();
+            if (isLikelyImageUrl(href)) {
+                if (!img) img = href;
+            } else {
+                pageUrl = href;
+            }
+            body = body.replace(linked[0], ' ');
+        }
+        var desc = '';
+        var colon = body.match(/:\s*(\S[\s\S]*)$/);
+        if (colon) {
+            desc = colon[1];
+            body = body.slice(0, colon.index);
+        }
+        if (!title) {
+            body = body.replace(/\[([^\]]+)\]\([^)\s]+\)/g, '$1');
+        }
+        title = String(title || body).replace(/[*_]+/g, ' ').replace(/\s+/g, ' ').trim();
+        desc = xabiaCleanShopDesc(desc);
+        if (!title || title.length > 140) return null;
+        if (!linked && !img && !desc && title.length > 80) return null;
+        var price = '';
+        var priceMatch = (title + ' ' + desc).match(/((?:€|\$)\s*\d{1,5}(?:[.,]\d{1,2})?|\d{1,5}(?:[.,]\d{1,2})?\s*(?:€|eur))/i);
+        if (priceMatch) price = String(priceMatch[1] || '').trim();
+        return { title: title, img: img, desc: desc, url: pageUrl, price: price };
+    }
+
+    function xabiaPeelShopLead(before) {
+        var lines = String(before || '').replace(/\s+$/, '').split('\n');
+        var i = lines.length - 1;
+        while (i >= 0 && String(lines[i] || '').trim() === '') i -= 1;
+        if (i < 0) {
+            return { rest: before, img: '', desc: '', titleHint: '', url: '', price: '' };
+        }
+        var desc = '';
+        var img = '';
+        var titleHint = '';
+        var pageUrl = '';
+        var price = '';
+        var sawBullet = false;
+        var sawImg = false;
+        var last = String(lines[i] || '').trim();
+        if (/^:\s*\S/.test(last) && last.length < 400) {
+            desc = last.replace(/^:\s*/, '').trim();
+            i -= 1;
+            while (i >= 0 && String(lines[i] || '').trim() === '') i -= 1;
+            last = i >= 0 ? String(lines[i] || '').trim() : '';
+        }
+        var imgMatch = last.match(/^\[ACTION:IMG:\s*([^\]]+)\]$/i)
+            || last.match(/^\[Imagen disponible:\s*(https?:\/\/[^\s\]]+)\s*\]$/i)
+            || last.match(/^!\[[^\]]*\]\((https?:\/\/[^)\s]+)\)$/i);
+        if (imgMatch && isLikelyImageUrl(imgMatch[1])) {
+            img = String(imgMatch[1] || '').trim();
+            sawImg = true;
+            i -= 1;
+            while (i >= 0 && String(lines[i] || '').trim() === '') i -= 1;
+            last = i >= 0 ? String(lines[i] || '').trim() : '';
+        }
+        var bullet = i >= 0 ? xabiaParseProductBullet(last) : null;
+        if (bullet) {
+            titleHint = bullet.title;
+            if (bullet.img) img = img || bullet.img;
+            if (bullet.url) pageUrl = bullet.url;
+            if (bullet.desc && bullet.desc.length > String(desc || '').length) desc = bullet.desc;
+            if (bullet.price) price = bullet.price;
+            sawBullet = true;
+            i -= 1;
+        }
+        if (!sawBullet && !sawImg) {
+            return { rest: before, img: '', desc: '', titleHint: '', url: '', price: '' };
+        }
+        if (!price) {
+            var priceInDesc = String(desc || '').match(/((?:€|\$)\s*\d{1,5}(?:[.,]\d{1,2})?|\d{1,5}(?:[.,]\d{1,2})?\s*(?:€|eur))/i);
+            if (priceInDesc) price = String(priceInDesc[1] || '').trim();
+        }
+        return {
+            rest: lines.slice(0, i + 1).join('\n'),
+            img: img,
+            desc: xabiaCleanShopDesc(desc),
+            titleHint: titleHint,
+            url: pageUrl,
+            price: price
+        };
+    }
+
+    function xabiaPeelTitleSentence(before, title) {
+        var name = String(title || '').replace(/\s+/g, ' ').trim();
+        if (!name) return { rest: before, desc: '' };
+        var lines = String(before || '').split('\n');
+        var i = lines.length - 1;
+        while (i >= 0 && String(lines[i] || '').trim() === '') i -= 1;
+        if (i < 0) return { rest: before, desc: '' };
+        var line = String(lines[i] || '').trim().replace(/^[-*•]\s+/, '');
+        var escaped = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        var match = line.match(new RegExp('^' + escaped + '\\s*:\\s*(.+)$', 'i'));
+        if (!match) return { rest: before, desc: '' };
+        lines.splice(i, 1);
+        return { rest: lines.join('\n'), desc: xabiaCleanShopDesc(match[1]) };
+    }
+
+    function xabiaRenderFoldedShop(actionBody, lead, imagesBase, escAttr, decodeHtmlEntities) {
+        var body = String(actionBody || '');
+        var card = null;
+        if (/^CARD:/i.test(body)) {
+            card = decodeActionCardPayload(body.slice(5));
+        } else {
+            var cart = body.match(/^CART:(?:ID\s*:\s*)?(\d+)\s*(?::\s*([\s\S]*))?$/i);
+            if (!cart) return '';
+            var name = String(cart[2] || lead.titleHint || '').replace(/\s+/g, ' ').trim();
+            if (/^id$/i.test(name)) name = String(lead.titleHint || '').trim();
+            card = {
+                t: name,
+                m: '',
+                p: '',
+                i: '',
+                a: 'CART:' + cart[1],
+                l: '',
+                u: lead.url || ''
+            };
+        }
+        if (!card) return '';
+        if (!card.t && lead.titleHint) card.t = lead.titleHint;
+        if (lead.img && !card.i && !card.image && !card.img) {
+            card.i = lead.img;
+            card.image = lead.img;
+            card.img = lead.img;
+        }
+        if (!card.p && lead.price) card.p = lead.price;
+        if (lead.url && !card.u) card.u = lead.url;
+        if (lead.desc) card.m = lead.desc;
+        if (!xabiaIsProductCard(card)) {
+            return renderActionCardHtml(body.replace(/^CARD:/i, ''), imagesBase, escAttr, decodeHtmlEntities);
+        }
+        return renderProductCardHtml(card, escAttr, imagesBase);
+    }
+
+    function xabiaCollapseShopLeads(text, imagesBase, escAttr, decodeHtmlEntities) {
+        var source = String(text || '');
+        var re = /\[ACTION:(CARD:[^\]]+|CART:(?:ID\s*:\s*)?[^\]]+)\]/gi;
+        var holders = [];
+        var out = '';
+        var last = 0;
+        var match;
+        while ((match = re.exec(source))) {
+            var kind = match[1];
+            var isShop = /^CART:/i.test(kind);
+            if (!isShop && /^CARD:/i.test(kind)) {
+                isShop = xabiaIsProductCard(decodeActionCardPayload(kind.slice(5)));
+            }
+            if (!isShop) continue;
+            var before = source.slice(last, match.index);
+            var lead = xabiaPeelShopLead(before);
+            var html = xabiaRenderFoldedShop(kind, lead, imagesBase, escAttr, decodeHtmlEntities);
+            var rest = lead.rest;
+            if (!html) {
+                var namedOnly = String(kind).match(/^CART:ID:\s*(?!\d)([\s\S]+)$/i);
+                if (namedOnly) {
+                    var namedTitle = String(namedOnly[1] || '').replace(/\s+/g, ' ').trim();
+                    if (namedTitle) {
+                        var base = (lead.img || lead.desc || lead.titleHint || lead.url) ? lead.rest : before;
+                        var sentence = xabiaPeelTitleSentence(base, namedTitle);
+                        html = renderUniversalCardHtml({
+                            t: namedTitle,
+                            d: lead.desc || sentence.desc,
+                            m: '',
+                            p: '',
+                            i: lead.img || '',
+                            a: '',
+                            l: '',
+                            u: lead.url || ''
+                        }, escAttr, imagesBase, decodeHtmlEntities);
+                        rest = sentence.desc ? sentence.rest : base;
+                    }
+                }
+            }
+            if (!html) continue;
+            out += rest;
+            holders.push(html);
+            out += '\n%%XABIA_SHOP_' + (holders.length - 1) + '%%\n';
+            last = match.index + match[0].length;
+        }
+        out += source.slice(last);
+        return { text: out, holders: holders };
+    }
+
+    function sliceBalancedDiv(html, start) {
+        var depth = 0;
+        var i = start;
+        while (i < html.length) {
+            if (html.slice(i, i + 4) === '<div') {
+                depth += 1;
+                i += 4;
+                continue;
+            }
+            if (html.slice(i, i + 6) === '</div>') {
+                depth -= 1;
+                i += 6;
+                if (depth === 0) {
+                    return html.slice(start, i);
+                }
+                continue;
+            }
+            i += 1;
+        }
+        return html.slice(start);
+    }
+
+    function wrapEntityCardDecks(html) {
+        var source = String(html || '');
+        var re = /<div class="xabia-entity-card\b/g;
+        var cards = [];
+        var match;
+        while ((match = re.exec(source))) {
+            var chunk = sliceBalancedDiv(source, match.index);
+            cards.push({ start: match.index, end: match.index + chunk.length, html: chunk });
+            re.lastIndex = match.index + chunk.length;
+        }
+        if (!cards.length) {
+            return source;
+        }
+        var out = '';
+        var cursor = 0;
+        var i = 0;
+        while (i < cards.length) {
+            var group = [cards[i]];
+            var end = cards[i].end;
+            var j = i + 1;
+            while (j < cards.length) {
+                var between = source.slice(end, cards[j].start);
+                if (!/^(?:\s|<br\s*\/?>)*$/i.test(between)) {
+                    break;
+                }
+                group.push(cards[j]);
+                end = cards[j].end;
+                j += 1;
+            }
+            out += source.slice(cursor, group[0].start);
+            if (group.length > 1) {
+                out += '<div class="xabia-cards-deck">';
+                group.forEach(function(card) {
+                    out += card.html;
+                });
+                out += '</div>';
+            } else {
+                out += group[0].html;
+            }
+            cursor = end;
+            i = j;
+        }
+        out += source.slice(cursor);
+        return out;
+    }
+
+    function wrapProductCardGrid(html) {
+        var source = String(html || '');
+        var re = /<div class="xabia-card\b/g;
+        var cards = [];
+        var match;
+        while ((match = re.exec(source))) {
+            var chunk = sliceBalancedDiv(source, match.index);
+            cards.push({ start: match.index, end: match.index + chunk.length, html: chunk });
+            re.lastIndex = match.index + chunk.length;
+        }
+        if (cards.length < 2) {
+            return source;
+        }
+        var out = '';
+        var cursor = 0;
+        var i = 0;
+        while (i < cards.length) {
+            var group = [cards[i]];
+            var end = cards[i].end;
+            var j = i + 1;
+            while (j < cards.length) {
+                var between = source.slice(end, cards[j].start);
+                if (!/^(?:\s|<br\s*\/?>)*$/i.test(between)) {
+                    break;
+                }
+                group.push(cards[j]);
+                end = cards[j].end;
+                j += 1;
+            }
+            out += source.slice(cursor, group[0].start);
+            if (group.length > 1) {
+                out += '<div class="xabia-cards-grid xabia-products-grid">';
+                group.forEach(function(card) {
+                    out += card.html;
+                });
+                out += '</div>';
+            } else {
+                out += group[0].html;
+            }
+            cursor = end;
+            i = j;
+        }
+        out += source.slice(cursor);
+        return out;
+    }
+
+    function xabiaVisibleStreamRaw(raw) {
+        return String(raw || '').replace(/\[ACTION:(?:CARD|CART_PACK|CART|URL|CALL|BOOK|MAP|IMG):[^\]]*$/i, '');
+    }
+
+    function xabiaPreferCardRaw(server, streamed) {
+        server = String(server || '');
+        streamed = String(streamed || '');
+        function count(text) {
+            return (text.match(/\[ACTION:CARD:[^\]]+\]/g) || []).length;
+        }
+        if (count(streamed) > count(server)) {
+            return streamed;
+        }
+        return server || streamed;
+    }
+
+    function chatboxImagesBase($box) {
+        if (!$box || !$box.length) return '';
+        var base = $box.data('imagesBase');
+        if (base === undefined || base === null || String(base) === '') {
+            base = $box.attr('data-images-base');
+        }
+        return base ? String(base).trim() : '';
+    }
+
+    function appendBotMessage($box, $history, raw, opts) {
+        opts = opts || {};
+        var text = String(raw || '');
+        var $botDiv = $('<div class="xabia-msg bot"></div>').attr('data-raw', raw);
+        var $content = $('<div class="xabia-msg-content"></div>').html(renderBotHtml(text, chatboxImagesBase($box)));
+        $botDiv.append($content);
+        $history.append($botDiv);
+        finishBotMessage($box, $history, $botDiv, raw, opts);
+    }
+
+    function finishBotMessage($box, $history, $botDiv, raw, opts) {
+        opts = opts || {};
+        $botDiv.removeClass('xabia-msg-typing');
+        $botDiv.find('.xabia-continue').remove();
+        attachMsgSpeakButton($box, $botDiv, raw);
+        if (opts.truncated || xabiaReplyLooksCut(raw)) {
+            var $speak = $botDiv.find('.xabia-msg-speak').first();
+            var $more = makeContinueButton();
+            if ($speak.length) {
+                $speak.before($more);
+            } else {
+                $botDiv.append($more);
+            }
+        }
+        var spoken = opts.speakText != null ? String(opts.speakText) : String(raw || '');
+        if ($.trim(spoken)) {
+            speakText($box, spoken);
+        }
+        scrollMessages($box);
+        syncChatUiState($box);
+    }
+
+    function xabiaReplyLooksCut(raw) {
+        var text = String(raw || '').replace(/\s+$/, '');
+        if (text.length < 40) return false;
+        if (/\[ACTION:(?:CARD|CART_PACK|CART|URL|CALL|BOOK|MAP|IMG):[^\]]*$/i.test(text)) return true;
+        var lines = text.split('\n');
+        var last = String(lines[lines.length - 1] || '').trim();
+        return last === '-' || last === '*' || last === '•' || last === '- **' || last === '**';
+    }
+
+    /**
+     * Lip-sync: scrub del texto por tiempo (reloj) + recalibración onboundary.
+     * Evita quedarse cerrada tras la 1.ª palabra / 1.er speak.
+     */
+    /* Aperturas más contenidas: menos contraste = menos “pulsos” visuales. */
+    var XABIA_VISEMES = {
+        a: { y: 0.72, x: 1.1, o: 1 },
+        á: { y: 0.72, x: 1.1, o: 1 },
+        e: { y: 0.5, x: 1.04, o: 1 },
+        é: { y: 0.5, x: 1.04, o: 1 },
+        i: { y: 0.34, x: 1.1, o: 1 },
+        í: { y: 0.34, x: 1.1, o: 1 },
+        y: { y: 0.34, x: 1.08, o: 1 },
+        o: { y: 0.58, x: 0.78, o: 1 },
+        ó: { y: 0.58, x: 0.78, o: 1 },
+        u: { y: 0.36, x: 0.76, o: 1 },
+        ú: { y: 0.36, x: 0.76, o: 1 },
+        ü: { y: 0.36, x: 0.76, o: 1 },
+        w: { y: 0.36, x: 0.76, o: 1 },
+        m: { y: 0.18, x: 0.95, o: 0.9 },
+        b: { y: 0.18, x: 0.95, o: 0.9 },
+        p: { y: 0.18, x: 0.95, o: 0.9 },
+        f: { y: 0.28, x: 1.04, o: 1 },
+        v: { y: 0.28, x: 1.04, o: 1 },
+        _: { y: 0.32, x: 0.98, o: 1 },
+        rest: { y: 0.3, x: 0.96, o: 1 },
+        silent: { y: 0, x: 0.9, o: 0 }
+    };
+
+    var xabiaLipSync = {
+        mouths: [],
+        $box: null,
+        speakText: '',
+        rate: 0.92,
+        active: false,
+        t0: 0,
+        keepAlive: 0,
+        resumeWatch: 0,
+        speakToken: 0,
+        htmlAudio: null,
+        burstTimers: [],
+        utterance: null,
+        audioCtx: null,
+        analyser: null,
+        source: null,
+        data: null,
+        audioEl: null,
+        onAudioPause: null,
+        onAudioEnded: null,
+        audioRaf: 0,
+        /* 0: no adelantar (adelantar hacía que la boca acabara antes que la voz) */
+        leadMs: 0,
+        endWatch: 0,
+        /* Mínimo entre cambios de forma (menos pulsos, misma sincronía gruesa) */
+        visemeHoldMs: 85,
+        lastVisemeAt: 0,
+        lastVisemeKey: ''
+    };
+
+    function collectAvatarMouths($box) {
+        var list = [];
+        var seen = typeof WeakSet === 'function' ? new WeakSet() : null;
+        function add(node) {
+            if (!node || (seen && seen.has(node))) return;
+            if (seen) seen.add(node);
+            list.push(node);
+        }
+        if ($box && $box.length) {
+            $box.find('.x-avatar-mouth').each(function() { add(this); });
+        }
+        try {
+            document.querySelectorAll(
+                '.xabia-immersive-avatar-stage .x-avatar-mouth, .xabia-interface-trigger .x-avatar-mouth'
+            ).forEach(add);
+        } catch (eQ) {}
+        return list;
+    }
+
+    function refreshMouthTargets($box) {
+        if ($box && $box.length) {
+            xabiaLipSync.$box = $box;
+        }
+        xabiaLipSync.mouths = collectAvatarMouths(xabiaLipSync.$box);
+        return xabiaLipSync.mouths.length > 0;
+    }
+
+    function setMouthVisual(mouths, opacity, scaleY, scaleX) {
+        var i;
+        var sx = (typeof scaleX === 'number') ? scaleX : 1;
+        var sy = (typeof scaleY === 'number') ? scaleY : 0;
+        for (i = 0; i < mouths.length; i++) {
+            mouths[i].style.transition = opacity > 0.05 ? 'none' : 'opacity 0.14s ease';
+            mouths[i].style.opacity = String(opacity);
+            mouths[i].style.transform = 'scaleX(' + sx + ') scaleY(' + sy + ')';
+            if (opacity > 0.05) mouths[i].classList.add('is-speaking');
+            else mouths[i].classList.remove('is-speaking');
+        }
+    }
+
+    function visemeKey(vis) {
+        if (!vis) return '';
+        return String(vis.y) + ':' + String(vis.x) + ':' + String(vis.o);
+    }
+
+    function applyViseme(vis, force) {
+        if (!vis) return;
+        if (!xabiaLipSync.mouths || !xabiaLipSync.mouths.length) {
+            refreshMouthTargets(xabiaLipSync.$box);
+        }
+        if (!xabiaLipSync.mouths || !xabiaLipSync.mouths.length) return;
+        var key = visemeKey(vis);
+        var now = performance.now();
+        if (!force
+            && key === xabiaLipSync.lastVisemeKey
+        ) {
+            return;
+        }
+        if (!force
+            && xabiaLipSync.lastVisemeKey
+            && (now - xabiaLipSync.lastVisemeAt) < (xabiaLipSync.visemeHoldMs || 85)
+        ) {
+            return;
+        }
+        xabiaLipSync.lastVisemeKey = key;
+        xabiaLipSync.lastVisemeAt = now;
+        setMouthVisual(xabiaLipSync.mouths, vis.o, vis.y, vis.x);
+    }
+
+    function visemeForChar(ch) {
+        if (!ch) return XABIA_VISEMES.rest;
+        ch = String(ch).toLowerCase();
+        if (/[\s]/.test(ch)) return XABIA_VISEMES.rest;
+        if (/[,.;:!?…—–\-¿¡"'«»()\[\]{}]/.test(ch)) return XABIA_VISEMES.rest;
+        if (XABIA_VISEMES[ch]) return XABIA_VISEMES[ch];
+        if (/[aeiouáéíóúü]/.test(ch)) return XABIA_VISEMES.a;
+        return XABIA_VISEMES._;
+    }
+
+    function updateMouthShape(ch) {
+        applyViseme(visemeForChar(ch));
+    }
+
+    function clearBurstTimers() {
+        var i;
+        for (i = 0; i < xabiaLipSync.burstTimers.length; i++) {
+            clearTimeout(xabiaLipSync.burstTimers[i]);
+        }
+        xabiaLipSync.burstTimers = [];
+    }
+
+    function clearKeepAlive() {
+        if (xabiaLipSync.keepAlive) {
+            clearTimeout(xabiaLipSync.keepAlive);
+            xabiaLipSync.keepAlive = 0;
+        }
+        if (xabiaLipSync.endWatch) {
+            clearTimeout(xabiaLipSync.endWatch);
+            xabiaLipSync.endWatch = 0;
+        }
+    }
+
+    /**
+     * Ritmo lento a propósito: speechSynthesis en ES ~11–13 chars/s a rate≈1.
+     * Valores bajos hacían que el scrub terminara antes y dejara la última postura.
+     */
+    function msPerChar(rate) {
+        var r = rate && rate > 0 ? rate : 1;
+        return 98 / r;
+    }
+
+    /** Caracter útil cerca del índice estimado (salta espacios hacia vocal). */
+    function pickVisemeCharNear(text, idx) {
+        if (!text) return 'e';
+        var n = text.length;
+        var i = Math.max(0, Math.min(n - 1, idx | 0));
+        var k;
+        for (k = 0; k < 12; k++) {
+            if (i + k < n && /[aeiouáéíóúüAEIOUÁÉÍÓÚÜ]/.test(text.charAt(i + k))) {
+                return text.charAt(i + k).toLowerCase();
+            }
+            if (i - k >= 0 && /[aeiouáéíóúüAEIOUÁÉÍÓÚÜ]/.test(text.charAt(i - k))) {
+                return text.charAt(i - k).toLowerCase();
+            }
+        }
+        for (k = 0; k < 8; k++) {
+            if (i + k < n && /[a-zA-ZáéíóúüñÁÉÍÓÚÜÑ]/.test(text.charAt(i + k))) {
+                return text.charAt(i + k).toLowerCase();
+            }
+        }
+        return 'e';
+    }
+
+    function isSpeechEngineBusy() {
+        try {
+            if (!window.speechSynthesis) return false;
+            return !!(window.speechSynthesis.speaking || window.speechSynthesis.pending);
+        } catch (eBusy) {
+            return false;
+        }
+    }
+
+    function closeMouthNow() {
+        refreshMouthTargets(xabiaLipSync.$box);
+        xabiaLipSync.lastVisemeKey = '';
+        xabiaLipSync.lastVisemeAt = 0;
+        setMouthVisual(xabiaLipSync.mouths || [], 0, 0, 0.9);
+    }
+
+    function scrubMouthByClock() {
+        if (!xabiaLipSync.active) return;
+        refreshMouthTargets(xabiaLipSync.$box);
+
+        var engineBusy = isSpeechEngineBusy();
+        var elapsed = performance.now() - xabiaLipSync.t0;
+        /* Si el motor ya calló y llevamos un rato, cerrar (onend a veces no llega). */
+        if (!engineBusy && elapsed > 500) {
+            stopAvatarLipSync(xabiaLipSync.$box);
+            return;
+        }
+
+        var text = xabiaLipSync.speakText || '';
+        if (!text) {
+            applyViseme(XABIA_VISEMES.rest);
+        } else {
+            var idx = Math.floor((elapsed + (xabiaLipSync.leadMs || 0)) / msPerChar(xabiaLipSync.rate));
+            if (idx < 0) {
+                applyViseme(XABIA_VISEMES.rest);
+            } else if (idx >= text.length) {
+                /* Texto scrub agotado pero la voz sigue: pose neutra, no congelar última vocal */
+                applyViseme(XABIA_VISEMES.rest);
+            } else {
+                updateMouthShape(pickVisemeCharNear(text, idx));
+            }
+        }
+        xabiaLipSync.keepAlive = setTimeout(scrubMouthByClock, 80);
+    }
+
+    function startMouthKeepAlive() {
+        clearKeepAlive();
+        xabiaLipSync.active = true;
+        scrubMouthByClock();
+    }
+
+    function wordKeyChars(word) {
+        var chars = [];
+        var i;
+        for (i = 0; i < word.length; i++) {
+            var c = word.charAt(i).toLowerCase();
+            if (/[aeiouáéíóúü]/.test(c)) chars.push(c);
+            else if (/[mbpfv]/.test(c)) chars.push(c);
+        }
+        if (!chars.length && word) chars.push(word.charAt(0).toLowerCase());
+        return chars;
+    }
+
+    function dominantVisemeChar(chars) {
+        var order = ['a', 'á', 'o', 'ó', 'e', 'é', 'u', 'ú', 'ü', 'i', 'í', 'y'];
+        var i, j;
+        for (i = 0; i < order.length; i++) {
+            for (j = 0; j < chars.length; j++) {
+                if (chars[j] === order[i]) return chars[j];
+            }
+        }
+        return chars[0] || 'e';
+    }
+
+    /** Un solo acento por palabra (sin ráfaga de visemas secundarios). */
+    function pulseWordVisemes(word) {
+        clearBurstTimers();
+        if (!word) return;
+        var chars = wordKeyChars(word);
+        if (!chars.length) return;
+        applyViseme(visemeForChar(dominantVisemeChar(chars)), true);
+    }
+
+    function extractWordAt(text, charIndex, charLength) {
+        if (!text) return '';
+        var idx = Math.max(0, Math.min(text.length - 1, charIndex | 0));
+        if (typeof charLength === 'number' && charLength > 0) {
+            return text.substr(idx, charLength);
+        }
+        var end = idx;
+        while (end < text.length && !/[\s,.;:!?…]/.test(text.charAt(end))) end++;
+        var start = idx;
+        while (start > 0 && !/[\s,.;:!?…]/.test(text.charAt(start - 1))) start--;
+        return text.substring(start, end);
+    }
+
+    function disconnectLipSyncAudio() {
+        if (xabiaLipSync.audioRaf) {
+            cancelAnimationFrame(xabiaLipSync.audioRaf);
+            xabiaLipSync.audioRaf = 0;
+        }
+        if (xabiaLipSync.audioEl) {
+            if (xabiaLipSync.onAudioPause) xabiaLipSync.audioEl.removeEventListener('pause', xabiaLipSync.onAudioPause);
+            if (xabiaLipSync.onAudioEnded) xabiaLipSync.audioEl.removeEventListener('ended', xabiaLipSync.onAudioEnded);
+        }
+        xabiaLipSync.audioEl = null;
+        xabiaLipSync.onAudioPause = null;
+        xabiaLipSync.onAudioEnded = null;
+        try { if (xabiaLipSync.source) xabiaLipSync.source.disconnect(); } catch (eDisc) {}
+        xabiaLipSync.source = null;
+        xabiaLipSync.analyser = null;
+        xabiaLipSync.data = null;
+    }
+
+    function syncMuteSpeakingUi($box, on) {
+        if (!$box || !$box.length) {
+            return;
+        }
+        $box.find('.xabia-mute.is-voice-on').toggleClass('xabia-mute-speaking', !!on);
+    }
+
+    function stopAvatarLipSync($box) {
+        xabiaLipSync.active = false;
+        clearKeepAlive();
+        clearBurstTimers();
+        clearSpeechResumeWatch();
+        disconnectLipSyncAudio();
+        try {
+            if (xabiaLipSync.htmlAudio) {
+                xabiaLipSync.htmlAudio.pause();
+                xabiaLipSync.htmlAudio.removeAttribute('src');
+                try { xabiaLipSync.htmlAudio.load(); } catch (eLoad) {}
+                xabiaLipSync.htmlAudio = null;
+            }
+        } catch (eHa) {}
+        if ($box && $box.length) xabiaLipSync.$box = $box;
+        closeMouthNow();
+        xabiaLipSync.mouths = [];
+        xabiaLipSync.speakText = '';
+        xabiaLipSync.utterance = null;
+        if ($box && $box.length) $box.removeClass('xabia-is-speaking');
+        syncMuteSpeakingUi($box, false);
+        try { if ($box && $box.length) $box.trigger('xabia:bot-speaking-stop'); } catch (eSpeakStop) {}
+        try { document.body.classList.remove('xabia-avatar-speaking'); } catch (eBody) {}
+    }
+
+    window.xabiaStopAvatarLipSync = stopAvatarLipSync;
+
+    function tickAudioVisemes() {
+        if (!xabiaLipSync.analyser || !xabiaLipSync.data) {
+            xabiaLipSync.audioRaf = 0;
+            return;
+        }
+        refreshMouthTargets(xabiaLipSync.$box);
+        xabiaLipSync.analyser.getByteTimeDomainData(xabiaLipSync.data);
+        var sum = 0, i;
+        for (i = 0; i < xabiaLipSync.data.length; i++) {
+            var v = (xabiaLipSync.data[i] - 128) / 128;
+            sum += v * v;
+        }
+        /* Ganancia más baja + menos umbrales = menos aperturas bruscas */
+        var amp = Math.min(1, Math.sqrt(sum / xabiaLipSync.data.length) * 3.1);
+        if (amp < 0.08) applyViseme(XABIA_VISEMES.rest);
+        else if (amp < 0.28) applyViseme(XABIA_VISEMES.e);
+        else applyViseme(XABIA_VISEMES.a);
+        xabiaLipSync.audioRaf = requestAnimationFrame(tickAudioVisemes);
+    }
+
+    function startAvatarLipSync($box, audioEl, opts) {
+        opts = opts || {};
+        /* No llamar stop completo: evita carrera al re-speak; limpia timers y reabre */
+        xabiaLipSync.active = false;
+        clearKeepAlive();
+        clearBurstTimers();
+        disconnectLipSyncAudio();
+
+        xabiaLipSync.$box = $box;
+        if (!refreshMouthTargets($box)) return;
+
+        xabiaLipSync.speakText = opts.text || '';
+        xabiaLipSync.rate = opts.rate || 0.92;
+        xabiaLipSync.t0 = performance.now();
+        xabiaLipSync.lastVisemeAt = 0;
+        xabiaLipSync.lastVisemeKey = '';
+        if ($box && $box.length) $box.addClass('xabia-is-speaking');
+        syncMuteSpeakingUi($box, true);
+        try { if ($box && $box.length) $box.trigger('xabia:bot-speaking-start'); } catch (eSpeakStart) {}
+        try { document.body.classList.add('xabia-avatar-speaking'); } catch (eBody2) {}
+
+        if (audioEl && typeof window.AudioContext !== 'undefined') {
+            try {
+                if (!xabiaLipSync.audioCtx) {
+                    xabiaLipSync.audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                }
+                if (xabiaLipSync.audioCtx.state === 'suspended') xabiaLipSync.audioCtx.resume();
+                xabiaLipSync.analyser = xabiaLipSync.audioCtx.createAnalyser();
+                xabiaLipSync.analyser.fftSize = 256;
+                xabiaLipSync.data = new Uint8Array(xabiaLipSync.analyser.frequencyBinCount);
+                xabiaLipSync.source = xabiaLipSync.audioCtx.createMediaElementSource(audioEl);
+                xabiaLipSync.source.connect(xabiaLipSync.analyser);
+                xabiaLipSync.analyser.connect(xabiaLipSync.audioCtx.destination);
+                xabiaLipSync.audioEl = audioEl;
+                xabiaLipSync.onAudioPause = function() { stopAvatarLipSync($box); };
+                xabiaLipSync.onAudioEnded = function() { stopAvatarLipSync($box); };
+                audioEl.addEventListener('pause', xabiaLipSync.onAudioPause);
+                audioEl.addEventListener('ended', xabiaLipSync.onAudioEnded);
+                xabiaLipSync.active = true;
+                xabiaLipSync.audioRaf = requestAnimationFrame(tickAudioVisemes);
+            } catch (eAudio) {
+                disconnectLipSyncAudio();
+            }
+            return;
+        }
+
+        applyViseme(XABIA_VISEMES.rest);
+        startMouthKeepAlive();
+        if (opts.firstWord) {
+            pulseWordVisemes(opts.firstWord);
+        }
+    }
+
+    function onSpeechBoundary($box, ev) {
+        if (ev && ev.name && ev.name !== 'word' && ev.name !== 'sentence') return;
+        refreshMouthTargets($box || xabiaLipSync.$box);
+        if (!xabiaLipSync.active) {
+            xabiaLipSync.active = true;
+            if (!xabiaLipSync.keepAlive) startMouthKeepAlive();
+        }
+        var text = xabiaLipSync.speakText;
+        var idx = (ev && typeof ev.charIndex === 'number') ? ev.charIndex : 0;
+        var len = (ev && typeof ev.charLength === 'number') ? ev.charLength : 0;
+        /* Recalibrar reloj al índice real de la voz */
+        xabiaLipSync.t0 = performance.now() - (idx * msPerChar(xabiaLipSync.rate));
+        var word = extractWordAt(text, idx, len);
+        if (word) pulseWordVisemes(word);
+        else updateMouthShape(pickVisemeCharNear(text, idx));
+    }
+
+    function stopAllSpeech($box) {
+        xabiaLipSync.speakToken += 1;
+        clearSpeechResumeWatch();
+        try {
+            if (xabiaLipSync.htmlAudio) {
+                xabiaLipSync.htmlAudio.pause();
+                xabiaLipSync.htmlAudio.removeAttribute('src');
+                try { xabiaLipSync.htmlAudio.load(); } catch (eLoad) {}
+                xabiaLipSync.htmlAudio = null;
+            }
+        } catch (eHa) {}
+        try { if (window.speechSynthesis) window.speechSynthesis.cancel(); } catch (eC) {}
+        stopAvatarLipSync($box);
+    }
+
+    function stopCurrentAudioPlayback($box) {
+        if (!$box || !$box.length) {
+            $box = (xabiaLipSync.$box && xabiaLipSync.$box.length) ? xabiaLipSync.$box : $();
+        }
+        try {
+            if (xabiaLipSync.audioEl && typeof xabiaLipSync.audioEl.pause === 'function') {
+                xabiaLipSync.audioEl.pause();
+                xabiaLipSync.audioEl.currentTime = 0;
+            }
+        } catch (eLipAudio) {}
+        stopAllSpeech($box);
+        var nodes = [];
+        try {
+            if ($box && $box.length) {
+                nodes = $box.find('audio').get();
+            }
+        } catch (eFindAudio) {}
+        var i;
+        for (i = 0; i < nodes.length; i++) {
+            try {
+                nodes[i].pause();
+                nodes[i].currentTime = 0;
+            } catch (ePause) {}
+        }
+        try { if (window.speechSynthesis) window.speechSynthesis.cancel(); } catch (eCancel) {}
+        if ($box && $box.length) {
+            $box.removeClass('xabia-is-speaking');
+            $box.find('.xabia-mute').removeClass('xabia-mute-speaking');
+            syncMuteSpeakingUi($box, false);
+        }
+        try { document.body.classList.remove('xabia-avatar-speaking'); } catch (eBody) {}
+    }
+
+    function speakText($box, rawText, audioEl, opts) {
+        opts = opts || {};
+        if (audioEl && audioEl.tagName === 'AUDIO') {
+            if (!(opts && opts.force) && !isVoiceOn($box)) return;
+            startAvatarLipSync($box, audioEl, { text: cleanTextForTts(rawText || '', parseTtsConfig($box).clean) });
+            try { if (audioEl.paused) audioEl.play(); } catch (ePlay) {}
+            return;
+        }
+        if (!rawText) return;
+        if (!(opts && opts.force) && !isVoiceOn($box)) return;
+        var tts = parseTtsConfig($box);
+        var prepared = prepareTtsTextForSpeech(rawText, tts, $box);
+        if (!prepared.segments.length) return;
+
+        var token = ++xabiaLipSync.speakToken;
+        clearSpeechResumeWatch();
+        stopAvatarLipSync($box);
+        try {
+            if (xabiaLipSync.htmlAudio) {
+                xabiaLipSync.htmlAudio.pause();
+                xabiaLipSync.htmlAudio.removeAttribute('src');
+                xabiaLipSync.htmlAudio.load();
+                xabiaLipSync.htmlAudio = null;
+            }
+        } catch (eHa) {}
+        try { if (window.speechSynthesis) window.speechSynthesis.cancel(); } catch (eC) {}
+
+        /* Audio servidor (HTML5): speechSynthesis en Chrome/macOS a menudo queda mudo. */
+        fetchServerTtsAndPlay($box, prepared, tts, token, opts);
+    }
+
+    function ttsLangPayload($box) {
+        var htmlLang = (document.documentElement && document.documentElement.lang)
+            ? String(document.documentElement.lang).trim()
+            : '';
+        return {
+            lang: xabiaShortLangFromLang($box.data('lang')),
+            user_lang: htmlLang || xabiaBcp47FromLang($box.data('lang'))
+        };
+    }
+
+    function fetchServerTtsAndPlay($box, prepared, tts, token, opts) {
+        var endpoint = $box.data('endpoint') || (typeof window.ajaxurl === 'string' ? window.ajaxurl : '/wp-admin/admin-ajax.php');
+        var rate = parseFloat(tts.rate);
+        if (!rate || rate === 1) rate = 0.92;
+        rate = Math.max(0.5, Math.min(2, rate));
+        var langPayload = ttsLangPayload($box);
+        var payload = {
+            action: 'xabia_tts',
+            project_id: $box.data('project') || '',
+            text: prepared.serverText,
+            lang: langPayload.lang,
+            user_lang: langPayload.user_lang,
+            voice: tts.voice || 'default',
+            rate: rate
+        };
+        $.post(endpoint, payload, null, 'json').done(function(r) {
+            if (token !== xabiaLipSync.speakToken) return;
+            if (!(opts && opts.force) && !isVoiceOn($box)) return;
+            if (r && r.success && r.data && r.data.base64 && r.data.mime) {
+                var spoken = (r.data.text && String(r.data.text).trim()) ? String(r.data.text) : prepared.serverText;
+                playServerTtsAudio($box, spoken, rate, String(r.data.mime), String(r.data.base64), token, opts, prepared.segments);
+                return;
+            }
+            speakTextBrowserFallback($box, prepared.segments, tts, token, opts);
+        }).fail(function() {
+            if (token !== xabiaLipSync.speakToken) return;
+            speakTextBrowserFallback($box, prepared.segments, tts, token, opts);
+        });
+    }
+
+    function prepareBrowserTtsText($box, text, callback) {
+        callback(text);
+    }
+
+    function playServerTtsAudio($box, text, rate, mime, base64, token, opts, fallbackSegments) {
+        if (token !== xabiaLipSync.speakToken) return;
+        var audio = new Audio();
+        audio.preload = 'auto';
+        audio.src = 'data:' + mime + ';base64,' + base64;
+        audio.volume = 1;
+        xabiaLipSync.htmlAudio = audio;
+        var firstWord = (text.match(/[a-zA-ZáéíóúüñÁÉÍÓÚÜÑ]+/) || [''])[0];
+        var tts = parseTtsConfig($box);
+
+        audio.onplay = function() {
+            if (token !== xabiaLipSync.speakToken) return;
+            startAvatarLipSync($box, audio, {
+                text: text,
+                rate: rate,
+                firstWord: firstWord
+            });
+        };
+        audio.onended = function() {
+            if (token !== xabiaLipSync.speakToken) return;
+            stopAvatarLipSync($box);
+            closeMouthNow();
+        };
+        audio.onerror = function() {
+            if (token !== xabiaLipSync.speakToken) return;
+            if (!isVoiceOn($box)) return;
+            speakTextBrowserFallback($box, fallbackSegments || splitTtsSegments(text), tts, token, opts || {});
+        };
+        var p = audio.play();
+        if (p && typeof p.catch === 'function') {
+            p.catch(function() {
+                if (token !== xabiaLipSync.speakToken) return;
+                if (!isVoiceOn($box)) return;
+                speakTextBrowserFallback($box, fallbackSegments || splitTtsSegments(text), tts, token, opts || {});
+            });
+        }
+    }
+
+    function speakTextBrowserFallback($box, segmentsOrText, tts, token, opts) {
+        opts = opts || {};
+        if (!window.speechSynthesis) return;
+        if (token !== xabiaLipSync.speakToken) return;
+        if (!(opts && opts.force) && !isVoiceOn($box)) return;
+
+        var segments = Array.isArray(segmentsOrText) ? segmentsOrText : splitTtsSegments(segmentsOrText);
+        if (!segments.length) segments = [String(text || '')];
+        var rate = parseFloat(tts.rate);
+        if (!rate || rate === 1) rate = 0.92;
+        rate = Math.max(0.5, Math.min(2, rate));
+        try { window.speechSynthesis.cancel(); } catch (eCancel) {}
+        speakTextBrowserFallbackSegment($box, segments, 0, tts, token, opts, rate);
+    }
+
+    function speakTextBrowserFallbackSegment($box, segments, idx, tts, token, opts, rate) {
+        if (!window.speechSynthesis) return;
+        if (token !== xabiaLipSync.speakToken) return;
+        if (!(opts && opts.force) && !isVoiceOn($box)) return;
+        if (idx >= segments.length) {
+            clearSpeechResumeWatch();
+            stopAvatarLipSync($box);
+            closeMouthNow();
+            return;
+        }
+
+        var text = segments[idx];
+        var firstWord = (text.match(/[a-zA-ZáéíóúüñÁÉÍÓÚÜÑ]+/) || [''])[0];
+        var attempt = 0;
+
+        function doSpeak() {
+            if (token !== xabiaLipSync.speakToken) return;
+            if (!(opts && opts.force) && !isVoiceOn($box)) return;
+            attempt += 1;
+            try { window.speechSynthesis.resume(); } catch (eRes) {}
+            var u = new window.SpeechSynthesisUtterance(text);
+            xabiaLipSync.utterance = u;
+            u.lang = xabiaBcp47FromLang($box.data('lang'));
+            u.rate = rate;
+            u.pitch = 1;
+            u.volume = 1;
+            if (attempt === 1) {
+                var chosen = pickVoice(u.lang, tts.voice);
+                if (chosen) {
+                    u.voice = chosen;
+                    if (chosen.lang) u.lang = chosen.lang;
+                }
+            }
+            var started = false;
+            function beginMouth() {
+                if (started) return;
+                started = true;
+                startAvatarLipSync($box, null, { text: text, rate: u.rate, firstWord: firstWord });
+                startSpeechResumeWatch();
+            }
+            u.onstart = beginMouth;
+            u.onboundary = function(ev) { onSpeechBoundary($box, ev); };
+            u.onend = function() {
+                if (token !== xabiaLipSync.speakToken) return;
+                if (idx + 1 < segments.length) {
+                    window.setTimeout(function() {
+                        speakTextBrowserFallbackSegment($box, segments, idx + 1, tts, token, opts, rate);
+                    }, 550);
+                    return;
+                }
+                clearSpeechResumeWatch();
+                stopAvatarLipSync($box);
+                closeMouthNow();
+            };
+            u.onerror = function(ev) {
+                if (token !== xabiaLipSync.speakToken) return;
+                var err = (ev && ev.error) ? String(ev.error) : '';
+                if (err === 'interrupted' || err === 'canceled' || err === 'cancelled') return;
+                if (attempt < 2) {
+                    window.setTimeout(doSpeak, 180);
+                    return;
+                }
+                if (idx + 1 < segments.length) {
+                    speakTextBrowserFallbackSegment($box, segments, idx + 1, tts, token, opts, rate);
+                    return;
+                }
+                clearSpeechResumeWatch();
+                stopAvatarLipSync($box);
+                closeMouthNow();
+            };
+            try { window.speechSynthesis.speak(u); } catch (eSpeak) {
+                if (attempt < 2) window.setTimeout(doSpeak, 180);
+            }
+        }
+        window.setTimeout(doSpeak, (idx === 0 && opts && opts.immediate) ? 0 : (idx === 0 ? 80 : 0));
+    }
+
+    function setAvatarThinking($box, thinking) {
+        var on = !!thinking;
+        if ($box && $box.length) {
+            $box.toggleClass('xabia-is-thinking', on);
+            $box.find('.xabia-immersive-avatar-stage').toggleClass('xabia-avatar-thinking', on);
+        }
+        try {
+            document.body.classList.toggle('xabia-avatar-thinking', on);
+            document.querySelectorAll('.xabia-sticky-footer-box, .xabia-interface-trigger').forEach(function(el) {
+                el.classList.toggle('xabia-avatar-thinking', on);
+            });
+        } catch (eThink) {}
+        if (on) {
+            /* No mezclar lip-sync con pensando */
+            xabiaLipSync.speakToken += 1;
+            clearSpeechResumeWatch();
+            try { if (window.speechSynthesis) window.speechSynthesis.cancel(); } catch (eC) {}
+            stopAvatarLipSync($box);
+        }
+    }
+
+    function setMicListeningUi($box, listening) {
+        var on = !!listening;
+        var labelOn = xabiaI18n('micListening', 'Escuchando… Habla ahora');
+        var labelOff = xabiaI18n('micLabelOff', 'Toca para hablar o mantén pulsado');
+        if ($box && $box.length) {
+            $box.toggleClass('xabia-mic-is-listening', on);
+            $box.find('.xabia-mic').toggleClass('xabia-mic-listening', on)
+                .attr('aria-pressed', on ? 'true' : 'false')
+                .attr('aria-label', on ? labelOn : labelOff)
+                .attr('title', on ? labelOn : labelOff);
+        }
+        try {
+            document.body.classList.toggle('xabia-mic-listening', on);
+        } catch (eMicBody) {}
+    }
+
+    function normalizePromptForMatch(text) {
+        var s = String(text || '').toLowerCase();
+        try {
+            if (typeof s.normalize === 'function') {
+                s = s.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+            }
+        } catch (eNorm) {}
+        return s.replace(/\s+/g, ' ').trim();
+    }
+
+    function getWaitingMessage(userPrompt) {
+        var text = normalizePromptForMatch(userPrompt);
+        if (!text) {
+            return xabiaI18n('waitingGeneric', 'Entendido, buscando la mejor solución...');
+        }
+        if (/\b(reserva|cita|hotel|disponibilidad|habitacion|habitaciones|booking|appointment|alojamiento)\b/.test(text)) {
+            return xabiaI18n('waitingBooking', 'Un momento... buscando la mejor opción de reserva');
+        }
+        if (/\b(comprar|precio|producto|tienda|carrito|catalogo|shop|buy|cart|pedido)\b/.test(text)) {
+            return xabiaI18n('waitingShop', 'Buscando el producto más adecuado...');
+        }
+        if (/\b(donde|llegar|mapa|ubicacion|direccion|localizacion|how to get|location|address|directions)\b/.test(text)) {
+            return xabiaI18n('waitingLocation', 'Localizando la información de ubicación...');
+        }
+        return xabiaI18n('waitingGeneric', 'Entendido, buscando la mejor solución...');
+    }
+
+    function clearWaitingTimers($box) {
+        if (!$box || !$box.length) {
+            return;
+        }
+        var state = $box.data('xabiaWaitingState');
+        if (state && state.timers && state.timers.length) {
+            state.timers.forEach(function(tid) {
+                clearTimeout(tid);
+            });
+        }
+        $box.removeData('xabiaWaitingState');
+    }
+
+    function setWaitingMessageText($msgEl, text) {
+        if (!$msgEl || !$msgEl.length) {
+            return;
+        }
+        $msgEl.removeClass('xabia-waiting-message--swap');
+        if (typeof window.requestAnimationFrame === 'function') {
+            window.requestAnimationFrame(function() {
+                $msgEl.text(text).addClass('xabia-waiting-message--swap');
+            });
+        } else {
+            $msgEl.text(text).addClass('xabia-waiting-message--swap');
+        }
+    }
+
+    function showTyping($box, userPrompt) {
+        if (!$box || !$box.length) {
+            return;
+        }
+        clearWaitingTimers($box);
+        messagesStream($box).find('.xabia-thinking-turn').remove();
+
+        var $turn = $('<div class="xabia-msg bot xabia-thinking-turn" data-phase="1" role="status"></div>');
+        var $boxInner = $('<div class="xabia-thinking-box"></div>');
+        $boxInner.append(xabiaThinkingMarkHtml($box));
+        var $msgEl = $('<span class="xabia-waiting-message" aria-live="polite"></span>');
+        $boxInner.append($msgEl);
+        $turn.append($boxInner);
+        messagesStream($box).append($turn);
+
+        setWaitingMessageText($msgEl, getWaitingMessage(userPrompt));
+        $box.addClass('xabia-is-waiting');
+        setAvatarThinking($box, true);
+        scrollMessages($box);
+
+        var timers = [];
+        timers.push(setTimeout(function() {
+            xabiaSetThinkingPhase($box, 2);
+            setWaitingMessageText($msgEl, xabiaI18n('waitingAnalyzing', 'Sigo analizando la información...'));
+        }, 3500));
+        timers.push(setTimeout(function() {
+            xabiaSetThinkingPhase($box, 3);
+            setWaitingMessageText($msgEl, xabiaI18n('waitingAlmost', 'Un segundo más, preparando la respuesta...'));
+        }, 7000));
+        $box.data('xabiaWaitingState', { timers: timers, $message: $msgEl });
+    }
+
+    function hideTyping($box) {
+        if (!$box || !$box.length) {
+            return;
+        }
+        clearWaitingTimers($box);
+        $box.removeClass('xabia-is-waiting');
+        messagesStream($box).find('.xabia-thinking-turn').remove();
+        setAvatarThinking($box, false);
+    }
+
+    function isShortcodeFocusBox($box) {
+        return $box
+            && $box.length
+            && $box.hasClass('xabia-chatbot')
+            && !$box.hasClass('xabia-panel-shell')
+            && !$box.hasClass('xabia-chatbox--fullscreen');
+    }
+
+    function ensureShortcodeFocusOverlay($) {
+        var $overlay = $('#xabia-shortcode-focus-overlay');
+        if ($overlay.length) {
+            return $overlay;
+        }
+        $overlay = $('<button type="button" id="xabia-shortcode-focus-overlay" class="xabia-shortcode-focus-overlay"></button>').attr('aria-label', xabiaI18n('closeChat', 'Cerrar chat'));
+        $('body').append($overlay);
+        return $overlay;
+    }
+
+    function storeShortcodeFocusAnchor($box) {
+        if ($box.data('xabiaShortcodeFocusAnchor')) {
+            return;
+        }
+        var el = $box[0];
+        if (!el || !el.parentNode) {
+            return;
+        }
+        $box.data('xabiaShortcodeFocusAnchor', {
+            parent: el.parentNode,
+            next: el.nextSibling
+        });
+    }
+
+    function portalShortcodeFocusBox($box) {
+        storeShortcodeFocusAnchor($box);
+        var el = $box[0];
+        if (el && el.parentNode !== document.body) {
+            document.body.appendChild(el);
+        }
+    }
+
+    function restoreShortcodeFocusBox($box) {
+        if (!$box || !$box.length) {
+            return;
+        }
+        var anchor = $box.data('xabiaShortcodeFocusAnchor');
+        if (!anchor || !anchor.parent) {
+            return;
+        }
+        var el = $box[0];
+        if (anchor.next && anchor.next.parentNode === anchor.parent) {
+            anchor.parent.insertBefore(el, anchor.next);
+        } else {
+            anchor.parent.appendChild(el);
+        }
+        $box.removeData('xabiaShortcodeFocusAnchor');
+    }
+
+    function boxHasSpeakingAvatar($box) {
+        if (!$box || !$box.length) return false;
+        return String($box.attr('data-speaking-avatar') || '1') !== '0';
+    }
+
+    function ensureImmersiveKinetic($box) {
+        if (!boxHasSpeakingAvatar($box)) return;
+        if (!$box || !$box.length) return;
+        var wrap = $box.find('.xabia-immersive-avatar-stage .xabia-kinetic-wrapper').get(0);
+        if (!wrap) return;
+        function run() {
+            if (typeof window.xabiaInitKineticAvatar === 'function') {
+                window.xabiaInitKineticAvatar(wrap);
+            }
+        }
+        if (window.gsap) {
+            run();
+            return;
+        }
+        var url = (window.XabiaInterface && window.XabiaInterface.gsapUrl)
+            ? window.XabiaInterface.gsapUrl
+            : 'https://cdn.jsdelivr.net/npm/gsap@3/dist/gsap.min.js';
+        if (document.querySelector('script[data-xabia-gsap="1"]')) {
+            var tries = 0;
+            var wait = setInterval(function() {
+                tries += 1;
+                if (window.gsap || tries > 40) {
+                    clearInterval(wait);
+                    run();
+                }
+            }, 50);
+            return;
+        }
+        var s = document.createElement('script');
+        s.src = url;
+        s.async = true;
+        s.dataset.xabiaGsap = '1';
+        s.onload = run;
+        s.onerror = run;
+        document.head.appendChild(s);
+    }
+
+    function openShortcodeFocus($, $box) {
+        if (!isShortcodeFocusBox($box)) {
+            return;
+        }
+        var speaking = boxHasSpeakingAvatar($box);
+        $('.xabia-chatbox-shortcode-focus').not($box).each(function() {
+            $(this).removeClass('xabia-chatbox-shortcode-focus xabia-immersive-mode');
+        });
+        var isMobile = window.matchMedia && window.matchMedia('(max-width: 768px)').matches;
+        portalShortcodeFocusBox($box);
+        if (!isMobile) {
+            ensureShortcodeFocusOverlay($).attr('data-project', String($box.data('project') || '')).addClass('is-active');
+        }
+        $('body').addClass('xabia-shortcode-focus-open');
+        if (speaking) {
+            $('body').addClass('xabia-immersive-open');
+        }
+        $box.addClass('xabia-chatbox-shortcode-focus');
+        if (speaking) {
+            $box.addClass('xabia-immersive-mode');
+            $box.find('.xabia-immersive-avatar-stage').attr('aria-hidden', 'false');
+            ensureImmersiveKinetic($box);
+        }
+        if (!isMobile) {
+            try {
+                $box[0].scrollIntoView({ behavior: 'smooth', block: 'center' });
+            } catch (eScroll) {}
+        }
+    }
+
+    function closeShortcodeFocus($) {
+        var $box = $('.xabia-chatbox-shortcode-focus').first();
+        if ($box.length) {
+            stopAvatarLipSync($box);
+        }
+        $('#xabia-shortcode-focus-overlay').removeClass('is-active');
+        $('body').removeClass('xabia-shortcode-focus-open xabia-immersive-open');
+        $('.xabia-chatbox-shortcode-focus').removeClass('xabia-chatbox-shortcode-focus xabia-immersive-mode');
+        if ($box.length) {
+            $box.find('.xabia-immersive-avatar-stage').attr('aria-hidden', 'true');
+        }
+        restoreShortcodeFocusBox($box);
+        if ($box.length) {
+            try {
+                $box.find('.xabia-input-field').trigger('blur');
+            } catch (eBlur) {}
+        }
+    }
+
+        var xabiaHandlersBound = false;
+
+        function bindXabiaChatboxHandlers() {
+            if (xabiaHandlersBound) {
+                return;
+            }
+            xabiaHandlersBound = true;
+
+            $(document).on('click', '.xabia-action-img-wrap, .xabia-action-img-wrap .xabia-action-img', function(e) {
+                e.preventDefault();
+                var $wrap = $(this).closest('.xabia-action-img-wrap');
+                if (!$wrap.length) $wrap = $(this).is('.xabia-action-img-wrap') ? $(this) : $();
+                var src = $wrap.data('full') || $wrap.find('img').attr('src') || $(this).attr('src');
+                openXabiaImageLightbox(src);
+            });
+
+            var urlParams = null;
+            try {
+                urlParams = new URLSearchParams(window.location.search);
+            } catch (eP) {
+                urlParams = null;
+            }
+
+            function xabiaApplyQueryTunnelToBox($b) {
+                if (!urlParams || !$b || !$b.length) return;
+                var xp = urlParams.get('x_project');
+                var eid = urlParams.get('ente_id');
+                if (xp) {
+                    $b.attr('data-project', xp);
+                }
+                if (eid) {
+                    $b.attr('data-ente-id', eid);
+                    $b.attr('data-strict-mode', '1');
+                    $b.attr('data-scope', eid);
+                }
+                if (window.XabiaSettings && typeof window.XabiaSettings === 'object') {
+                    if (xp) {
+                        window.XabiaSettings.projectId = xp;
+                        window.XabiaSettings.xProject = xp;
+                    }
+                    if (eid) {
+                        window.XabiaSettings.enteId = eid;
+                        window.XabiaSettings.strictMode = true;
+                        window.XabiaSettings.scope = eid;
+                    }
+                }
+            }
+
+            var lang = xabiaBcp47FromLang($('.xabia-chatbox').first().data('lang'));
+        var secure = window.isSecureContext;
+
+        function micInsecureHelpMessage() {
+            var host = '';
+            try {
+                host = String(window.location.hostname || '');
+            } catch (eH) {}
+            var isLocalHost = host === 'localhost' || host === '127.0.0.1' || /\.local$/i.test(host);
+            if (isLocalHost && host) {
+                return xabiaI18n(
+                    'micHttpsLocal',
+                    'El micrófono necesita HTTPS. En Local: activa SSL (botón Trust) y abre https://' + host + '/'
+                );
+            }
+            return xabiaI18n('micHttps', 'El micrófono requiere HTTPS.');
+        }
+
+        /* [xabia_agent] embebido: no expandir a inmersivo al enfocar el textarea (evita launcher a pantalla completa al escribir). */
+
+        $(document).on('click', '#xabia-shortcode-focus-overlay', function(e) {
+            e.preventDefault();
+            closeShortcodeFocus($);
+        });
+
+        $(document).on('click', '.xabia-chatbox.xabia-immersive-mode .xabia-immersive-avatar-stage', function(e) {
+            e.preventDefault();
+            e.stopPropagation();
+            var $box = $(this).closest('.xabia-chatbox');
+            if ($box.hasClass('xabia-chatbox-shortcode-focus')) {
+                closeShortcodeFocus($);
+                return;
+            }
+            /* Panel nativo: dispara el cierre del botón minimizar */
+            $box.find('.xabia-panel-close').first().trigger('click');
+        });
+
+        $(document).on('click', '.xabia-chatbox-shortcode-focus .xabia-panel-close', function(e) {
+            e.preventDefault();
+            e.stopPropagation();
+            closeShortcodeFocus($);
+        });
+
+        $(document).on('keydown', function(e) {
+            if (e.key !== 'Escape' && e.keyCode !== 27) {
+                return;
+            }
+            if ($('.xabia-chatbox-shortcode-focus').length) {
+                e.preventDefault();
+                closeShortcodeFocus($);
+                return;
+            }
+            var $open = $('.xabia-chatbox.xabia-panel-shell.is-active, .xabia-chatbox.xabia-immersive-mode.is-active').first();
+            if ($open.length) {
+                e.preventDefault();
+                stopAvatarLipSync($open);
+                $open.find('.xabia-panel-close').first().trigger('click');
+            }
+        });
+
+        $(document).on('click', '.xabia-mute', function(e) {
+            e.preventDefault();
+            e.stopPropagation();
+            var $box = $(this).closest('.xabia-chatbox');
+            if (!$box.length) return;
+            /* Evita doble toggle (proxy del panel + varios triggers) en el mismo gesto */
+            var now = Date.now();
+            var lastToggle = parseInt($box.data('xabiaMuteToggleAt') || '0', 10) || 0;
+            if (now - lastToggle < 350) {
+                return;
+            }
+            $box.data('xabiaMuteToggleAt', now);
+
+            var turningOff = isVoiceOn($box);
+            if (turningOff) {
+                stopAllSpeech($box);
+                setVoiceOn($box, false);
+            } else {
+                setVoiceOn($box, true);
+                preloadSpeechVoices();
+                /* Pitido: confirma que el navegador tiene salida de audio */
+                unlockSpeechSynthesis({ beep: true });
+                var last = lastBotRawText($box);
+                if (last) {
+                    var $lastBot = $box.find('.xabia-msg.bot').last();
+                    attachMsgSpeakButton($box, $lastBot, last);
+                    window.setTimeout(function() {
+                        if (!isVoiceOn($box)) return;
+                        speakText($box, last, null, { immediate: true, force: true });
+                    }, 220);
+                }
+            }
+        });
+
+        var micSessions = new WeakMap();
+        var MIC_SILENCE_MS = 2600;
+        var MIC_START_GRACE_MS = 4800;
+        var MIC_MAX_RESTARTS = 8;
+
+        function clearMicTimers(session) {
+            if (!session) return;
+            if (session.holdTimer) {
+                window.clearTimeout(session.holdTimer);
+                session.holdTimer = 0;
+            }
+            if (session.silenceTimer) {
+                window.clearTimeout(session.silenceTimer);
+                session.silenceTimer = 0;
+            }
+        }
+
+        function mergeSpeechFinals(finals) {
+            if (!finals || !finals.length) {
+                return '';
+            }
+            var merged = $.trim(String(finals[0] || ''));
+            for (var i = 1; i < finals.length; i++) {
+                var cur = $.trim(String(finals[i] || ''));
+                if (!cur) {
+                    continue;
+                }
+                if (!merged) {
+                    merged = cur;
+                    continue;
+                }
+                var mergedLow = merged.toLowerCase();
+                var curLow = cur.toLowerCase();
+                if (curLow.indexOf(mergedLow) === 0) {
+                    merged = cur;
+                    continue;
+                }
+                if (mergedLow.indexOf(curLow) === 0) {
+                    continue;
+                }
+                merged = $.trim((merged + ' ' + cur).replace(/\s+/g, ' '));
+            }
+            return merged;
+        }
+
+        function syncMicResults(session, results) {
+            var finals = [];
+            var interim = '';
+            if (!results || !results.length) {
+                session.transcript = $.trim(String(session.committedTranscript || ''));
+                return '';
+            }
+            for (var i = 0; i < results.length; i++) {
+                var piece = results[i][0] ? String(results[i][0].transcript || '') : '';
+                piece = $.trim(piece);
+                if (!piece) {
+                    continue;
+                }
+                if (results[i].isFinal) {
+                    finals.push(piece);
+                } else {
+                    interim = piece;
+                }
+            }
+            var runText = mergeSpeechFinals(finals);
+            var committed = $.trim(String(session.committedTranscript || ''));
+            session.transcript = $.trim((committed + (committed && runText ? ' ' : '') + runText).replace(/\s+/g, ' '));
+            if (interim) {
+                var previewLow = interim.toLowerCase();
+                var transcriptLow = session.transcript.toLowerCase();
+                if (transcriptLow && previewLow.indexOf(transcriptLow) === 0) {
+                    return interim;
+                }
+            }
+            return interim;
+        }
+
+        function micDisplayText(session, interim) {
+            var text = $.trim(String(session.transcript || ''));
+            interim = $.trim(String(interim || ''));
+            if (interim) {
+                var textLow = text.toLowerCase();
+                var interimLow = interim.toLowerCase();
+                if (!text || interimLow.indexOf(textLow) === 0) {
+                    text = interim;
+                } else if (textLow.indexOf(interimLow) !== 0) {
+                    text = $.trim((text + ' ' + interim).replace(/\s+/g, ' '));
+                }
+            }
+            // Solo la locución actual: no concatenar borrador previo del textarea.
+            return text;
+        }
+
+        function micInputPreview($box, session, interim) {
+            // No volcar el dictado al textarea mientras escucha: en móvil hincha el composer
+            // y deja texto residual que se acumula en la siguiente locución.
+            session.previewText = micDisplayText(session, interim);
+            var $live = $box.find('.xabia-voice-overlay__transcript');
+            if (!$live.length) {
+                return;
+            }
+            var text = $.trim(String(session.previewText || ''));
+            if (!text) {
+                $live.attr('data-idle', '1').text('');
+                return;
+            }
+            $live.attr('data-idle', '0').text(text);
+        }
+
+        function scheduleMicSilenceStop($box, session, opts) {
+            opts = opts || {};
+            if (!session || session.released) {
+                return;
+            }
+            if (session.silenceTimer) {
+                window.clearTimeout(session.silenceTimer);
+            }
+            var delay = session.hasHeardSpeech ? MIC_SILENCE_MS : MIC_START_GRACE_MS;
+            if (opts.forceGrace) {
+                delay = MIC_START_GRACE_MS;
+            }
+            session.silenceTimer = window.setTimeout(function() {
+                if (micSessions.get($box[0]) !== session || session.released) {
+                    return;
+                }
+                stopMicSession($box);
+            }, delay);
+        }
+
+        function finalizeMicSession($box, session) {
+            clearMicTimers(session);
+            setMicListeningUi($box, false);
+            micSessions.delete($box[0]);
+            if (!session.released) {
+                return;
+            }
+            var $input = $box.find('.xabia-input-field');
+            var newPart = $.trim(String(session.transcript || session.previewText || ''));
+            var draft = $.trim(String(session.baseInput || ''));
+            if (!newPart) {
+                $input.val(draft);
+                autoSizeInput($input);
+                syncInputLimitState($input);
+                syncChatUiState($box);
+                return;
+            }
+            // Enviar solo la locución (sin acumular borrador tipado) y limpiar el campo.
+            $input.val(clampUserInputText(newPart));
+            submitChatMessage($box);
+            if (draft) {
+                $input.val(draft);
+                autoSizeInput($input);
+                syncInputLimitState($input);
+                syncChatUiState($box);
+            }
+        }
+
+        function stopMicSession($box) {
+            var session = micSessions.get($box[0]);
+            if (!session) {
+                return;
+            }
+            session.holding = false;
+            session.released = true;
+            clearMicTimers(session);
+            try {
+                session.rec.stop();
+            } catch (eStop) {
+                finalizeMicSession($box, session);
+            }
+        }
+
+        function abortMicSession($box) {
+            var session = micSessions.get($box[0]);
+            if (!session) {
+                return;
+            }
+            session.holding = false;
+            session.released = false;
+            clearMicTimers(session);
+            try {
+                session.rec.abort();
+            } catch (eAbort) {
+                finalizeMicSession($box, session);
+            }
+        }
+
+        function voiceOverlayText($box) {
+            var $voice = $box.find('.xabia-voice-overlay');
+            if (!$voice.length || !$voice.hasClass('is-active') || $voice.prop('hidden')) {
+                return '';
+            }
+            var typed = $.trim(String($voice.find('.xabia-voice-overlay__input').val() || ''));
+            if (typed) {
+                return typed;
+            }
+            var $live = $voice.find('.xabia-voice-overlay__transcript');
+            if ($live.attr('data-idle') === '1') {
+                return '';
+            }
+            return $.trim(String($live.text() || ''));
+        }
+
+        window.xabiaOpenVoiceOverlay = function(projectId, origin) {
+            var $box = xabiaFindChatbox($, projectId);
+            if (!$box.length && origin && origin.closest) {
+                $box = $(origin).closest('.xabia-chatbox');
+            }
+            if (!$box.length) {
+                return false;
+            }
+            if (micSessions.get($box[0])) {
+                stopMicSession($box);
+                return true;
+            }
+            if (!openVoiceOverlay($, $box, origin || null)) {
+                return false;
+            }
+            var $mic = $box.find('.xabia-voice-overlay__mic').first();
+            if (!$mic.length) {
+                $mic = $box.find('.xabia-mic').first();
+            }
+            startMicSession($mic);
+            return true;
+        };
+
+        window.xabiaCloseVoiceSurfaces = function(panel, opts) {
+            opts = opts || {};
+            var $box = panel ? $(panel) : $();
+            if ($box.length && !$box.hasClass('xabia-chatbox')) {
+                $box = $box.closest('.xabia-chatbox');
+            }
+            if (!$box.length) {
+                return;
+            }
+            if (opts.cancelMic) {
+                abortMicSession($box);
+            }
+            stopAllSpeech($box);
+            $box.find('audio').each(function() {
+                try {
+                    this.pause();
+                    this.currentTime = 0;
+                } catch (eAudio) {}
+            });
+            $box.removeClass('xabia-conversation-open');
+            if (!$('.xabia-chatbox.xabia-conversation-open').length) {
+                document.body.classList.remove('xabia-conversation-open');
+            }
+            closeVoiceOverlay($, $box);
+        };
+
+        window.xabiaSubmitText = function(projectId, text) {
+            var $box = xabiaFindChatbox($, projectId);
+            text = $.trim(String(text || ''));
+            if (!$box.length || !text) {
+                return false;
+            }
+            if (micSessions.get($box[0])) {
+                abortMicSession($box);
+            }
+            $box.find('.xabia-input-field').first().val(clampUserInputText(text));
+            submitChatMessage($box);
+            return true;
+        };
+
+        function startMicSession($mic) {
+            var $box = $mic.closest('.xabia-chatbox');
+            var $input = $box.find('.xabia-input-field');
+            if (!$box.length) {
+                return;
+            }
+            stopCurrentAudioPlayback($box);
+            if (!secure) {
+                messagesStream($box).append($('<div class="xabia-msg bot" style="color:orange"></div>').text(micInsecureHelpMessage()));
+                scrollMessages($box);
+                return;
+            }
+            if (!SpeechRecognition) {
+                messagesStream($box).append($('<div class="xabia-msg bot" style="color:orange"></div>').text(xabiaI18n('micUnsupported', 'Tu navegador no soporta voz. Prueba Chrome o Edge.')));
+                scrollMessages($box);
+                return;
+            }
+            if (micSessions.get($box[0])) {
+                stopMicSession($box);
+                return;
+            }
+
+            var rec = new SpeechRecognition();
+            var typedDraft = $.trim(String($input.val() || ''));
+            var session = {
+                rec: rec,
+                transcript: '',
+                committedTranscript: '',
+                previewText: '',
+                // Conservar borrador tipado aparte; la locución no se acumula sobre él.
+                baseInput: typedDraft,
+                holding: true,
+                released: false,
+                restarting: false,
+                restarts: 0,
+                silenceTimer: 0,
+                hasHeardSpeech: false,
+                startedAt: Date.now(),
+            };
+            micSessions.set($box[0], session);
+            // Durante la escucha el textarea no muestra el dictado (evita ocupación vertical).
+            $input.val('');
+            $input.trigger('input');
+            autoSizeInput($input);
+            syncChatUiState($box);
+
+            rec.continuous = true;
+            rec.interimResults = true;
+            rec.lang = xabiaBcp47FromLang($box.data('lang')) || lang;
+            stopCurrentAudioPlayback($box);
+
+            rec.onstart = function() {
+                setMicListeningUi($box, true);
+            };
+            rec.onresult = function(ev) {
+                var interim = syncMicResults(session, ev.results);
+                if (interim || $.trim(String(session.transcript || ''))) {
+                    session.hasHeardSpeech = true;
+                }
+                micInputPreview($box, session, interim);
+                scheduleMicSilenceStop($box, session);
+            };
+            rec.onerror = function() {
+                if (!session.released) {
+                    finalizeMicSession($box, session);
+                }
+            };
+            rec.onend = function() {
+                session.restarting = false;
+                if (!session.released && session.holding) {
+                    var elapsed = Date.now() - (session.startedAt || Date.now());
+                    var inGrace = !session.hasHeardSpeech && elapsed < MIC_START_GRACE_MS;
+                    var canRestart = session.restarts < MIC_MAX_RESTARTS
+                        && (session.hasHeardSpeech || inGrace);
+                    if (canRestart) {
+                        session.committedTranscript = $.trim(String(session.transcript || session.committedTranscript || ''));
+                        session.restarts += 1;
+                        session.restarting = true;
+                        window.setTimeout(function() {
+                            if (session.released || !session.holding || micSessions.get($box[0]) !== session) {
+                                return;
+                            }
+                            try {
+                                rec.start();
+                            } catch (eRestart) {
+                                session.restarting = false;
+                                finalizeMicSession($box, session);
+                            }
+                        }, 120);
+                        return;
+                    }
+                }
+                finalizeMicSession($box, session);
+            };
+
+            setMicListeningUi($box, true);
+            try {
+                rec.start();
+                scheduleMicSilenceStop($box, session, { forceGrace: true });
+            } catch (eStart) {
+                finalizeMicSession($box, session);
+            }
+        }
+
+        $(document).on('click', '.xabia-mic', function(e) {
+            e.preventDefault();
+            e.stopPropagation();
+            var $mic = $(this);
+            var $box = $mic.closest('.xabia-chatbox');
+            if (!$box.length) {
+                return;
+            }
+            var now = Date.now();
+            var lastToggle = parseInt($box.data('xabiaMicToggleAt') || '0', 10) || 0;
+            if (now - lastToggle < 250) {
+                return;
+            }
+            $box.data('xabiaMicToggleAt', now);
+            if (micSessions.get($box[0])) {
+                stopMicSession($box);
+                return;
+            }
+            openVoiceOverlay($, $box, this);
+            startMicSession($mic);
+        });
+
+        $(document).on('xabia:bot-speaking-start', '.xabia-chatbox', function() {
+            stopMicSession($(this));
+        });
+
+        function applyChatSuccess($box, $history, data, isContinue) {
+            hideTyping($box);
+            if (!(data && data.response)) {
+                applyChatFailure($box, $history, xabiaI18n('errorGeneric', 'Error'));
+                return;
+            }
+            var raw = data.response;
+            if (isContinue) {
+                var $lastBot = $history.find('.xabia-msg.bot').not('.xabia-thinking-turn, .xabia-msg--error').last();
+                if ($lastBot.length) {
+                    var prev = String($lastBot.attr('data-raw') || '');
+                    var merged = raw;
+                    var addition = raw;
+                    if (prev && raw.indexOf(prev) === 0) {
+                        addition = raw.slice(prev.length).replace(/^\s+/, '');
+                    } else if (prev && prev.indexOf(raw) === 0) {
+                        merged = prev;
+                        addition = '';
+                    } else if (prev) {
+                        merged = prev + '\n\n' + raw;
+                    }
+                    if (!$.trim(addition)) {
+                        finishBotMessage($box, $history, $lastBot, prev || raw, { truncated: true, speakText: '' });
+                    } else {
+                        $lastBot.attr('data-raw', merged);
+                        var $content = $lastBot.find('.xabia-msg-content');
+                        var mergedHtml = renderBotHtml(merged, chatboxImagesBase($box));
+                        if ($content.length) {
+                            $content.html(mergedHtml);
+                        } else {
+                            $lastBot.append($('<div class="xabia-msg-content"></div>').html(mergedHtml));
+                        }
+                        finishBotMessage($box, $history, $lastBot, merged, {
+                            truncated: !!data.truncated,
+                            speakText: addition
+                        });
+                    }
+                } else {
+                    appendBotMessage($box, $history, raw, { truncated: !!data.truncated });
+                }
+            } else {
+                appendBotMessage($box, $history, raw, { truncated: !!data.truncated });
+            }
+            scrollMessages($box);
+            syncChatUiState($box);
+        }
+
+        function applyChatFailure($box, $history, errText) {
+            if (xabiaLooksUnavailable(errText, null)) {
+                xabiaSetAgentAvailability($box, false);
+            }
+            hideTyping($box);
+            $box.find('.xabia-continue').prop('disabled', false);
+            var $err = $('<div class="xabia-msg bot xabia-msg--error"></div>');
+            $err.append($('<span class="xabia-msg-content"></span>').text(errText || xabiaI18n('errorGeneric', 'Error')));
+            messagesStream($box).append($err);
+            scrollMessages($box);
+            syncChatUiState($box);
+        }
+
+        function postChatJson($box, $history, payload, isContinue) {
+            var endpoint = $box.attr('data-ask-endpoint') || $box.data('endpoint');
+            return $.ajax({
+                url: endpoint,
+                type: 'POST',
+                data: payload,
+                dataType: 'json',
+                headers: xabiaWithRestNonce({})
+            }).done(function(r) {
+                if (r && r.success && r.data) {
+                    applyChatSuccess($box, $history, r.data, isContinue);
+                } else {
+                    var errText = (r && r.data && r.data.message) ? String(r.data.message) : xabiaI18n('errorGeneric', 'Error');
+                    if (xabiaLooksUnavailable(errText, r && r.data)) {
+                        xabiaSetAgentAvailability($box, false);
+                    }
+                    applyChatFailure($box, $history, errText);
+                }
+            }).fail(function(xhr, status) {
+                var errText = xabiaI18n('errorServer', 'Error servidor.');
+                if (status === 'parsererror') {
+                    errText = xabiaI18n('errorInvalidResponse', 'Respuesta inválida del servidor. Actualiza Xabia Core o revisa el log PHP del hosting.');
+                    if (xhr && xhr.responseText && window.console && console.warn) {
+                        console.warn('[Xabia] chat parsererror:', String(xhr.responseText).substring(0, 800));
+                    }
+                } else if (xhr && xhr.responseJSON && xhr.responseJSON.data && xhr.responseJSON.data.message) {
+                    errText = String(xhr.responseJSON.data.message);
+                } else if (xhr && xhr.status === 504) {
+                    errText = xabiaI18n('errorTimeout', 'El servidor tardó demasiado. Inténtalo de nuevo en unos segundos.');
+                }
+                applyChatFailure($box, $history, errText);
+            });
+        }
+
+        function readChatSse(body, onEvent) {
+            var reader = body.getReader();
+            var decoder = new TextDecoder('utf-8');
+            var buf = '';
+            var state = { done: false };
+            function consume(block) {
+                var event = 'message';
+                var data = '';
+                String(block).split(/\n/).forEach(function(line) {
+                    if (line.indexOf('event:') === 0) {
+                        event = line.slice(6).trim();
+                    } else if (line.indexOf('data:') === 0) {
+                        data += line.slice(5).trim();
+                    }
+                });
+                if (!data || data.charAt(0) === ':') {
+                    return;
+                }
+                var json = null;
+                try {
+                    json = JSON.parse(data);
+                } catch (eParse) {
+                    return;
+                }
+                if (event === 'done') {
+                    state.done = true;
+                }
+                onEvent(event, json, state);
+            }
+            function pump() {
+                return reader.read().then(function(result) {
+                    buf += decoder.decode(result.value || new Uint8Array(), { stream: !result.done });
+                    var parts = buf.split(/\n\n/);
+                    buf = parts.pop();
+                    parts.forEach(consume);
+                    if (result.done) {
+                        if (String(buf || '').trim() !== '') {
+                            consume(buf);
+                        }
+                        return state;
+                    }
+                    return pump();
+                });
+            }
+            return pump();
+        }
+
+        function paintStreamingBot($box, $bot, raw) {
+            $bot.attr('data-raw', raw);
+            var $content = $bot.find('.xabia-msg-content');
+            if (!$content.length) {
+                $content = $('<div class="xabia-msg-content"></div>');
+                $bot.append($content);
+            }
+            $content.html(renderBotHtml(String(raw || ''), chatboxImagesBase($box)));
+            scrollMessages($box);
+        }
+
+        function dispatchChatRequest($box, $history, payload, isContinue) {
+            var askUrl = $box.attr('data-ask-endpoint');
+            if (!askUrl || !window.fetch || !window.ReadableStream) {
+                return postChatJson($box, $history, payload, isContinue);
+            }
+            var streamPayload = $.extend({}, payload, { stream: '1' });
+            var acc = '';
+            var gotDelta = false;
+            var createdLive = false;
+            var $live = null;
+            var prevRaw = '';
+            if (isContinue) {
+                var $prevBot = $history.find('.xabia-msg.bot').last();
+                prevRaw = $prevBot.length ? String($prevBot.attr('data-raw') || '') : '';
+                $live = $prevBot;
+            }
+            function rollbackLive() {
+                if (createdLive && $live) {
+                    $live.remove();
+                    $live = null;
+                    createdLive = false;
+                    return;
+                }
+                if (isContinue && $live && $live.length) {
+                    paintStreamingBot($box, $live, prevRaw);
+                }
+            }
+            function fallbackJson() {
+                rollbackLive();
+                showTyping($box, payload.message || '');
+                var jsonPayload = $.extend({}, payload);
+                delete jsonPayload.stream;
+                return postChatJson($box, $history, jsonPayload, isContinue);
+            }
+            return fetch(askUrl, {
+                method: 'POST',
+                credentials: 'same-origin',
+                headers: xabiaWithRestNonce({
+                    'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
+                    'Accept': 'text/event-stream, application/json'
+                }),
+                body: $.param(streamPayload)
+            }).then(function(res) {
+                var ct = String(res.headers.get('content-type') || '').toLowerCase();
+                if (ct.indexOf('text/event-stream') === -1) {
+                    return res.json().then(function(body) {
+                        if (res.status === 403) {
+                            applyChatFailure($box, $history, (body && body.message) ? String(body.message) : xabiaI18n('errorGeneric', 'Error'));
+                            return;
+                        }
+                        if (body && body.success && body.data) {
+                            applyChatSuccess($box, $history, body.data, isContinue);
+                            return;
+                        }
+                        if (body && body.success === false) {
+                            applyChatFailure($box, $history, (body.data && body.data.message) ? String(body.data.message) : xabiaI18n('errorGeneric', 'Error'));
+                            return;
+                        }
+                        return fallbackJson();
+                    }).catch(function() {
+                        return fallbackJson();
+                    });
+                }
+                if (!res.ok || !res.body) {
+                    return fallbackJson();
+                }
+                return readChatSse(res.body, function(event, json) {
+                    if (event === 'delta' && json && json.text) {
+                        if (!gotDelta) {
+                            gotDelta = true;
+                            hideTyping($box);
+                            if (!isContinue) {
+                                $live = $('<div class="xabia-msg bot"></div>');
+                                $history.append($live);
+                                createdLive = true;
+                            } else if (!$live || !$live.length) {
+                                $live = $('<div class="xabia-msg bot"></div>');
+                                $history.append($live);
+                                createdLive = true;
+                            }
+                        }
+                        acc += String(json.text);
+                        var shown = prevRaw ? (prevRaw + '\n\n' + acc) : acc;
+                        paintStreamingBot($box, $live, xabiaVisibleStreamRaw(shown));
+                    } else if (event === 'done' && json) {
+                        hideTyping($box);
+                        var streamedRaw = prevRaw ? (prevRaw + '\n\n' + acc) : acc;
+                        var finalRaw = xabiaPreferCardRaw(json.response, streamedRaw);
+                        if ($live && $live.length) {
+                            paintStreamingBot($box, $live, finalRaw);
+                            $live.find('.xabia-continue').remove();
+                            var continueSpeech = '';
+                            if (isContinue) {
+                                if (prevRaw && String(finalRaw).indexOf(prevRaw) === 0) {
+                                    continueSpeech = String(finalRaw).slice(prevRaw.length).replace(/^\s+/, '');
+                                } else {
+                                    continueSpeech = String(finalRaw || '');
+                                }
+                            }
+                            finishBotMessage($box, $history, $live, finalRaw, {
+                                truncated: !!json.truncated || (isContinue && !$.trim(continueSpeech) && xabiaReplyLooksCut(prevRaw || finalRaw)),
+                                speakText: isContinue ? continueSpeech : null
+                            });
+                        } else {
+                            applyChatSuccess($box, $history, json, isContinue);
+                        }
+                    } else if (event === 'error' && !gotDelta) {
+                        acc = '';
+                    }
+                }).then(function(state) {
+                    if (!state || !state.done) {
+                        return fallbackJson();
+                    }
+                });
+            }).catch(function() {
+                if (!gotDelta) {
+                    return fallbackJson();
+                }
+                return fallbackJson();
+            });
+        }
+
+        function xabiaLooksUnavailable(message, payload) {
+            if (payload && (payload.digixop_insufficient || payload.agent_unavailable)) {
+                return true;
+            }
+            var text = String(message || '').toLowerCase();
+            return text.indexOf('saldo') !== -1
+                || text.indexOf('insufficient') !== -1
+                || text.indexOf('no disponible') !== -1
+                || text.indexOf('unavailable') !== -1
+                || text.indexOf('pausad') !== -1;
+        }
+
+        function submitChatMessage($box, options) {
+            options = options || {};
+            if ($box.hasClass('is-unavailable') || String($box.attr('data-agent-available') || '1') === '0') {
+                xabiaSetAgentAvailability($box, false);
+                return;
+            }
+            var $input = $box.find('.xabia-input-field');
+            var $history = messagesStream($box);
+            var continuePrompt = options.forceContinue
+                ? xabiaI18n('continuePrompt', 'Continúa exactamente desde donde lo dejaste, sin repetir lo anterior.')
+                : ($box.data('continuePrompt') || '');
+            var isContinue = !!continuePrompt;
+            var val = $.trim(isContinue ? continuePrompt : enforceInputLimits($input));
+            if (!val) return;
+            enterConversation($, $box);
+            if (!isContinue && (countInputLines(val) > userInputMaxLines() || val.length > userInputMaxChars())) {
+                syncInputLimitState($input);
+                return;
+            }
+            /* Gesto de usuario: desbloquear TTS para cuando llegue la respuesta AJAX (Safari). */
+            if (isVoiceOn($box)) {
+                unlockSpeechSynthesis();
+            }
+            $box.removeData('continuePrompt');
+            var htmlLang = (document.documentElement && document.documentElement.lang)
+                ? String(document.documentElement.lang).trim()
+                : '';
+            var payload = {
+                action: xabiaChatAjaxAction(),
+                project_id: $box.data('project'),
+                message: val,
+                x_scope: $box.data('scope') || 'global',
+                lang: xabiaShortLangFromLang($box.data('lang')),
+                user_lang: htmlLang || xabiaBcp47FromLang($box.data('lang')),
+                visitor_key: xabiaVisitorKey($box.data('project'))
+            };
+            var boxNonce = $box.data('nonce');
+            if (boxNonce) {
+                payload.nonce = String(boxNonce);
+            }
+            if (xabiaIsLiteMode()) {
+                var liteCfg = xabiaChatSettings();
+                if (liteCfg.nonce) {
+                    payload.nonce = liteCfg.nonce;
+                }
+            }
+            if (isContinue) payload.x_continue = '1';
+            var enteIdAttr = $box.attr('data-ente-id');
+            var enteFromSettings = (window.XabiaSettings && window.XabiaSettings.enteId) ? String(window.XabiaSettings.enteId) : '';
+            var entePayload = (enteIdAttr && String(enteIdAttr).trim() !== '') ? String(enteIdAttr).trim() : String(enteFromSettings || '').trim();
+            if (!xabiaIsLiteMode() && entePayload !== '') {
+                payload.ente_id = entePayload;
+            }
+            if (!xabiaIsLiteMode() && urlParams && urlParams.get('x_project')) {
+                payload.x_project = String(urlParams.get('x_project'));
+            }
+            if (!xabiaIsLiteMode() && window.xabiaWooCartIntent) {
+                var intentProj = String($box.data('project') || (window.XabiaSettings && window.XabiaSettings.projectId) || 'default');
+                var intentItems = window.xabiaWooCartIntent.getItems(intentProj);
+                if (intentItems.length) {
+                    payload.woo_cart_intent = JSON.stringify(intentItems);
+                }
+            }
+
+            var avatarName = $box.data('avatarName') || 'Xabia';
+            function escapeRe(s) { return String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
+            var userYou = xabiaI18n('userYou', 'Tú');
+            var prefixRe = new RegExp('^(' + escapeRe(userYou) + '|' + escapeRe(avatarName) + '):\\s*', 'i');
+            var historyArr = [];
+            $history.find('.xabia-msg').each(function() {
+                var $msg = $(this);
+                if ($msg.hasClass('xabia-thinking-turn')) {
+                    return;
+                }
+                var role = $msg.hasClass('user') ? 'user' : 'assistant';
+                var content;
+                if (role === 'assistant' && $msg.attr('data-raw')) {
+                    content = $msg.attr('data-raw');
+                } else {
+                    var $contentEl = $msg.find('.xabia-msg-content');
+                    content = ($contentEl.length ? $contentEl.text() : $msg.text()).replace(prefixRe, '').trim();
+                }
+                if (content) historyArr.push({ role: role, content: content });
+            });
+            if (historyArr.length) payload.history = JSON.stringify(historyArr.slice(-6));
+            if (!isContinue) {
+                hideStarterSuggestions($box);
+                var usedPending = false;
+                var $pending = $history.find('.xabia-msg.user[data-xabia-pending="1"]').last();
+                if ($pending.length) {
+                    var pendingText = $.trim($pending.find('.xabia-msg-content').text());
+                    if (pendingText === val) {
+                        $pending.removeAttr('data-xabia-pending').removeClass('xabia-msg-pending-voice');
+                        usedPending = true;
+                    }
+                }
+                if (!usedPending) {
+                    var $userMsg = $('<div class="xabia-msg user"></div>');
+                    $userMsg.append($('<span class="xabia-msg-content"></span>').text(val));
+                    $history.append($userMsg);
+                }
+                $input.val('');
+                $input.trigger('input');
+                autoSizeInput($input);
+                syncChatUiState($box);
+            }
+            $box.find('.xabia-continue').prop('disabled', true);
+            showTyping($box, val);
+            dispatchChatRequest($box, $history, payload, isContinue);
+        }
+
+        $(document).on('click', '.xabia-send', function(e) {
+            e.preventDefault();
+            e.stopPropagation();
+            var $box = $(this).closest('.xabia-chatbox');
+            var spoken = voiceOverlayText($box);
+            if (micSessions.get($box[0])) {
+                abortMicSession($box);
+            }
+            if (spoken) {
+                $box.find('.xabia-input-field').first().val(spoken);
+                $box.find('.xabia-voice-overlay__input').val('');
+            }
+            submitChatMessage($box);
+        });
+
+        $(document).on('click', '.xabia-voice-overlay__close, .xabia-voice-overlay .close-btn, .xabia-close-btn, .xabia-chatbox.xabia-voice-open .xabia-panel-close, .xabia-chatbox.xabia-conversation-open .xabia-panel-close', function(e) {
+            e.preventDefault();
+            e.stopPropagation();
+            var $box = $(this).closest('.xabia-chatbox');
+            if (!$box.length || typeof window.xabiaCloseVoiceSurfaces !== 'function') {
+                return;
+            }
+            window.xabiaCloseVoiceSurfaces($box.get(0), { cancelMic: true });
+        });
+
+        $(document).on('keydown', function(e) {
+            if (e.key !== 'Escape') {
+                return;
+            }
+            var $box = $('.xabia-chatbox.xabia-voice-open, .xabia-chatbox.xabia-conversation-open').first();
+            if (!$box.length) {
+                return;
+            }
+            window.xabiaCloseVoiceSurfaces($box.get(0), { cancelMic: true });
+        });
+
+        $(document).on('keydown', '.xabia-voice-overlay__input', function(e) {
+            var isEnter = e.key === 'Enter' || e.which === 13 || e.keyCode === 13;
+            if (!isEnter || e.shiftKey || e.isComposing) {
+                return;
+            }
+            e.preventDefault();
+            $(this).closest('.xabia-voice-overlay').find('.xabia-send').trigger('click');
+        });
+
+        function xabiaChipSendText($chip) {
+            var query = String($chip.attr('data-query') || '').trim();
+            if (query) {
+                return query;
+            }
+            return $.trim($chip.text());
+        }
+
+        $(document).on('click', '.xabia-dock-chip', function(e) {
+            e.preventDefault();
+            e.stopPropagation();
+            var $chip = $(this);
+            var $box = $chip.closest('.xabia-chatbox');
+            var text = xabiaChipSendText($chip);
+            if (!$box.length || !text) {
+                return;
+            }
+            $box.find('.xabia-input-field').first().val(text);
+            submitChatMessage($box);
+        });
+
+        $(document).on('click', '.xabia-search-bar__mic', function(e) {
+            e.preventDefault();
+            e.stopPropagation();
+            var $bar = $(this).closest('.xabia-search-bar');
+            window.xabiaOpenVoiceOverlay($bar.attr('data-project'), this);
+        });
+
+        $(document).on('submit', '.xabia-search-bar__box', function(e) {
+            e.preventDefault();
+            var $bar = $(this).closest('.xabia-search-bar');
+            var text = $.trim(String($bar.find('.xabia-search-bar__input').val() || ''));
+            if (!text) {
+                return;
+            }
+            window.xabiaSubmitText($bar.attr('data-project'), text);
+            $bar.find('.xabia-search-bar__input').val('');
+        });
+
+        $(document).on('click', '.xabia-chip', function(e) {
+            e.preventDefault();
+            e.stopPropagation();
+            var $chip = $(this);
+            var $bar = $chip.closest('.xabia-search-bar');
+            var text = xabiaChipSendText($chip);
+            var project = $bar.attr('data-project');
+            var $box = xabiaFindChatbox($, project);
+            if ($box.length) {
+                openVoiceOverlay($, $box, this);
+                if (text) {
+                    $box.find('.xabia-voice-overlay__title').text('Procesando...');
+                    $box.find('.xabia-voice-overlay__transcript').attr('data-idle', '0').text('"' + text + '"');
+                    $box.find('.xabia-voice-overlay__input').val(text);
+                }
+            }
+            if (!text) {
+                return;
+            }
+            window.setTimeout(function() {
+                window.xabiaSubmitText(project, text);
+            }, 480);
+        });
+
+        function xabiaStartSearchTypewriter($bar) {
+            if (!$bar || !$bar.length || $bar.data('xabiaTypeOn') === 1) {
+                return;
+            }
+            var phrases = [];
+            try {
+                var rawPhrases = String($bar.attr('data-placeholders') || '[]');
+                rawPhrases = rawPhrases.replace(/&quot;/g, '"').replace(/&#039;/g, "'").replace(/&amp;/g, '&');
+                phrases = JSON.parse(rawPhrases);
+            } catch (ePhrase) {
+                phrases = [];
+            }
+            if (!Array.isArray(phrases)) {
+                phrases = [];
+            }
+            phrases = phrases.map(function(phrase) {
+                return String(phrase || '').trim();
+            }).filter(Boolean);
+            if (!phrases.length) {
+                return;
+            }
+            var input = $bar.find('input.xabia-search-bar__input').get(0);
+            if (!input) {
+                return;
+            }
+            $bar.data('xabiaTypeOn', 1);
+            var phraseIndex = 0;
+            var charIndex = 0;
+            var isDeleting = false;
+            var paused = false;
+            var timer = 0;
+            function userIsTyping() {
+                return document.activeElement === input || $.trim(String(input.value || '')) !== '';
+            }
+            function stopTypewriter() {
+                paused = true;
+                if (timer) {
+                    window.clearTimeout(timer);
+                    timer = 0;
+                }
+            }
+            function typeLoop() {
+                if (paused || (document.body && !document.body.contains($bar[0]))) {
+                    return;
+                }
+                if (userIsTyping()) {
+                    stopTypewriter();
+                    return;
+                }
+                var currentPhrase = String(phrases[phraseIndex] || '');
+                var speed = isDeleting ? 30 : 60;
+                if (isDeleting) {
+                    charIndex = Math.max(0, charIndex - 1);
+                    input.placeholder = currentPhrase.substring(0, charIndex);
+                    if (charIndex === 0) {
+                        isDeleting = false;
+                        phraseIndex = (phraseIndex + 1) % phrases.length;
+                        speed = 400;
+                    }
+                } else {
+                    charIndex = Math.min(currentPhrase.length, charIndex + 1);
+                    input.placeholder = currentPhrase.substring(0, charIndex);
+                    if (currentPhrase.length && charIndex === currentPhrase.length) {
+                        speed = 2000;
+                        isDeleting = true;
+                    }
+                }
+                timer = window.setTimeout(typeLoop, speed);
+            }
+            $bar.on('focusin', 'input.xabia-search-bar__input', stopTypewriter);
+            $bar.on('input', 'input.xabia-search-bar__input', function() {
+                if ($.trim(String(input.value || '')) !== '') {
+                    stopTypewriter();
+                }
+            });
+            $bar.on('focusout', 'input.xabia-search-bar__input', function() {
+                if ($.trim(String(input.value || '')) !== '') {
+                    return;
+                }
+                window.setTimeout(function() {
+                    if (userIsTyping() || !document.body.contains($bar[0])) {
+                        return;
+                    }
+                    paused = false;
+                    typeLoop();
+                }, 200);
+            });
+            typeLoop();
+        }
+
+        function xabiaStartSearchTypewriters() {
+            $('.xabia-search-bar').each(function() {
+                xabiaStartSearchTypewriter($(this));
+            });
+        }
+        xabiaStartSearchTypewriters();
+        $(function() {
+            xabiaStartSearchTypewriters();
+        });
+
+        $(document).on('click', '.xabia-starter-chip', function(e) {
+            e.preventDefault();
+            e.stopPropagation();
+            var $chip = $(this);
+            var $box = $chip.closest('.xabia-chatbox');
+            if (!$box.length) {
+                return;
+            }
+            var text = String($chip.attr('data-question') || $chip.text() || '').trim();
+            if (!text) {
+                return;
+            }
+            var $input = $box.find('.xabia-input-field');
+            $input.val(text);
+            autoSizeInput($input);
+            syncChatUiState($box);
+            submitChatMessage($box);
+        });
+
+        $(document).on('click', '.xabia-continue', function(e) {
+            e.preventDefault();
+            e.stopPropagation();
+            var $box = $(this).closest('.xabia-chatbox');
+            var $btn = $(this);
+            if ($btn.prop('disabled') || $box.hasClass('xabia-is-waiting')) {
+                return;
+            }
+            $btn.prop('disabled', true);
+            submitChatMessage($box, { forceContinue: true });
+        });
+
+        $(document).on('focusin', '.xabia-input-field, .xabia-voice-overlay__input, .xabia-search-bar__input', function() {
+            var $field = $(this);
+            var $box = $field.closest('.xabia-chatbox');
+            if (!$box.length) {
+                $box = xabiaFindChatbox($, $field.closest('.xabia-search-bar').attr('data-project'));
+            }
+            stopCurrentAudioPlayback($box);
+        });
+
+        $(document).on('keydown keypress', '.xabia-input-field, .xabia-voice-overlay__input, .xabia-search-bar__input', function(e) {
+            var $field = $(this);
+            var $box = $field.closest('.xabia-chatbox');
+            if (!$box.length) {
+                $box = xabiaFindChatbox($, $field.closest('.xabia-search-bar').attr('data-project'));
+            }
+            stopCurrentAudioPlayback($box);
+            if (!$field.is('.xabia-input-field')) {
+                return;
+            }
+            var isEnter = e.key === 'Enter' || e.which === 13 || e.keyCode === 13;
+            if (isEnter && !e.shiftKey && !e.isComposing) {
+                e.preventDefault();
+                $(this).closest('.xabia-chatbox').find('.xabia-send').trigger('click');
+            }
+        });
+
+        $(document).on('focus input keyup paste', '.xabia-ui-modern .xabia-input-field', function() {
+            var $input = $(this);
+            enforceInputLimits($input);
+            autoSizeInput($input);
+            syncChatUiState($input.closest('.xabia-chatbox'));
+        });
+
+        $(document).on('input paste', '.xabia-input-field', function() {
+            var $input = $(this);
+            enforceInputLimits($input);
+            autoSizeInput($input);
+        });
+
+        function refreshOpenInputHeights() {
+            $('.xabia-chatbox .xabia-input-field').each(function() {
+                var $input = $(this);
+                enforceInputLimits($input);
+                autoSizeInput($input);
+            });
+        }
+
+        $(window).on('resize orientationchange', function() {
+            window.setTimeout(refreshOpenInputHeights, 80);
+        });
+        if (window.visualViewport) {
+            window.visualViewport.addEventListener('resize', function() {
+                window.setTimeout(refreshOpenInputHeights, 80);
+            });
+        }
+
+        function xabiaCardQtyValue($shop) {
+            var $input = $shop.find('.xabia-entity-card__qty-input').first();
+            var max = parseInt($shop.attr('data-max') || $input.attr('max') || '99', 10);
+            if (isNaN(max) || max < 1) max = 99;
+            var n = parseInt($input.val(), 10);
+            if (isNaN(n) || n < 1) n = 1;
+            if (n > max) n = max;
+            $input.val(String(n));
+            return n;
+        }
+
+        $(document).on('click', '.xabia-entity-card__qty-btn', function(e) {
+            e.preventDefault();
+            var $btn = $(this);
+            var $shop = $btn.closest('.xabia-entity-card__shop');
+            var $input = $shop.find('.xabia-entity-card__qty-input').first();
+            var max = parseInt($shop.attr('data-max') || $input.attr('max') || '99', 10);
+            if (isNaN(max) || max < 1) max = 99;
+            var n = parseInt($input.val(), 10);
+            if (isNaN(n) || n < 1) n = 1;
+            if ($btn.attr('data-dir') === '+') n += 1;
+            else n -= 1;
+            if (n < 1) n = 1;
+            if (n > max) n = max;
+            $input.val(String(n));
+            var $remote = $shop.find('a.xabia-btn-cart-remote');
+            if ($remote.length) {
+                var tpl = String($remote.attr('data-url-template') || '');
+                var pid = String($remote.attr('data-id') || '');
+                if (tpl && pid && tpl.indexOf('{id}') !== -1) {
+                    $remote.attr('href', tpl.split('{id}').join(pid).split('{qty}').join(String(n)));
+                }
+            }
+        });
+
+        $(document).on('change input', '.xabia-entity-card__qty-input', function() {
+            var $input = $(this);
+            var $shop = $input.closest('.xabia-entity-card__shop');
+            xabiaCardQtyValue($shop);
+            var $remote = $shop.find('a.xabia-btn-cart-remote');
+            if ($remote.length) {
+                var tpl = String($remote.attr('data-url-template') || '');
+                var pid = String($remote.attr('data-id') || '');
+                var n = xabiaCardQtyValue($shop);
+                if (tpl && pid && tpl.indexOf('{id}') !== -1) {
+                    $remote.attr('href', tpl.split('{id}').join(pid).split('{qty}').join(String(n)));
+                }
+            }
+        });
+
+        $(document).on('click', 'a.xabia-btn-cart-remote', function() {
+            var $a = $(this);
+            var $shop = $a.closest('.xabia-entity-card__shop');
+            if ($shop.length) {
+                var qty = xabiaCardQtyValue($shop);
+                var tpl = String($a.attr('data-url-template') || '');
+                var pid = String($a.attr('data-id') || '');
+                if (tpl && pid && tpl.indexOf('{id}') !== -1) {
+                    $a.attr('href', tpl.split('{id}').join(pid).split('{qty}').join(String(qty)));
+                }
+            }
+            var href = String($a.attr('href') || '');
+            var m = href.match(/(?:add-to-cart=)(\d+)/i);
+            var id = m ? m[1] : String($a.attr('data-id') || '');
+            var $box = $a.closest('.xabia-chatbox');
+            var proj = $box.length ? String($box.data('project') || 'default') : ((window.XabiaSettings && window.XabiaSettings.projectId) ? String(window.XabiaSettings.projectId) : 'default');
+            if (id && window.xabiaWooCartIntent) {
+                window.xabiaWooCartIntent.recordSingle(proj, id, '');
+            }
+        });
+        $(document).on('click', 'a.xabia-btn-cart-pack-remote', function() {
+            var ids = String($(this).attr('data-pack-ids') || '').split(',').map(function(s) { return parseInt(s, 10); }).filter(function(n) { return n > 0; });
+            var $box = $(this).closest('.xabia-chatbox');
+            var proj = $box.length ? String($box.data('project') || 'default') : ((window.XabiaSettings && window.XabiaSettings.projectId) ? String(window.XabiaSettings.projectId) : 'default');
+            if (ids.length && window.xabiaWooCartIntent) {
+                window.xabiaWooCartIntent.recordPack(proj, ids, [], '');
+            }
+        });
+
+        $(document).on('click', '.xabia-book-amelia', function(e) {
+            if ($(this).hasClass('xabia-book-amelia--link')) {
+                return;
+            }
+            e.preventDefault();
+            var sid = parseInt($(this).attr('data-service-id'), 10);
+            if (!sid) return;
+            xabiaAmeliaHandleBookingOpen(sid);
+        });
+
+        $(document).on('click', '.xabia-btn-cart', function(e) {
+            var $btn = $(this);
+            if ($btn.is('a')) {
+                return;
+            }
+            e.preventDefault();
+            if ($btn.prop('disabled')) return;
+            var wc = window.xabiaWooCart;
+            if (!wc || !wc.ajaxUrl || !wc.nonce || !wc.action) {
+                alert(xabiaI18n('cartUnavailable', 'Carrito no disponible.'));
+                return;
+            }
+            var productId = parseInt($btn.attr('data-id'), 10);
+            if (!productId) return;
+            var $shop = $btn.closest('.xabia-entity-card__shop');
+            var quantity = $shop.length ? xabiaCardQtyValue($shop) : 1;
+            var $box = $btn.closest('.xabia-chatbox');
+            var $history = messagesStream($box);
+            var originalLabel = $btn.text();
+            $btn.prop('disabled', true);
+            var pageLang = '';
+            try {
+                pageLang = String(wc.lang || document.documentElement.lang || '').trim();
+            } catch (eLang) {
+                pageLang = String(wc.lang || '').trim();
+            }
+            $.post(wc.ajaxUrl, {
+                action: wc.action,
+                nonce: wc.nonce,
+                product_id: productId,
+                quantity: quantity,
+                lang: pageLang,
+                xabia_project_id: $box.data('project') || 'default'
+            }).done(function(r) {
+                if (r.success && r.data) {
+                    var msg = (r.data.message || wc.addedMsg || xabiaI18n('productAdded', '¡Añadido!'));
+                    var proj = String($box.data('project') || (window.XabiaSettings && window.XabiaSettings.projectId) || 'default');
+                    if (window.xabiaWooCartIntent) {
+                        window.xabiaWooCartIntent.recordSingle(proj, productId, '');
+                    }
+                    var shouldRedirect = false;
+                    if ($shop.length && $shop.attr('data-redirect') === '1') shouldRedirect = true;
+                    if (r.data.redirect_behavior === true || r.data.redirect_behavior === 1 || r.data.redirect_behavior === '1') shouldRedirect = true;
+                    if (wc.redirectAfterAdd) shouldRedirect = true;
+                    var goUrl = '';
+                    if (shouldRedirect) {
+                        goUrl = String(r.data.cart_url || ($shop.length ? $shop.attr('data-cart-url') : '') || wc.cartUrl || r.data.checkout_url || wc.checkoutUrl || '').trim();
+                    }
+                    if (goUrl) {
+                        window.location.href = goUrl;
+                        return;
+                    }
+                    $btn.text(msg);
+                    $btn.addClass('is-added');
+                    window.setTimeout(function() {
+                        $btn.text(originalLabel);
+                        $btn.removeClass('is-added');
+                        $btn.prop('disabled', false);
+                    }, 1800);
+                } else {
+                    var err = (r.data && r.data.message) ? r.data.message : xabiaI18n('errorGeneric', 'Error');
+                    $history.append('<div class="xabia-msg bot" style="color:#b32d2e">' + $('<div/>').text(err).html() + '</div>');
+                    scrollMessages($box);
+                    $btn.prop('disabled', false);
+                }
+            }).fail(function() {
+                $history.append($('<div class="xabia-msg bot" style="color:#b32d2e"></div>').text(xabiaI18n('networkError', 'Error de red.')));
+                scrollMessages($box);
+                $btn.prop('disabled', false);
+            });
+        });
+        }
+
+        /**
+         * Modo tótem: inactividad → xabia_clear_session (servidor) y UI al saludo inicial.
+         */
+        function initXabiaTotem($box) {
+            if (xabiaIsLiteMode()) {
+                return;
+            }
+            var min = parseInt($box.attr('data-totem-minutes'), 10);
+            if (!min || min <= 0) {
+                return;
+            }
+
+            var ms = min * 60 * 1000;
+            var warnAt = Math.max(0, ms - 10000);
+            var endpoint = $box.data('endpoint');
+            var projectId = $box.data('project');
+            var storageKey = 'xabia_totem_' + projectId;
+
+            var timerId = null;
+            var warnId = null;
+
+            function parseReset() {
+                var raw = $box.attr('data-totem-reset');
+                if (!raw) {
+                    return null;
+                }
+                try {
+                    return JSON.parse(raw);
+                } catch (e2) {
+                    return null;
+                }
+            }
+
+            function resetTimers() {
+                if (timerId) {
+                    clearTimeout(timerId);
+                    timerId = null;
+                }
+                if (warnId) {
+                    clearTimeout(warnId);
+                    warnId = null;
+                }
+                $box.find('.xabia-totem-warning').hide().empty();
+            }
+
+            function applyResetHtml() {
+                var o = parseReset();
+                var $stream = messagesStream($box);
+                if (o && o.greeting_html !== undefined && o.greeting_html !== null) {
+                    $stream.html('<div class="xabia-msg bot xabia-msg-greeting"><span class="xabia-msg-content">' + String(o.greeting_html) + '</span></div>');
+                } else {
+                    $stream.find('.xabia-msg').not('.xabia-msg-greeting').remove();
+                }
+                if (o && Array.isArray(o.starter_questions) && o.starter_questions.length) {
+                    try {
+                        $box.attr('data-starter-questions', JSON.stringify(o.starter_questions));
+                    } catch (eReset) {}
+                }
+                syncChatUiState($box);
+            }
+
+            function onTimeout() {
+                resetTimers();
+                $.post(endpoint, { action: 'xabia_clear_session', project_id: projectId }).always(function() {
+                    try {
+                        sessionStorage.removeItem(storageKey);
+                        localStorage.removeItem(storageKey);
+                        if (window.xabiaWooCartIntent) {
+                            window.xabiaWooCartIntent.clear(projectId);
+                        }
+                    } catch (err) {}
+                    applyResetHtml();
+                });
+            }
+
+            function arm() {
+                resetTimers();
+                if (warnAt < ms) {
+                    warnId = setTimeout(function() {
+                        $box.find('.xabia-totem-warning').text(xabiaI18n('totemWarning', 'La sesión se cerrará pronto por inactividad.')).show();
+                    }, warnAt);
+                }
+                timerId = setTimeout(onTimeout, ms);
+            }
+
+            $box.on('click.xabiaTotem mousedown.xabiaTotem touchstart.xabiaTotem', function() {
+                arm();
+            });
+            $box.find('.xabia-input-field').on('focus.xabiaTotem input.xabiaTotem keydown.xabiaTotem', function() {
+                arm();
+            });
+
+            arm();
+        }
+
+        function tryAddonAutoMessage($box) {
+            var raw = $box.attr('data-qr-auto');
+            if (!raw) {
+                return;
+            }
+            var o;
+            try {
+                o = JSON.parse(raw);
+            } catch (e0) {
+                return;
+            }
+            if (!o || !o.greeting) {
+                return;
+            }
+            var qrId = String(o.qr_id || '');
+            var key = 'xabia_addon_auto_' + encodeURIComponent(qrId || '1');
+            try {
+                if (sessionStorage.getItem(key)) {
+                    return;
+                }
+            } catch (e1) {}
+            if ($box[0] && typeof $box[0].scrollIntoView === 'function') {
+                $box[0].scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            }
+            $box.find('.xabia-input-field').val(String(o.greeting));
+            try {
+                sessionStorage.setItem(key, '1');
+            } catch (e2) {}
+            $box.find('.xabia-send').trigger('click');
+        }
+
+        function xabiaApplyQueryTunnelToBoxOuter($b) {
+            var urlParams = null;
+            try {
+                urlParams = new URLSearchParams(window.location.search);
+            } catch (eP) {
+                urlParams = null;
+            }
+            if (!urlParams || !$b || !$b.length) {
+                return;
+            }
+            var xp = urlParams.get('x_project');
+            var eid = urlParams.get('ente_id');
+            if (xp) {
+                $b.attr('data-project', xp);
+            }
+            if (eid) {
+                $b.attr('data-ente-id', eid);
+                $b.attr('data-strict-mode', '1');
+                $b.attr('data-scope', eid);
+            }
+            if (window.XabiaSettings && typeof window.XabiaSettings === 'object') {
+                if (xp) {
+                    window.XabiaSettings.projectId = xp;
+                    window.XabiaSettings.xProject = xp;
+                }
+                if (eid) {
+                    window.XabiaSettings.enteId = eid;
+                    window.XabiaSettings.strictMode = true;
+                    window.XabiaSettings.scope = eid;
+                }
+            }
+        }
+
+        function initKioskPresentation($box) {
+            var mode = String($box.attr('data-presentation-mode') || 'web_adaptive');
+            if (!mode || mode === 'web_adaptive') {
+                return;
+            }
+            $('html').addClass('xabia-kiosk-page');
+            $('body').addClass('xabia-kiosk-open xabia-immersive-open');
+            $box.addClass('xabia-kiosk-embed xabia-immersive-mode xabia-chatbox--fullscreen xabia-panel-shell is-active');
+            $box.find('.xabia-immersive-avatar-stage').attr('aria-hidden', 'false');
+            ensureImmersiveKinetic($box);
+        }
+
+        function xabiaSetAgentAvailability($box, online) {
+            if (!$box || !$box.length) {
+                return;
+            }
+            var $presence = $box.find('.xabia-chat-header__presence');
+            var onText = ($presence.first().attr('data-online') || xabiaI18n('onlineStatus', '· En línea'));
+            var offText = ($presence.attr('data-offline') || xabiaI18n('offlineStatus', 'No disponible'));
+            $box.toggleClass('is-unavailable', !online);
+            $box.attr('data-agent-available', online ? '1' : '0');
+            if ($presence.length) {
+                $presence.text(online ? onText : offText);
+            }
+        }
+
+        function initXabiaChatboxes() {
+            var isBoxPage = document.body && document.body.classList.contains('xabia-box-page');
+            $('.xabia-chatbox').each(function() {
+                var $b = $(this);
+                if ($b.data('xabiaInited') === 1) {
+                    return;
+                }
+                $b.data('xabiaInited', 1);
+                xabiaApplyQueryTunnelToBoxOuter($b);
+                initKioskPresentation($b);
+                if (isBoxPage) {
+                    $('html').addClass('xabia-box-page');
+                    $b.addClass('xabia-chatbox--fullscreen');
+                    if (boxHasSpeakingAvatar($b)) {
+                        $b.addClass('xabia-immersive-mode');
+                        $('body').addClass('xabia-immersive-open');
+                        $b.find('.xabia-immersive-avatar-stage').attr('aria-hidden', 'false');
+                        ensureImmersiveKinetic($b);
+                    }
+                }
+                setVoiceOn($b, isVoiceOn($b));
+                applyChatboxI18n($b);
+                xabiaSetAgentAvailability($b, String($b.attr('data-agent-available') || '1') !== '0');
+                xabiaApplyColorSchemes();
+                autoSizeInput($b.find('.xabia-input-field'));
+                syncChatUiState($b);
+                initXabiaTotem($b);
+                tryAddonAutoMessage($b);
+                $b.find('.xabia-msg.bot').each(function() {
+                    var $m = $(this);
+                    var raw = $m.attr('data-raw') || $m.find('.xabia-msg-content').text() || '';
+                    attachMsgSpeakButton($b, $m, raw);
+                });
+                if (isBoxPage) {
+                    window.setTimeout(function() {
+                        var $inp = $b.find('.xabia-input-field');
+                        if ($inp.length) {
+                            try {
+                                $inp.trigger('focus');
+                            } catch (eF) {}
+                        }
+                    }, 120);
+                }
+                if (chatIsOpenForGreeting($b)) {
+                    window.setTimeout(function() { maybeSpeakGreetingOnOpen($b); }, 180);
+                }
+            });
+        }
+
+        function xabiaSyncLauncherShell(box) {
+            if (!box || box.classList.contains('xabia-present-kiosk')) {
+                return;
+            }
+            if (box.classList.contains('is-active')) {
+                box.setAttribute('data-xabia-launcher-shell', '1');
+                box.classList.add('xabia-conversation-open');
+                document.body.classList.add('xabia-conversation-open');
+                return;
+            }
+            if (box.getAttribute('data-xabia-launcher-shell') !== '1') {
+                return;
+            }
+            box.setAttribute('data-xabia-launcher-shell', '0');
+            box.classList.remove('xabia-conversation-open');
+            if (!document.querySelector('.xabia-chatbox.xabia-conversation-open')) {
+                document.body.classList.remove('xabia-conversation-open');
+            }
+        }
+
+        function xabiaWatchLauncherShell() {
+            if (window.__xabiaLauncherShell) {
+                return;
+            }
+            window.__xabiaLauncherShell = true;
+            function watch(box) {
+                if (!box || box.getAttribute('data-xabia-shell-watch') === '1') {
+                    return;
+                }
+                box.setAttribute('data-xabia-shell-watch', '1');
+                xabiaSyncLauncherShell(box);
+                if (typeof MutationObserver !== 'function') {
+                    return;
+                }
+                var observer = new MutationObserver(function() {
+                    xabiaSyncLauncherShell(box);
+                });
+                observer.observe(box, { attributes: true, attributeFilter: ['class'] });
+            }
+            document.querySelectorAll('.xabia-chatbox').forEach(watch);
+            if (typeof MutationObserver === 'function') {
+                var rootObserver = new MutationObserver(function(mutations) {
+                    mutations.forEach(function(mutation) {
+                        mutation.addedNodes.forEach(function(node) {
+                            if (!node || node.nodeType !== 1) {
+                                return;
+                            }
+                            if (node.classList && node.classList.contains('xabia-chatbox')) {
+                                watch(node);
+                            }
+                            if (node.querySelectorAll) {
+                                node.querySelectorAll('.xabia-chatbox').forEach(watch);
+                            }
+                        });
+                    });
+                });
+                rootObserver.observe(document.documentElement, { childList: true, subtree: true });
+            }
+        }
+
+        function xabiaBindLauncherScroll() {
+            if (window.__xabiaLauncherScroll) {
+                return;
+            }
+            window.__xabiaLauncherScroll = true;
+            var lastY = window.scrollY || 0;
+            window.addEventListener('scroll', function() {
+                var y = window.scrollY || 0;
+                if (!document.body.classList.contains('xabia-open') && !window.matchMedia('(max-width: 600px)').matches) {
+                    document.querySelectorAll('button.xabia-launcher').forEach(function(btn) {
+                        if (btn.getAttribute('data-placement') === 'inline') {
+                            return;
+                        }
+                        if (y > lastY + 2) {
+                            btn.classList.remove('footer-hidden');
+                        } else if (y < lastY - 2 && y > 100) {
+                            btn.classList.add('footer-hidden');
+                        }
+                    });
+                }
+                lastY = y;
+            }, { passive: true });
+        }
+
+        bindXabiaChatboxHandlers();
+        xabiaWatchLauncherShell();
+        function xabiaSyncDockAction(field) {
+            var dock = field && field.closest ? field.closest('.xabia-dock__input-box') : null;
+            if (!dock) {
+                return;
+            }
+            dock.classList.toggle('is-typing', String(field.value || '').length > 0);
+        }
+
+        $(document).on('input', '.xabia-input-field', function() {
+            xabiaSyncDockAction(this);
+        });
+
+        function xabiaBindSmartPill() {
+            if (window.__xabiaSmartPill) {
+                return;
+            }
+            window.__xabiaSmartPill = true;
+            var mq = window.matchMedia('(max-width: 600px)');
+            var scrollTimer = 0;
+            var lastY = window.scrollY || 0;
+            function launchers() {
+                return document.querySelectorAll('button.xabia-launcher:not(.xabia-launcher--inline)');
+            }
+            function syncHero() {
+                var heroes = document.querySelectorAll('.xabia-search-bar, .xabia-search-box');
+                var visible = false;
+                if (mq.matches) {
+                    heroes.forEach(function(hero) {
+                        var rect = hero.getBoundingClientRect();
+                        if (rect.width > 0 && rect.bottom > 0 && rect.top < window.innerHeight) {
+                            visible = true;
+                        }
+                    });
+                }
+                launchers().forEach(function(btn) {
+                    btn.classList.toggle('is-behind-hero', mq.matches && heroes.length > 0 && visible);
+                });
+            }
+            window.addEventListener('scroll', function() {
+                var y = window.scrollY || 0;
+                var scrollingDown = y > lastY + 2;
+                lastY = y;
+                if (!mq.matches || !scrollingDown || document.body.classList.contains('xabia-open')) {
+                    return;
+                }
+                launchers().forEach(function(btn) {
+                    if (!btn.classList.contains('is-behind-hero')) {
+                        btn.classList.add('is-collapsed');
+                    }
+                });
+                window.clearTimeout(scrollTimer);
+                scrollTimer = window.setTimeout(function() {
+                    launchers().forEach(function(btn) {
+                        btn.classList.remove('is-collapsed');
+                    });
+                }, 700);
+            }, { passive: true });
+            if (typeof IntersectionObserver === 'function') {
+                var io = new IntersectionObserver(function() {
+                    syncHero();
+                }, { threshold: [0, 0.01] });
+                function watchHeroes() {
+                    document.querySelectorAll('.xabia-search-bar, .xabia-search-box').forEach(function(el) {
+                        if (el.getAttribute('data-xabia-hero-watch') === '1') {
+                            return;
+                        }
+                        el.setAttribute('data-xabia-hero-watch', '1');
+                        io.observe(el);
+                    });
+                    syncHero();
+                }
+                watchHeroes();
+                document.addEventListener('xabia:chatbox:mounted', watchHeroes);
+            } else {
+                syncHero();
+            }
+            if (mq.addEventListener) {
+                mq.addEventListener('change', syncHero);
+            }
+        }
+
+        xabiaBindLauncherScroll();
+        xabiaBindSmartPill();
+        xabiaApplyColorSchemes();
+        preloadSpeechVoices();
+        if (window.speechSynthesis) {
+            window.speechSynthesis.onvoiceschanged = preloadSpeechVoices;
+        }
+        window.xabiaChatboxInitAll = initXabiaChatboxes;
+        $(function() {
+            initXabiaChatboxes();
+        });
+        document.addEventListener('xabia:chatbox:mounted', function() {
+            initXabiaChatboxes();
+        });
+        $(document).on('click', '.xabia-interface-trigger, .xabia-chatbox .xabia-input-field, .xabia-chatbox .xabia-send, .xabia-chatbox .xabia-mute', function() {
+            unlockSpeechSynthesis({ beep: false });
+            window.setTimeout(function() {
+                $('.xabia-chatbox').each(function() {
+                    maybeSpeakGreetingOnOpen($(this));
+                });
+            }, 180);
+        });
+    }
+
+    function xabiaChatboxBoot() {
+        if (typeof window.jQuery === 'undefined') {
+            window.setTimeout(xabiaChatboxBoot, 40);
+            return;
+        }
+        xabiaChatboxMain(window.jQuery);
+    }
+
+    xabiaChatboxBoot();
+})();

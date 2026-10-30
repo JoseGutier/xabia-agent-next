@@ -623,8 +623,9 @@ function xabia_woo_extract_products_from_context(string $context): array {
         if ($part === '') {
             continue;
         }
+        $label_gap = '(?:\s*\((?:[^()]|\([^()]*\))*\))?';
         $ids = [];
-        if (preg_match_all('/\b(?:ID(?:\s+del\s+producto)?|product[_ ]?id|post_id)\s*:\s*(\d{1,12})\b/iu', $part, $im)) {
+        if (preg_match_all('/\b(?:ID(?:\s+del\s+producto)?|product[_ ]?id|post_id)' . $label_gap . '\s*:\s*(\d{1,12})\b/iu', $part, $im)) {
             foreach ($im[1] as $raw_id) {
                 $n = (int) $raw_id;
                 if ($n > 0) {
@@ -642,7 +643,8 @@ function xabia_woo_extract_products_from_context(string $context): array {
             }
         }
         $titles = [];
-        if (preg_match_all('/\b(?:EMPRESA|Nombre del producto|Titulo|T[ií]tulo|post_title|Producto)\s*:\s*([^\n|;]+)/iu', $part, $tm)) {
+        if (preg_match_all('/\b(?:EMPRESA|Nombre del producto|Titulo|T[ií]tulo|post_title|Producto)' . $label_gap . '\s*:\s*([^\n|;]+)/iu', $part, $tm)
+            || preg_match_all('/\[Entidad:\s*([^\]]+)\]/u', $part, $tm)) {
             foreach ($tm[1] as $raw_t) {
                 $t = trim(wp_strip_all_tags((string) $raw_t));
                 $t = preg_replace('/\s+/u', ' ', $t) ?? $t;
@@ -655,10 +657,7 @@ function xabia_woo_extract_products_from_context(string $context): array {
                 }
             }
         }
-        $price = '';
-        if (preg_match('/\b(?:Precio(?:\s+actual)?|Precio_oferta|price)\s*:\s*([^\n|;]+)/iu', $part, $pm)) {
-            $price = trim(wp_strip_all_tags((string) $pm[1]));
-        }
+        $price = xabia_woo_price_from_text($part);
         $img = '';
         if (preg_match('/\[Imagen disponible:\s*(https?:\/\/[^\s\]]+)\s*\]/iu', $part, $imatch)) {
             $img = trim((string) $imatch[1]);
@@ -683,6 +682,7 @@ function xabia_woo_extract_products_from_context(string $context): array {
             }
         }
         $meta = implode(' · ', array_values(array_unique(array_filter($meta_bits))));
+        $permalink = xabia_woo_permalink_from_text($part);
 
         $ids = array_values(array_unique($ids));
         $titles = array_values(array_unique($titles));
@@ -704,6 +704,7 @@ function xabia_woo_extract_products_from_context(string $context): array {
                     'price'   => $price,
                     'img'     => $img,
                     'meta'    => $meta,
+                    'permalink' => $permalink,
                 ];
             }
             continue;
@@ -724,11 +725,29 @@ function xabia_woo_extract_products_from_context(string $context): array {
                 'price'   => $price,
                 'img'     => $img,
                 'meta'    => $meta,
+                'permalink' => $permalink,
             ];
         }
     }
 
     return $out;
+}
+
+/**
+ * URL de ficha dentro de un bloque de contexto (contrato [Enlace:] o campo Link / URL de compra).
+ */
+function xabia_woo_permalink_from_text(string $text): string {
+    if (preg_match('/\[Enlace:\s*(https?:\/\/[^\s\]]+)\s*\]/iu', $text, $m)) {
+        return rtrim(trim((string) $m[1]), '.,;)');
+    }
+    if (preg_match('/\b(?:Link|URL(?:\s+de\s+compra)?|Enlace(?:\s+(?:al\s+)?producto)?|permalink)\s*:\s*(https?:\/\/[^\s|;\[\]]+)/iu', $text, $m)) {
+        $url = rtrim(trim((string) $m[1]), '.,;)');
+        if (!preg_match('/\.(?:jpe?g|png|gif|webp|svg|avif)(?:\?|$)/i', $url)) {
+            return $url;
+        }
+    }
+
+    return '';
 }
 
 /**
@@ -1152,8 +1171,165 @@ function xabia_woo_enrich_card_shop_fields(array $fields, array $config = []): a
 }
 
 /**
+ * URL de foto ya presente en la fila (img, image o i).
+ *
+ * @param array<string, mixed> $fields
+ */
+function xabia_woo_card_image_from_fields(array $fields): string {
+    foreach (['img', 'image', 'i', 'Imagen_URL', 'imagen', 'imagen_url'] as $key) {
+        $value = trim((string) ($fields[$key] ?? ''));
+        if ($value !== '' && preg_match('#^https?://#i', $value)) {
+            return $value;
+        }
+    }
+
+    return '';
+}
+
+/**
+ * Foto del producto en Woo local o, si el catálogo es remoto, el guid de la miniatura.
+ *
+ * @param array<string, mixed> $config
+ */
+function xabia_woo_lookup_product_image_url(int $product_id, array $config = []): string {
+    if ($product_id < 1) {
+        return '';
+    }
+    $remote = function_exists('xabia_woo_is_remote_catalog') && xabia_woo_is_remote_catalog($config);
+    if (!$remote && function_exists('wc_get_product')) {
+        $product = wc_get_product($product_id);
+        if ($product && method_exists($product, 'get_image_id')) {
+            $img_id = (int) $product->get_image_id();
+            if ($img_id > 0 && function_exists('wp_get_attachment_image_url')) {
+                $url = wp_get_attachment_image_url($img_id, 'medium');
+                if (is_string($url) && preg_match('#^https?://#i', $url)) {
+                    return $url;
+                }
+            }
+        }
+
+        return '';
+    }
+    if (!$remote) {
+        return '';
+    }
+    $sql_cfg = isset($config['sql_config']) && is_array($config['sql_config']) ? $config['sql_config'] : [];
+    $db = xabia_woo_remote_wpdb($sql_cfg);
+    if (!$db) {
+        return '';
+    }
+    $prefix = xabia_woo_remote_table_prefix($db, $sql_cfg);
+    $guid = $db->get_var($db->prepare(
+        "SELECT att.guid FROM {$prefix}postmeta thumb
+         INNER JOIN {$prefix}posts att ON att.ID = CAST(NULLIF(thumb.meta_value, '') AS UNSIGNED)
+         WHERE thumb.post_id = %d AND thumb.meta_key = '_thumbnail_id'
+         LIMIT 1",
+        $product_id
+    ));
+    $guid = is_string($guid) ? trim($guid) : '';
+    if ($guid !== '' && isset($guid[0]) && $guid[0] === '/') {
+        $shop = xabia_woo_get_remote_shop_url($config);
+        if ($shop !== '') {
+            $guid = rtrim($shop, '/') . $guid;
+        }
+    }
+    if ($guid !== '' && preg_match('#^https?://#i', $guid)) {
+        return $guid;
+    }
+
+    return '';
+}
+
+/**
+ * Precio actual del producto en Woo local o, si el catálogo es remoto, `_price`.
+ *
+ * @param array<string, mixed> $config
+ */
+function xabia_woo_lookup_product_price(int $product_id, array $config = []): string {
+    if ($product_id < 1) {
+        return '';
+    }
+    $remote = function_exists('xabia_woo_is_remote_catalog') && xabia_woo_is_remote_catalog($config);
+    if (!$remote && function_exists('wc_get_product')) {
+        $product = wc_get_product($product_id);
+        if ($product && method_exists($product, 'get_price')) {
+            $raw = trim((string) $product->get_price());
+            if ($raw !== '') {
+                return $raw;
+            }
+        }
+
+        return '';
+    }
+    if (!$remote) {
+        return '';
+    }
+    $sql_cfg = isset($config['sql_config']) && is_array($config['sql_config']) ? $config['sql_config'] : [];
+    $db = xabia_woo_remote_wpdb($sql_cfg);
+    if (!$db) {
+        return '';
+    }
+    $prefix = xabia_woo_remote_table_prefix($db, $sql_cfg);
+    $raw = $db->get_var($db->prepare(
+        "SELECT meta_value FROM {$prefix}postmeta WHERE post_id = %d AND meta_key = '_price' LIMIT 1",
+        $product_id
+    ));
+    $raw = is_string($raw) ? trim($raw) : '';
+    if ($raw === '' || !is_numeric(str_replace(',', '.', $raw))) {
+        return '';
+    }
+
+    return $raw;
+}
+
+/**
+ * Importe dentro de un bloque de ficha: contrato, etiqueta de mapeo (con o sin instrucción) o línea de catálogo.
+ */
+function xabia_woo_price_from_text(string $text): string {
+    if (preg_match('/\[Dato clave:\s*([^\]]+)\]/u', $text, $hm)) {
+        $highlight = trim(wp_strip_all_tags((string) ($hm[1] ?? '')));
+        if (xabia_woo_text_looks_like_price($highlight)) {
+            return $highlight;
+        }
+    }
+    if (preg_match('/\b(?:Precio(?:\s+(?:actual|oferta|regular|de\s+referencia))?|Price|PVP|Precio_oferta)(?:\s*\((?:[^()]|\([^()]*\))*\))?\s*:\s*([^\n|;]+)/iu', $text, $pm)) {
+        $price = trim(wp_strip_all_tags((string) ($pm[1] ?? '')));
+        if ($price !== '' && $price !== '—' && xabia_woo_text_looks_like_price($price)) {
+            return $price;
+        }
+    }
+    if (preg_match('/\bPrecio\s*\(_price\)\s*:\s*([0-9]+(?:[.,][0-9]{1,2})?)/iu', $text, $dm)) {
+        return trim((string) ($dm[1] ?? ''));
+    }
+
+    return '';
+}
+
+/**
+ * Un dato clave es precio cuando trae importe, no cuando es una fecha o una hora.
+ */
+function xabia_woo_text_looks_like_price(string $value): bool {
+    $s = trim($value);
+    if ($s === '' || !preg_match('/\d/u', $s)) {
+        return false;
+    }
+    if (preg_match('/\d{4}-\d{2}-\d{2}|\d{1,2}:\d{2}\b/u', $s) && !preg_match('/[€$£]|eur/iu', $s)) {
+        return false;
+    }
+    if (preg_match('/\b(?:enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|octubre|noviembre|diciembre|lunes|martes|mi[eé]rcoles|jueves|viernes|s[aá]bado|domingo)\b/iu', $s)) {
+        return false;
+    }
+    if (preg_match('/[€$£]|eur|usd|gbp/iu', $s)) {
+        return true;
+    }
+
+    return (bool) preg_match('/^\d{1,6}(?:[.,]\d{1,2})?(?:\s*\/\s*\p{L}+)?$/u', $s);
+}
+
+/**
  * Codifica [ACTION:CARD:…] con datos de compra enriquecidos.
  * Si el producto no es comprable, omite CART (modo solo + Info).
+ * La foto viaja en `i` (alias `image` / `img`).
  *
  * @param array<string, mixed> $fields
  */
@@ -1167,23 +1343,40 @@ function xabia_woo_encode_product_action_card(array $fields, string $cta_label, 
         return '';
     }
     $price = trim((string) ($fields['price'] ?? ''));
+    if ($price === '') {
+        $price_id = (int) ($fields['display_id'] ?? 0);
+        if ($price_id < 1) {
+            $price_id = $id;
+        }
+        $price = xabia_woo_lookup_product_price($price_id, $config);
+    }
     if ($price !== '' && !preg_match('/€|eur|\$/i', $price)) {
         $price .= ' €';
+    }
+    $image = xabia_woo_card_image_from_fields($fields);
+    if ($image === '') {
+        $image_id = (int) ($fields['display_id'] ?? 0);
+        if ($image_id < 1) {
+            $image_id = $id;
+        }
+        $image = xabia_woo_lookup_product_image_url($image_id, $config);
     }
     $purchasable = array_key_exists('purchasable', $fields)
         ? !empty($fields['purchasable'])
         : ($id > 0);
     $payload = [
-        't'  => (string) ($fields['title'] ?? ''),
-        'm'  => (string) ($fields['meta'] ?? ''),
-        'p'  => $price,
-        'i'  => (string) ($fields['img'] ?? ''),
-        'l'  => $cta_label !== '' ? $cta_label : __('Comprar', 'xabia-intelligence'),
-        'u'  => (string) ($fields['permalink'] ?? ''),
-        'cu' => (string) ($fields['cart_url'] ?? ''),
-        'ck' => (string) ($fields['checkout_url'] ?? ''),
-        'rd' => !empty($fields['redirect_behavior']) ? '1' : '0',
-        'mx' => (string) max(1, min(99, (int) ($fields['max_qty'] ?? 99))),
+        't'     => (string) ($fields['title'] ?? ''),
+        'm'     => (string) ($fields['meta'] ?? ''),
+        'p'     => $price,
+        'i'     => $image,
+        'image' => $image,
+        'img'   => $image,
+        'l'     => $cta_label !== '' ? $cta_label : __('Comprar', 'xabia-intelligence'),
+        'u'     => (string) ($fields['permalink'] ?? ''),
+        'cu'    => (string) ($fields['cart_url'] ?? ''),
+        'ck'    => (string) ($fields['checkout_url'] ?? ''),
+        'rd'    => !empty($fields['redirect_behavior']) ? '1' : '0',
+        'mx'    => (string) max(1, min(99, (int) ($fields['max_qty'] ?? 99))),
     ];
     if ($purchasable && $id > 0) {
         $payload['a'] = 'CART:' . $id;
@@ -1649,6 +1842,9 @@ function xabia_woo_resolve_product_card_fields(
         if (trim((string) ($resolved['meta'] ?? '')) === '' && trim((string) ($base['meta'] ?? '')) !== '') {
             $resolved['meta'] = $base['meta'];
         }
+        if (trim((string) ($resolved['permalink'] ?? '')) === '' && trim((string) ($base['permalink'] ?? '')) !== '') {
+            $resolved['permalink'] = $base['permalink'];
+        }
         $from_catalog = true;
     } elseif ($base !== null) {
         $resolved = $base;
@@ -1667,7 +1863,7 @@ function xabia_woo_resolve_product_card_fields(
                 }
                 if (preg_match('/.{0,200}\b' . $lookup_id . '\b.{0,400}/us', $context, $wm)) {
                     $win = $wm[0];
-                    if (preg_match('/\b(?:EMPRESA|Nombre del producto|Titulo|T[ií]tulo|Producto)\s*:\s*([^\n|;]+)/iu', $win, $tm)) {
+                    if (preg_match('/\b(?:EMPRESA|Nombre del producto|Titulo|T[ií]tulo|Producto)(?:\s*\((?:[^()]|\([^()]*\))*\))?\s*:\s*([^\n|;]+)/iu', $win, $tm)) {
                         $guess = trim(wp_strip_all_tags((string) $tm[1]));
                         break;
                     }
@@ -1786,7 +1982,7 @@ function xabia_woo_conversion_few_shot_block(): string {
         . "[ACTION:CART:711:Nombre del Producto Principal]\n\n"
         . "- **[Nombre Alternativa](URL_PRODUCTO)**: Breve descripción.\n"
         . "[ACTION:CART:712:Nombre Alternativa]\n\n"
-        . "711 y 712 son un ejemplo. Sustituye cada número por el ID real de la fila y el título exacto. Queda prohibido emitir [ACTION:CART:ID:...] con la palabra ID y prohibido recomendar en texto plano sin la etiqueta.";
+        . "711 y 712 son un ejemplo. Sustituye cada número por el ID real de la fila y el título exacto. Si hay más opciones útiles en el contexto, repite el bloque hasta 4. Queda prohibido emitir [ACTION:CART:ID:...] con la palabra ID y prohibido recomendar en texto plano sin la etiqueta.";
 }
 
 /**
@@ -1843,7 +2039,7 @@ function xabia_woo_assistant_mentions_product(string $response_text, string $pro
     }
     foreach ($toks as $tok) {
         $tlen = function_exists('mb_strlen') ? mb_strlen($tok, 'UTF-8') : strlen($tok);
-        if ($tlen >= 5 && strpos($hay, $tok) !== false) {
+        if ($tlen >= 4 && strpos($hay, $tok) !== false) {
             return true;
         }
     }
@@ -1877,12 +2073,222 @@ function xabia_woo_cart_ids_already_in_response(string $response): array {
 }
 
 /**
+ * Rellena `u` vacío de cada ficha de producto con la URL de su ficha.
+ *
+ * @param list<array<string, mixed>> $products
+ * @param array<string, mixed> $config
+ */
+function xabia_woo_fill_missing_card_permalinks(string $response, array $products, string $context, array $config = []): string {
+    if ($response === '' || strpos($response, '[ACTION:CARD:') === false || !class_exists('Xabia_Action_Card', false)) {
+        return $response;
+    }
+    $by_id = [];
+    $price_by_id = [];
+    foreach ($products as $product) {
+        if (!is_array($product)) {
+            continue;
+        }
+        $pid = (int) ($product['id'] ?? 0);
+        if ($pid < 1) {
+            continue;
+        }
+        $permalink = trim((string) ($product['permalink'] ?? ''));
+        if ($permalink !== '') {
+            $by_id[$pid] = $permalink;
+        }
+        $price = trim((string) ($product['price'] ?? ''));
+        if ($price !== '') {
+            $price_by_id[$pid] = $price;
+        }
+    }
+    $out = preg_replace_callback(
+        '/\[ACTION:CARD:([^\]]+)\]/u',
+        static function (array $m) use ($by_id, $price_by_id, $context, $config): string {
+            $decoded = Xabia_Action_Card::decode((string) ($m[1] ?? ''));
+            if (!is_array($decoded)) {
+                return (string) ($m[0] ?? '');
+            }
+            if (!preg_match('/^CART:(\d+)/i', (string) ($decoded['a'] ?? ''), $am)) {
+                return (string) ($m[0] ?? '');
+            }
+            $id = (int) $am[1];
+            $changed = false;
+            if (trim((string) ($decoded['u'] ?? '')) === '') {
+                $url = $by_id[$id] ?? '';
+                if ($url === '' && $context !== '' && $id > 0 && preg_match('/.{0,500}\b' . $id . '\b.{0,700}/us', $context, $wm)) {
+                    $url = xabia_woo_permalink_from_text((string) $wm[0]);
+                }
+                if ($url === '' && $id > 0 && function_exists('xabia_woo_product_public_url')) {
+                    $url = xabia_woo_product_public_url($id, $config);
+                }
+                if ($url !== '') {
+                    $decoded['u'] = $url;
+                    $changed = true;
+                }
+            }
+            if (trim((string) ($decoded['p'] ?? '')) === '') {
+                $price = $price_by_id[$id] ?? '';
+                if ($price === '' && $context !== '' && $id > 0 && preg_match('/.{0,800}\b' . $id . '\b.{0,900}/us', $context, $wm)) {
+                    $price = xabia_woo_price_from_text((string) $wm[0]);
+                }
+                if ($price !== '') {
+                    if (!preg_match('/€|eur|\$/i', $price)) {
+                        $price .= ' €';
+                    }
+                    $decoded['p'] = $price;
+                    $changed = true;
+                }
+            }
+            if (!$changed) {
+                return (string) ($m[0] ?? '');
+            }
+            $tag = Xabia_Action_Card::encode($decoded);
+            return $tag !== '' ? $tag : (string) ($m[0] ?? '');
+        },
+        $response
+    );
+
+    return is_string($out) ? $out : $response;
+}
+
+/**
+ * Tope de pastillas por respuesta. No sube el número de fragmentos RAG: solo cuántas fichas se pintan.
+ */
+function xabia_woo_product_pill_cap(): int {
+    return 4;
+}
+
+function xabia_woo_product_is_out_of_stock(array $product): bool {
+    $meta = (string) ($product['meta'] ?? '');
+
+    return stripos($meta, 'AGOTADO') !== false || stripos($meta, 'outofstock') !== false;
+}
+
+/**
+ * Productos cuyo título comparte una palabra con lo que pidió el usuario.
+ *
+ * @param list<array<string, mixed>> $products
+ * @return list<array<string, mixed>>
+ */
+function xabia_woo_products_overlapping_user(string $user_msg, array $products): array {
+    $hay = xabia_woo_normalize_match_text($user_msg);
+    if ($hay === '') {
+        return [];
+    }
+    $hit = [];
+    foreach ($products as $product) {
+        if (!is_array($product)) {
+            continue;
+        }
+        $tokens = xabia_woo_significant_title_tokens((string) ($product['title_n'] ?? ''));
+        foreach ($tokens as $token) {
+            if (strpos($hay, $token) !== false) {
+                $hit[] = $product;
+                break;
+            }
+        }
+    }
+
+    return $hit;
+}
+
+function xabia_woo_followup_wants_options(string $user_msg): bool {
+    $text = mb_strtolower(trim(wp_strip_all_tags($user_msg)), 'UTF-8');
+    if ($text === '') {
+        return false;
+    }
+
+    return (bool) preg_match(
+        '/\b(?:qu[eé]\s+m[aá]s|m[aá]s\s+opciones|otras?\s+opciones|alternativas|m[aá]s\s+productos|qu[eé]\s+(?:hay|tienes|ten[eé]is|vend[eé]is)|otras?\s+alternativas)\b/u',
+        $text
+    );
+}
+
+/**
+ * Fichas de producto ya emitidas en turnos anteriores (el modelo solo ve el texto, sin la pastilla).
+ *
+ * @param list<array<string, mixed>> $history
+ * @return list<array{id:int,title:string,tag:string}>
+ */
+function xabia_woo_product_cards_from_history(array $history): array {
+    if (!class_exists('Xabia_Action_Card', false)) {
+        return [];
+    }
+    $out = [];
+    $seen = [];
+    for ($i = count($history) - 1; $i >= 0; --$i) {
+        $msg = $history[$i];
+        if (!is_array($msg) || ($msg['role'] ?? '') !== 'assistant') {
+            continue;
+        }
+        $content = (string) ($msg['content'] ?? '');
+        if ($content === '' || !preg_match_all('/\[ACTION:CARD:([^\]]+)\]/u', $content, $matches)) {
+            continue;
+        }
+        foreach ($matches[1] as $raw) {
+            $decoded = Xabia_Action_Card::decode((string) $raw);
+            if (!is_array($decoded)) {
+                continue;
+            }
+            $title = trim((string) ($decoded['t'] ?? ''));
+            $action = (string) ($decoded['a'] ?? '');
+            if ($title === '' || !preg_match('/^CART:(\d+)/i', $action, $idm)) {
+                continue;
+            }
+            $id = (int) $idm[1];
+            if ($id < 1 || isset($seen[$id])) {
+                continue;
+            }
+            $seen[$id] = true;
+            $tag = Xabia_Action_Card::encode($decoded);
+            if ($tag === '') {
+                continue;
+            }
+            $out[] = ['id' => $id, 'title' => $title, 'tag' => $tag];
+        }
+    }
+
+    return $out;
+}
+
+/**
+ * Quita viñetas que solo repiten un producto que ya tiene pastilla.
+ *
+ * @param list<string> $titles
+ */
+function xabia_woo_drop_listed_products_now_in_cards(string $response, array $titles): string {
+    $titles = array_values(array_filter(array_map('strval', $titles)));
+    if ($response === '' || $titles === []) {
+        return $response;
+    }
+    $lines = preg_split('/\R/u', $response);
+    if (!is_array($lines)) {
+        return $response;
+    }
+    $kept = [];
+    foreach ($lines as $line) {
+        $is_item = (bool) preg_match('/^\s*(?:[-•*]|\d+[.)])\s+\S/u', (string) $line);
+        if ($is_item) {
+            foreach ($titles as $title) {
+                if (xabia_woo_assistant_mentions_product((string) $line, $title)) {
+                    continue 2;
+                }
+            }
+        }
+        $kept[] = $line;
+    }
+
+    return implode("\n", $kept);
+}
+
+/**
  * Sustituye [ACTION:CART:ID] / [ACTION:CART:ID:TITULO] por fichas [ACTION:CARD:…]
  * tras validar concordancia nombre↔ID (autocorrección desde contexto si aplica).
  *
  * @param array<string, mixed> $config Proyecto (opcional; etiqueta CTA remota/local).
+ * @param list<array<string, mixed>> $history Turnos previos, con las pastillas aún en el texto.
  */
-function xabia_woo_maybe_append_cart_actions(string $response, string $context, string $user_msg = '', array $config = []): string {
+function xabia_woo_maybe_append_cart_actions(string $response, string $context, string $user_msg = '', array $config = [], array $history = []): string {
     if ($response === '') {
         return $response;
     }
@@ -2015,28 +2421,49 @@ function xabia_woo_maybe_append_cart_actions(string $response, string $context, 
         $have_card[$final_id] = true;
     }
 
-    // 2) Rescate: sin CART (o tras descartar IDs inválidos) → si el asistente nombró un producto del RAG, añadir CARD.
+    // 2) Pastillas de las opciones ya recuperadas. Tope 4: no amplía el RAG, solo pinta más fichas.
     $append = [];
-    $need_rescue = ($matched === [] && $have_card === []) || ($cart_actions === [] && $matched === []);
-    if ($need_rescue && $products !== [] && trim($response) !== '') {
+    $card_titles = [];
+    $cap = xabia_woo_product_pill_cap();
+    $pill_count = preg_match_all('/\[ACTION:CARD:/u', $response) ?: 0;
+    if (preg_match_all('/\[ACTION:CARD:([^\]]+)\]/u', $response, $named_cards)) {
+        foreach ($named_cards[1] as $raw_card) {
+            $decoded_card = Xabia_Action_Card::decode((string) $raw_card);
+            if (is_array($decoded_card) && trim((string) ($decoded_card['t'] ?? '')) !== '') {
+                $card_titles[] = (string) $decoded_card['t'];
+            }
+        }
+    }
+    $push_card = static function (string $card, int $final_id, string $title) use (&$append, &$matched, &$have_card, &$pill_count, &$card_titles, $cap): bool {
+        if ($card === '' || $pill_count >= $cap || $final_id < 1 || isset($have_card[$final_id]) || isset($matched[$final_id])) {
+            return false;
+        }
+        $append[] = $card;
+        $have_card[$final_id] = true;
+        $pill_count++;
+        if ($title !== '') {
+            $card_titles[] = $title;
+        }
+
+        return true;
+    };
+    if ($products !== [] && $pill_count < $cap && trim($response) !== '') {
         $sorted = $products;
-        // Prioridad: títulos más largos primero (evita matches parciales débiles).
         usort($sorted, static function ($a, $b) {
             return strlen((string) ($b['title_n'] ?? '')) <=> strlen((string) ($a['title_n'] ?? ''));
         });
         foreach ($sorted as $p) {
+            if ($pill_count >= $cap) {
+                break;
+            }
             $id = (int) ($p['id'] ?? 0);
             $title = trim((string) ($p['title'] ?? ''));
             $tn = (string) ($p['title_n'] ?? '');
-            if ($id < 1 || $title === '' || isset($have_card[$id]) || isset($matched[$id])) {
+            if ($id < 1 || $title === '' || isset($have_card[$id]) || isset($matched[$id]) || xabia_woo_product_is_out_of_stock($p)) {
                 continue;
             }
             $len = function_exists('mb_strlen') ? mb_strlen($tn !== '' ? $tn : xabia_woo_normalize_match_text($title), 'UTF-8') : strlen($tn !== '' ? $tn : $title);
-            if ($len < 6) {
-                continue;
-            }
-            // mb_stripos sobre prosa (tolera - **Título**:) + tokens normalizados.
-            if (!xabia_woo_assistant_mentions_product($response, $title)) {
+            if ($len < 6 || !xabia_woo_assistant_mentions_product($response, $title)) {
                 continue;
             }
             $fields = xabia_woo_resolve_product_card_fields($id, $by_id, $context, $response, $title, $products);
@@ -2045,20 +2472,55 @@ function xabia_woo_maybe_append_cart_actions(string $response, string $context, 
                 $fields['id'] = xabia_woo_resolve_contextual_product_id($id);
             }
             $card = xabia_woo_encode_product_action_card($fields, $cta_label, $config);
-            if ($card === '') {
+            $final_id = (int) ($fields['id'] ?? $id);
+            if ($push_card($card, $final_id, (string) ($fields['title'] ?? $title))) {
+                $matched[$final_id] = $fields;
+            }
+        }
+        // Consulta abierta (no nombra un producto): completa con las otras filas ya recuperadas.
+        $overlapping = xabia_woo_products_overlapping_user($user_msg, $products);
+        $open_catalog = $overlapping === [] && ($pill_count > 0 || xabia_woo_followup_wants_options($user_msg));
+        if ($open_catalog) {
+            foreach ($products as $p) {
+                if ($pill_count >= $cap) {
+                    break;
+                }
+                $id = (int) ($p['id'] ?? 0);
+                $title = trim((string) ($p['title'] ?? ''));
+                if ($id < 1 || $title === '' || isset($have_card[$id]) || isset($matched[$id]) || xabia_woo_product_is_out_of_stock($p)) {
+                    continue;
+                }
+                $card = xabia_woo_encode_product_action_card($p, $cta_label, $config);
+                if ($push_card($card, $id, $title)) {
+                    $matched[$id] = $p;
+                }
+            }
+        }
+    }
+    if ($pill_count < $cap && $history !== []) {
+        $wants_options = xabia_woo_followup_wants_options($user_msg);
+        foreach (xabia_woo_product_cards_from_history($history) as $prev) {
+            if ($pill_count >= $cap) {
+                break;
+            }
+            $prev_id = (int) ($prev['id'] ?? 0);
+            $prev_title = (string) ($prev['title'] ?? '');
+            if ($prev_id < 1 || isset($have_card[$prev_id]) || isset($matched[$prev_id])) {
                 continue;
             }
-            $final_id = (int) ($fields['id'] ?? $id);
-            $matched[$final_id] = $fields;
-            $have_card[$final_id] = true;
-            $append[] = $card;
-            // Al menos una tarjeta de conversión; hasta 3 si nombra varios.
-            if (count($append) >= 3) {
-                break;
+            $mentioned = $prev_title !== '' && xabia_woo_assistant_mentions_product($response, $prev_title);
+            if (!$mentioned && !($wants_options && $products === [])) {
+                continue;
+            }
+            if ($push_card((string) ($prev['tag'] ?? ''), $prev_id, $prev_title)) {
+                $matched[$prev_id] = ['id' => $prev_id, 'title' => $prev_title];
             }
         }
     }
 
+    if ($card_titles !== []) {
+        $response = xabia_woo_drop_listed_products_now_in_cards($response, $card_titles);
+    }
     if ($append !== []) {
         $response = rtrim($response) . "\n\n" . implode("\n", $append);
     }
@@ -2066,6 +2528,8 @@ function xabia_woo_maybe_append_cart_actions(string $response, string $context, 
     if ($matched !== [] || $have_card !== [] || $append !== []) {
         $response = (string) preg_replace('/\[ACTION:CART:ID:\s*(?!\d+\b)[^\]]+\]/u', '', $response);
     }
+
+    $response = xabia_woo_fill_missing_card_permalinks($response, $products, $context, $config);
 
     // Limpiar espacios raros dejados al cortar frases / etiquetas inválidas.
     $response = (string) preg_replace("/[ \t]+\n/u", "\n", $response);
@@ -2808,7 +3272,7 @@ add_filter(
             return $rules === '' ? $append : $rules . "\n\n" . $append;
         }
 
-        $sales = 'VENTAS WOO: Responde primero al producto pedido (precio y stock). Cross-sell solo si intención_activa es SÍ, una frase al final. Máximo 2–3 productos. Nunca recomiendes como preferente un agotado (outofstock o [AGOTADO / SIN STOCK]); ofrece 2–3 con stock. Nombre e ID de la misma fila. No inventes precios, cupones ni nombres.';
+        $sales = 'VENTAS WOO: Responde primero al producto pedido (precio y stock). En cualquier turno, también en el segundo y los siguientes, cada producto que nombres lleva su etiqueta CART: una frase breve y la etiqueta, hasta 4 con stock. No dejes el nombre solo, ni en una lista ni en un enlace. No saludes si la conversación ya empezó. Cross-sell solo si intención_activa es SÍ, una frase al final. Nunca recomiendes como preferente un agotado (outofstock o [AGOTADO / SIN STOCK]). Nombre e ID de la misma fila. No inventes precios, cupones ni nombres.';
         if (xabia_woo_is_remote_catalog($config)) {
             $sales .= ' Pack conjunto: [ACTION:CART_PACK:ID_principal,ID_complemento] solo si aceptan ambos.';
         } else {
@@ -3139,8 +3603,9 @@ add_filter(
         }
         $context = isset($args['context']) ? (string) $args['context'] : '';
         $user_msg = isset($args['user_message']) ? (string) $args['user_message'] : '';
+        $history = isset($args['history']) && is_array($args['history']) ? $args['history'] : [];
 
-        return xabia_woo_maybe_append_cart_actions($response, $context, $user_msg, $config);
+        return xabia_woo_maybe_append_cart_actions($response, $context, $user_msg, $config, $history);
     },
     20,
     2

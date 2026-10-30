@@ -384,12 +384,12 @@ img[alt="Xabia"] {
 <body>
 <h1>Manual de usuario — Xabia Woo (addon WooCommerce)</h1>
 <blockquote>
-<p><strong>Addon:</strong> Xabia Woo <strong>v1.0.15</strong> · <strong>Core requerido:</strong> <strong>≥ 1.0.342</strong> (recomendado)</p>
+<p><strong>Addon:</strong> Xabia Woo <strong>v1.0.24</strong> · <strong>Core requerido:</strong> <strong>≥ 1.0.368</strong> (recomendado)</p>
 </blockquote>
 <h2>Guía rápida de instalación</h2>
 <ol>
-<li>Instale y active <strong>Xabia Agent Core</strong> (<code>v1.0.342</code> o superior recomendado).</li>
-<li>Instale y active <strong>Xabia Woo</strong> (<code>xabia-woo-1.0.15.zip</code>) desde <strong>Plugins → Añadir nuevo → Subir plugin</strong>.</li>
+<li>Instale y active <strong>Xabia Agent Core</strong> (<code>v1.0.368</code> o superior recomendado).</li>
+<li>Instale y active <strong>Xabia Woo</strong> (<code>xabia-woo-1.0.24.zip</code>) desde <strong>Plugins → Añadir nuevo → Subir plugin</strong>.</li>
 <li>En <strong>Xabia Agent → Addons</strong>, active o sincronice la suscripción <strong>xabia-woo</strong> hasta ver <strong>Hub Polar: activa</strong>.</li>
 <li>Si la tienda está en el mismo WordPress, confirme que <strong>WooCommerce</strong> está activo y tiene productos publicados.</li>
 <li>Si la tienda está en otra web, rellene las credenciales SQL remotas y la <strong>URL pública de la tienda Woo (remoto)</strong> en el agente.</li>
@@ -631,8 +631,8 @@ img[alt="Xabia"] {
 <h2>Parte 7 — Experiencia del visitante en el chat</h2>
 <ul>
 <li>La IA recibe <strong>reglas de ventas</strong> y un resumen de productos recientes cuando el proyecto usa <strong>Woo</strong>.  </li>
-<li>Si recomienda un producto, el frontend muestra una <strong>ficha compacta</strong> con botón <strong>Comprar</strong> (<strong><code>[ACTION:CARD]</code></strong> / carrito; requiere WooCommerce activo en la página del chat, o enlace remoto si el catálogo es externo).</li>
-<li><strong>Stock:</strong> el descubrimiento en vivo solo ofrece productos <strong>en stock</strong>. En el índice, un producto agotado queda marcado <strong>[AGOTADO / SIN STOCK]</strong> y el agente no debe recomendarlo como opción preferida; para un síntoma habitual propone dos o tres alternativas disponibles. Tras actualizar a <strong>1.0.15</strong>, vuelva a <strong>Sincronizar</strong> para que el índice recoja esa marca.  </li>
+<li>Si recomienda un producto, el frontend muestra una <strong>ficha compacta</strong> con el precio junto al título y el botón <strong>Comprar</strong> (<strong><code>[ACTION:CARD]</code></strong> / carrito; requiere WooCommerce activo en la página del chat, o enlace remoto si el catálogo es externo). En una misma respuesta pueden salir hasta <strong>cuatro</strong> fichas de productos en stock. Si una pregunta siguiente vuelve a nombrar uno de esos productos, la ficha aparece otra vez, aunque el nombre vaya abreviado.</li>
+<li><strong>Stock:</strong> el descubrimiento en vivo solo ofrece productos <strong>en stock</strong>. En el índice, un producto agotado queda marcado <strong>[AGOTADO / SIN STOCK]</strong> y el agente no debe recomendarlo como opción preferida. Tras actualizar a <strong>1.0.24</strong>, vuelva a <strong>Sincronizar</strong> si el índice se generó con una versión anterior y no marca el stock.  </li>
 <li><strong>Productos variables:</strong> a veces hace falta elegir variación en la <strong>ficha</strong>; el <strong>Resumen</strong> puede incluir líneas que oriente al visitante.  </li>
 <li>Tras añadir al carrito, el visitante puede completar el pedido en WooCommerce; si la compra sigue a una recomendación en sesión, puede registrarse una conversión interna (véase la siguiente parte).</li>
 <li>Si el catálogo está en una tienda remota, las fichas, carrito y cupones se resuelven en el dominio configurado como <strong>URL pública de la tienda Woo (remoto)</strong>.</li>

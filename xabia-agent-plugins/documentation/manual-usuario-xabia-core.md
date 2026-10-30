@@ -1,13 +1,13 @@
 # Manual de usuario — Xabia Agent Core
 
-> **Versión del producto:** Xabia Agent Core **v1.0.342** (octubre 2026)  
+> **Versión del producto:** Xabia Agent Core **v1.0.368** (octubre 2026)  
 > **Índice de manuales:** [https://xabia.ai/docs/](https://xabia.ai/docs/)  
 > **PDF en línea:** [https://xabia.ai/docs/manual-usuario-xabia-core.pdf](https://xabia.ai/docs/manual-usuario-xabia-core.pdf)  
 > **HTML en línea:** [https://xabia.ai/docs/manual-usuario-xabia-core.html](https://xabia.ai/docs/manual-usuario-xabia-core.html)
 
 ## Guía rápida de instalación
 
-1. Descargue el ZIP de **Xabia Agent Core** (`xabia-agent-core-1.0.342.zip` o paquete retail equivalente).
+1. Descargue el ZIP de **Xabia Agent Core** (`xabia-agent-core-1.0.368.zip` o paquete retail equivalente).
 2. En WordPress, vaya a **Plugins → Añadir nuevo → Subir plugin**, seleccione el ZIP y pulse **Instalar ahora → Activar**.
 3. Abra **Xabia Agent** y configure **Conexión a la IA**: pegue la licencia `XABIA--…`, elija **Xabia Cloud** (recomendado) o **Infraestructura propia**, y guarde.
 4. Cree un agente desde **Nuevo agente**. En **Identidad y Tono** escriba nombre, saludo y personalidad; en **Conocimiento** elija la fuente de información.
@@ -227,7 +227,7 @@ Desde la **v1.0.57** hay modos claramente separados; desde la **v1.0.192+** exis
 </div>
 
 
-Las reglas **Mostrar solo en estas páginas** y **Excluir estas páginas o entradas** pertenecen a la burbuja de **Web adaptable**. En modo shortcode o lanzador el chat o botón aparece **únicamente** donde esté pegado el shortcode.
+Las reglas **Mostrar solo en estas páginas** y **Excluir estas páginas o entradas** pertenecen a la burbuja de **Web adaptable**. En un sitio con WPML o Polylang, esas listas muestran solo las páginas y entradas del idioma original. Si marca una, sus traducciones hacen lo mismo: el botón aparece o se oculta igual que en el original. En modo shortcode o lanzador el chat o botón aparece **únicamente** donde esté pegado el shortcode.
 
 | Perfil en la cuadrícula Apariencia | Shortcode o URL | Qué ve el visitante |
 |------|-----------------|---------------------|
@@ -253,7 +253,7 @@ El avatar **mira al cursor** con efecto de profundidad: la cabeza se mueve muy p
 | Comportamiento | Descripción |
 |----------------|-------------|
 | **Disparador flotante** | Fijo abajo a la derecha (o izquierda / márgenes personalizados). |
-| **Scroll** | Al **bajar** la página el botón aparece; al **subir** se oculta (como en la versión clásica de Xabia). |
+| **Scroll** | En escritorio, al **bajar** la página el botón aparece y al **subir** se oculta. En el móvil (pantallas de menos de 600 px) la pastilla no desaparece: se pliega a un círculo mientras se hace scroll y vuelve a mostrar el texto al parar. Si la página tiene la barra hero, la pastilla espera a que esa barra salga de la pantalla. |
 | **Panel de chat** | Flotante derecha/izquierda, **modal centrado con desenfoque**, o pantalla completa. |
 | **Telón** | Al abrir el chat, fondo semitransparente con blur en toda la pantalla. |
 
@@ -271,9 +271,13 @@ El avatar **mira al cursor** con efecto de profundidad: la cabeza se mueve muy p
 
 Guarde con **Guardar agente**. En modo nativo el plugin inyecta disparador y assets en `wp_footer` automáticamente. En modo shortcode, pegue `[xabia_agent id="su-agente"]` o `[xabia_launcher id="su-agente" size="lg"]` donde corresponda.
 
-#### Aspecto del chat (v1.0.342)
+#### Aspecto del chat (v1.0.368)
 
 La cabecera cubre todo el ancho, sin esquinas redondeadas arriba. A la izquierda va el nombre del agente y el estado: **En línea · Respuestas en tiempo real** cuando puede contestar, o **No disponible** si el agente está pausado, no hay saldo de licencia o el servicio no responde. El botón de cerrar queda a la derecha.
+
+En escritorio el botón flotante permanece abierto y muestra la frase configurada en **Frase del botón**. En el móvil es una pastilla con el texto **Mostrador Virtual**. El botón de la esquina abre la misma conversación que la barra de búsqueda.
+
+El saludo escrito en **Identidad y Tono** se muestra al abrir el chat. La primera respuesta del asistente puede saludar una vez. A partir del segundo mensaje no vuelve a presentarse: entra directo en la contestación.
 
 En la conversación, los mensajes del visitante van en una burbuja a la derecha. Las respuestas admiten **Markdown básico** (`**negrita**`, listas). Varias fichas seguidas (producto, enlace o reserva) se agrupan en una rejilla de dos columnas en escritorio y en una sola columna en el móvil.
 
@@ -979,6 +983,13 @@ Depende de **condiciones contractuales**: dos direcciones públicas distintas a 
 Mire en **Comportamiento IA** el **tope diario de tokens por agente**. La barra lateral **Tokens hoy** muestra si ya alcanzó ese techo para el día técnico en curso; al día siguiente ese contador vuelve a cero para el agente, aunque su **cartera global** siga teniendo saldo disponible para otros agentes u otros días.
 
 ## Notas de versión (Core)
+
+### Core v1.0.368 (octubre 2026)
+- El asistente saluda solo en la primera respuesta. En las siguientes empieza por la contestación.
+- **Apariencia:** «Mostrar solo en estas páginas» y «Excluir estas páginas o entradas» listan el idioma original. Las traducciones siguen esa misma selección.
+- Botón flotante: en escritorio, frase visible y scroll clásico (bajar muestra, subir oculta). En móvil, pastilla **Mostrador Virtual** que se pliega al hacer scroll y espera a que la barra hero salga de la pantalla.
+- El botón de la esquina abre la misma pantalla de conversación que la barra hero.
+- Assets del chat: `styles-v1.0.368.css` y `chatbox-v1.0.368.js`. Tras instalar, vacíe la caché de página si el HTML sigue sirviendo una versión anterior.
 
 ### Core v1.0.342 (octubre 2026)
 - Cabecera del chat a sangre: identidad y estado a la izquierda, cerrar a la derecha. El estado pasa a **No disponible** si el agente está pausado, el saldo de la licencia está a cero o la respuesta indica que no hay servicio.

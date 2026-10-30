@@ -73,4 +73,4 @@ Tras subir una versión nueva, invalidar caché de `/docs/`, `/docs/index.html`,
 
 ---
 
-*Core v1.0.342 — octubre 2026*
+*Core v1.0.368 · Woo v1.0.24 — octubre 2026*

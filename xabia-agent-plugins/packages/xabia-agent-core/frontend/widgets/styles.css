@@ -601,7 +601,7 @@
     min-width: 0;
     font-size: inherit;
     line-height: 1.45;
-    color: var(--xabia-dots-color, var(--xabia-accent, #ff9966));
+    color: var(--xabia-text, #111111);
     opacity: 0;
     transform: translateY(1px);
     transition: opacity 0.35s ease, transform 0.35s ease;
@@ -1580,7 +1580,7 @@ body.xabia-mic-listening .xabia-chatbox.xabia-immersive-mode .xabia-mic-listenin
 
 .xabia-ui-modern .xabia-waiting-message {
     font-size: 1em;
-    color: var(--xabia-dots-color, var(--xabia-accent, #ff9966));
+    color: var(--xabia-text, #111111);
 }
 
 .xabia-ui-modern .xabia-panel-close .xabia-lucide {
@@ -2713,15 +2713,38 @@ body.xabia-conversation-open {
 }
 
 .xabia-voice-orb {
+    position: relative;
+    z-index: 1;
     display: flex;
     align-items: center;
     justify-content: center;
-    width: 96px;
-    height: 96px;
+    width: 118px;
+    height: 118px;
     border-radius: 999px;
     background: color-mix(in srgb, var(--xabia-accent, #2271b1) 16%, var(--xabia-surface, #ffffff));
     color: var(--xabia-text, #111111);
-    box-shadow: var(--xabia-shadow, 0 16px 40px rgba(0, 0, 0, 0.08));
+    box-shadow: none;
+}
+
+.xabia-voice-orb::before {
+    content: '';
+    position: absolute;
+    z-index: -1;
+    inset: 0;
+    border-radius: inherit;
+    background: color-mix(in srgb, var(--xabia-accent, #2271b1) 28%, transparent);
+    animation: xabiaVoiceOrbPulse 1.8s ease-out infinite;
+    pointer-events: none;
+}
+
+.xabia-voice-orb .material-symbols-outlined {
+    font-size: 42px;
+    line-height: 1;
+}
+
+@keyframes xabiaVoiceOrbPulse {
+    0% { transform: scale(1); opacity: 0.55; }
+    100% { transform: scale(1.55); opacity: 0; }
 }
 
 .xabia-voice-overlay__title {
@@ -2740,24 +2763,28 @@ body.xabia-conversation-open {
     color: var(--xabia-muted, #5c6370);
 }
 
+.xabia-voice-overlay__transcript[data-idle="1"] {
+    display: none;
+}
+
 .xabia-voice-overlay__transcript:not([data-idle="1"]) {
     color: var(--xabia-text, #111111);
 }
 
 .xabia-voice-overlay__bottom {
-    padding: 8px 16px calc(env(safe-area-inset-bottom, 0px) + 16px);
+    padding: 8px 24px calc(env(safe-area-inset-bottom, 0px) + 18px);
 }
 
 .xabia-voice-overlay__bar {
     display: flex;
     align-items: center;
     gap: 8px;
-    width: min(720px, 100%);
+    width: min(800px, 100%);
     margin: 0 auto;
-    padding: 8px 8px 8px 16px;
+    padding: 8px 8px 8px 18px;
     box-sizing: border-box;
     border: 1px solid var(--xabia-line, rgba(0, 0, 0, 0.08));
-    border-radius: 999px;
+    border-radius: 30px;
     background: var(--xabia-surface, #ffffff);
     box-shadow: var(--xabia-shadow, 0 16px 40px rgba(0, 0, 0, 0.08));
 }
@@ -2790,7 +2817,11 @@ body.xabia-conversation-open {
     cursor: pointer;
 }
 
-.xabia-voice-overlay__mic,
+.xabia-voice-overlay__mic {
+    background: #ef4444;
+    color: #ffffff;
+}
+
 .xabia-search-bar__mic {
     background: color-mix(in srgb, var(--xabia-accent, #2271b1) 16%, var(--xabia-surface, #ffffff));
     color: var(--xabia-text, #111111);
@@ -3234,7 +3265,7 @@ body.xabia-conversation-open {
 .xabia-search-bar {
     display: flex;
     flex-direction: column;
-    align-items: center;
+    align-items: stretch;
     width: 100%;
     color: #111111;
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
@@ -3397,6 +3428,20 @@ body.xabia-conversation-open {
     background-color: #ffffff !important;
     border-color: rgba(0, 0, 0, 0.16) !important;
     color: #111111 !important;
+}
+
+@media (max-width: 768px) {
+    .xabia-quick-chips {
+        gap: 8px;
+        margin-top: 12px;
+    }
+
+    .xabia-search-bar button.xabia-chip {
+        padding: 5px 11px !important;
+        font-size: 0.78rem;
+        line-height: 1.25;
+        box-shadow: none;
+    }
 }
 
 .xabia-chatbox[data-theme="dark"] .xabia-chat-header,
@@ -4015,24 +4060,34 @@ body.xabia-conversation-open {
     min-width: 0 !important;
 }
 
-.xabia-chatbox .xabia-msg.bot .xabia-card__media {
+.xabia-chatbox .xabia-msg.bot .xabia-card__media,
+.xabia-chatbox .xabia-msg.bot .xabia-product-card__media {
     flex: 0 0 76px !important;
+    flex-shrink: 0 !important;
     width: 76px !important;
     height: 76px !important;
+    min-width: 76px !important;
+    min-height: 76px !important;
     border-radius: 10px !important;
     overflow: hidden !important;
     background: #f4f4f5 !important;
+    display: block !important;
 }
 
-.xabia-chatbox .xabia-msg.bot .xabia-card__img {
+.xabia-chatbox .xabia-msg.bot .xabia-card__thumb,
+.xabia-chatbox .xabia-msg.bot .xabia-card__img,
+.xabia-chatbox .xabia-msg.bot .xabia-card img,
+.xabia-chatbox .xabia-msg.bot .xabia-product-card__img {
     display: block !important;
-    width: 76px !important;
-    height: 76px !important;
-    max-width: 76px !important;
-    max-height: 76px !important;
+    width: 100% !important;
+    height: 100% !important;
+    max-width: none !important;
+    max-height: none !important;
     object-fit: cover !important;
-    border-radius: 10px !important;
+    border-radius: 0 !important;
     margin: 0 !important;
+    visibility: visible !important;
+    opacity: 1 !important;
 }
 
 .xabia-chatbox .xabia-msg.bot .xabia-card__info {
@@ -4263,4 +4318,542 @@ body.xabia-conversation-open {
 .xabia-chatbox.is-unavailable .xabia-dock-chips {
     pointer-events: none;
     opacity: 0.55;
+}
+
+.xabia-convo-dock,
+.xabia-search-bar__box {
+    transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.25s ease, border-color 0.25s ease;
+}
+
+.xabia-chatbox .xabia-convo-dock:hover,
+.xabia-chatbox .xabia-convo-dock:focus-within,
+.xabia-search-bar__box:hover,
+.xabia-search-bar__box:focus-within {
+    transform: translateY(-2px);
+    border-color: rgba(0, 0, 0, 0.14);
+    box-shadow: 0 10px 28px rgba(0, 0, 0, 0.08), 0 0 16px color-mix(in srgb, var(--xabia-accent, #111111) 18%, transparent), 0 0 14px rgba(0, 0, 0, 0.07) !important;
+}
+
+.xabia-chatbox .xabia-input,
+.xabia-chatbox.xabia-ui-modern .xabia-input-field,
+.xabia-chatbox.xabia-ui-modern .xabia-compose-area .xabia-input-field,
+.xabia-chatbox.xabia-ui-modern:not(.xabia-state-empty) .xabia-input-field,
+.xabia-chatbox.xabia-ui-modern:not(.xabia-state-empty) .xabia-compose-area .xabia-input-field,
+.xabia-chatbox.xabia-conversation-open .xabia-input-field,
+.xabia-chatbox textarea.xabia-input-field,
+.xabia-chatbox input[type="text"].xabia-input-field,
+.xabia-chatbox .xabia-voice-overlay__input,
+.xabia-search-bar input.xabia-search-bar__input,
+.xabia-search-bar input.xabia-search-bar__input:focus,
+.xabia-search-bar input.xabia-search-bar__input:hover {
+    color: #1a1a1a !important;
+    -webkit-text-fill-color: #1a1a1a !important;
+    caret-color: #1a1a1a;
+}
+
+.xabia-chatbox .xabia-input::placeholder,
+.xabia-chatbox .xabia-input-field::placeholder,
+.xabia-chatbox.xabia-ui-modern .xabia-compose-area .xabia-input-field::placeholder,
+.xabia-chatbox.xabia-ui-modern .xabia-input-pill .xabia-input-field::placeholder,
+.xabia-chatbox .xabia-voice-overlay__input::placeholder,
+.xabia-search-bar input.xabia-search-bar__input::placeholder {
+    color: #8c8c8c !important;
+    -webkit-text-fill-color: #8c8c8c !important;
+    opacity: 1 !important;
+}
+
+.xabia-chatbox.xabia-ui-modern[data-voice="1"]:not([data-voice-optional="1"]) .xabia-input-pill .xabia-mute,
+.xabia-chatbox.xabia-ui-modern[data-voice="1"]:not([data-voice-optional="1"]) button.xabia-mute {
+    display: none !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .xabia-convo-dock,
+    .xabia-search-bar__box {
+        transition: none;
+    }
+    .xabia-chatbox .xabia-convo-dock:hover,
+    .xabia-chatbox .xabia-convo-dock:focus-within,
+    .xabia-search-bar__box:hover,
+    .xabia-search-bar__box:focus-within {
+        transform: none;
+    }
+}
+
+button.xabia-launcher {
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    gap: 0 !important;
+    width: 56px !important;
+    height: 56px !important;
+    min-width: 56px !important;
+    min-height: 56px !important;
+    max-width: 56px !important;
+    max-height: 56px !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    border: 1px solid rgba(0, 0, 0, 0.08) !important;
+    border-radius: 50% !important;
+    background: #ffffff !important;
+    color: #111111 !important;
+    cursor: pointer;
+    box-shadow: 0 16px 40px rgba(0, 0, 0, 0.08) !important;
+    pointer-events: auto;
+    line-height: 1 !important;
+    overflow: hidden !important;
+    appearance: none;
+    -webkit-appearance: none;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    transition: width 0.55s cubic-bezier(0.16, 1, 0.3, 1), max-width 0.55s cubic-bezier(0.16, 1, 0.3, 1), padding 0.55s cubic-bezier(0.16, 1, 0.3, 1), gap 0.55s cubic-bezier(0.16, 1, 0.3, 1), border-radius 0.55s cubic-bezier(0.16, 1, 0.3, 1), transform 0.35s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.35s ease, box-shadow 0.25s ease, border-color 0.25s ease;
+}
+button.xabia-launcher::before {
+    content: none !important;
+    display: none !important;
+}
+button.xabia-launcher:hover,
+button.xabia-launcher:focus,
+button.xabia-launcher:focus-visible,
+button.xabia-launcher:active {
+    background: #ffffff !important;
+    color: #111111 !important;
+    border-color: rgba(0, 0, 0, 0.14) !important;
+    box-shadow: 0 10px 28px rgba(0, 0, 0, 0.08), 0 0 16px color-mix(in srgb, var(--xabia-accent, #111111) 18%, transparent), 0 0 14px rgba(0, 0, 0, 0.07) !important;
+    transform: translateY(-2px);
+}
+button.xabia-launcher.xabia-launcher--bottom-center:hover,
+button.xabia-launcher.xabia-launcher--bottom-center:focus,
+button.xabia-launcher.xabia-launcher--bottom-center:active {
+    transform: translateX(-50%) translateY(-2px);
+}
+button.xabia-launcher .xabia-launcher__spark {
+    flex: 0 0 auto;
+    font-size: 22px !important;
+    line-height: 1 !important;
+    color: #111111 !important;
+    font-variation-settings: "FILL" 0, "wght" 500, "GRAD" 0, "opsz" 24;
+}
+button.xabia-launcher .xabia-launcher__label {
+    min-width: 0;
+    max-width: 0;
+    opacity: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 0.92rem;
+    font-weight: 500;
+    line-height: 1.2;
+    color: #111111 !important;
+    transition: max-width 0.55s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.4s ease;
+}
+button.xabia-launcher .xabia-launcher__desk,
+button.xabia-launcher .xabia-launcher__mic {
+    display: none;
+}
+@media (min-width: 769px) {
+    button.xabia-launcher:not(.xabia-launcher--inline) {
+        justify-content: flex-start !important;
+        gap: 10px !important;
+        width: max-content !important;
+        max-width: min(78vw, 340px) !important;
+        height: 56px !important;
+        max-height: 56px !important;
+        padding: 0 18px 0 14px !important;
+        border-radius: 999px !important;
+    }
+    button.xabia-launcher:not(.xabia-launcher--inline) .xabia-launcher__label {
+        max-width: 260px;
+        opacity: 1;
+    }
+    button.xabia-launcher:not(.xabia-launcher--inline) .xabia-launcher__spark {
+        font-size: 22px !important;
+    }
+}
+.xabia-launcher--bottom-right { position: fixed; bottom: 24px; right: 24px; z-index: 999990; }
+.xabia-launcher--bottom-left  { position: fixed; bottom: 24px; left: 24px; z-index: 999990; }
+.xabia-launcher--bottom-center{ position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); z-index: 999990; }
+.xabia-launcher--inline {
+    position: relative;
+    bottom: auto;
+    left: auto;
+    right: auto;
+    transform: none;
+    z-index: 2;
+}
+button.xabia-launcher.footer-hidden {
+    opacity: 0 !important;
+    visibility: hidden;
+    pointer-events: none !important;
+    transform: translateY(18px);
+}
+button.xabia-launcher.xabia-launcher--bottom-center.footer-hidden,
+button.xabia-launcher.xabia-launcher--bottom-center.footer-hidden:hover {
+    transform: translateX(-50%) translateY(18px);
+}
+body.xabia-open .xabia-launcher--bottom-right,
+body.xabia-open .xabia-launcher--bottom-left,
+body.xabia-open .xabia-launcher--bottom-center {
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+}
+@media (max-width: 768px) {
+    button.xabia-launcher,
+    button.xabia-launcher.is-expanded {
+        justify-content: center !important;
+        gap: 0 !important;
+        width: 56px !important;
+        height: 56px !important;
+        min-width: 56px !important;
+        min-height: 56px !important;
+        max-width: 56px !important;
+        max-height: 56px !important;
+        padding: 0 !important;
+        border-radius: 50% !important;
+    }
+    button.xabia-launcher .xabia-launcher__label,
+    button.xabia-launcher.is-expanded .xabia-launcher__label {
+        display: none !important;
+    }
+    button.xabia-launcher .xabia-launcher__spark {
+        font-size: 26px !important;
+    }
+}
+@media (max-width: 600px) {
+    button.xabia-launcher:not(.xabia-launcher--inline) {
+        z-index: 999999 !important;
+        touch-action: manipulation;
+        cursor: pointer;
+        justify-content: flex-start !important;
+        gap: 9px !important;
+        width: max-content !important;
+        min-width: 0 !important;
+        max-width: calc(100vw - 32px) !important;
+        height: 44px !important;
+        min-height: 44px !important;
+        max-height: 44px !important;
+        padding: 0 8px 0 14px !important;
+        border-radius: 9999px !important;
+        background: #ffffff !important;
+        color: #0f172a !important;
+        border: 1px solid rgba(5, 150, 105, 0.25) !important;
+        box-shadow: 0 10px 28px rgba(15, 23, 42, 0.16) !important;
+        bottom: 22px;
+        transition: width 0.35s cubic-bezier(0.16, 1, 0.3, 1), max-width 0.35s cubic-bezier(0.16, 1, 0.3, 1), height 0.35s cubic-bezier(0.16, 1, 0.3, 1), padding 0.35s cubic-bezier(0.16, 1, 0.3, 1), gap 0.35s cubic-bezier(0.16, 1, 0.3, 1), border-radius 0.35s cubic-bezier(0.16, 1, 0.3, 1), background 0.35s ease, color 0.35s ease, border-color 0.35s ease, box-shadow 0.35s ease, transform 0.35s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.35s ease;
+    }
+    button.xabia-launcher:not(.xabia-launcher--inline) .xabia-launcher__label {
+        display: none !important;
+    }
+    button.xabia-launcher:not(.xabia-launcher--inline) .xabia-launcher__desk {
+        display: block;
+        font-size: 13px;
+        font-weight: 600;
+        letter-spacing: -0.01em;
+        line-height: 1;
+        white-space: nowrap;
+        color: #0f172a;
+    }
+    button.xabia-launcher:not(.xabia-launcher--inline) .xabia-launcher__spark {
+        font-size: 18px !important;
+        color: #059669 !important;
+    }
+    button.xabia-launcher:not(.xabia-launcher--inline) .xabia-launcher__mic {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        flex: 0 0 24px;
+        width: 24px;
+        height: 24px;
+        border-radius: 9999px;
+        background: #059669;
+        color: #ffffff;
+        box-shadow: 0 2px 6px rgba(5, 150, 105, 0.25);
+    }
+    button.xabia-launcher:not(.xabia-launcher--inline) .xabia-launcher__mic .material-symbols-outlined {
+        font-size: 14px;
+        color: #ffffff;
+    }
+    button.xabia-launcher:not(.xabia-launcher--inline).is-collapsed {
+        justify-content: center !important;
+        gap: 0 !important;
+        width: 50px !important;
+        min-width: 50px !important;
+        max-width: 50px !important;
+        height: 50px !important;
+        min-height: 50px !important;
+        max-height: 50px !important;
+        padding: 0 !important;
+        border-radius: 9999px !important;
+        background: #059669 !important;
+        color: #ffffff !important;
+        border-color: transparent !important;
+        box-shadow: 0 10px 24px rgba(5, 150, 105, 0.35) !important;
+    }
+    button.xabia-launcher:not(.xabia-launcher--inline).is-collapsed .xabia-launcher__desk,
+    button.xabia-launcher:not(.xabia-launcher--inline).is-collapsed .xabia-launcher__mic {
+        display: none !important;
+    }
+    button.xabia-launcher:not(.xabia-launcher--inline).is-collapsed .xabia-launcher__spark {
+        color: #ffffff !important;
+        font-size: 22px !important;
+    }
+    button.xabia-launcher:not(.xabia-launcher--inline).is-behind-hero {
+        opacity: 0 !important;
+        visibility: hidden;
+        pointer-events: none !important;
+        transform: translateY(18px);
+    }
+    button.xabia-launcher.xabia-launcher--bottom-center.is-behind-hero {
+        transform: translateX(-50%) translateY(18px);
+    }
+    .xabia-chatbox .xabia-dock__input-box .xabia-compose-area {
+        flex: 1 1 auto;
+        min-width: 0;
+    }
+    .xabia-chatbox .xabia-dock__input-box .xabia-input-pill {
+        flex: 0 0 auto;
+        width: auto !important;
+        gap: 0 !important;
+    }
+    .xabia-chatbox .xabia-dock__input-box .xabia-input-pill .xabia-mute,
+    .xabia-chatbox .xabia-dock__input-box .xabia-input-pill .xabia-send {
+        display: none !important;
+    }
+    .xabia-chatbox .xabia-dock__input-box.is-typing .xabia-input-pill .xabia-mic {
+        display: none !important;
+    }
+    .xabia-chatbox .xabia-dock__input-box.is-typing .xabia-input-pill .xabia-send {
+        display: inline-flex !important;
+    }
+}
+@media (prefers-reduced-motion: reduce) {
+    button.xabia-launcher,
+    button.xabia-launcher .xabia-launcher__label {
+        transition: none;
+    }
+    button.xabia-launcher:hover,
+    button.xabia-launcher:focus,
+    button.xabia-launcher:focus-visible,
+    button.xabia-launcher:active {
+        transform: none;
+    }
+    button.xabia-launcher.xabia-launcher--bottom-center,
+    button.xabia-launcher.xabia-launcher--bottom-center:hover,
+    button.xabia-launcher.xabia-launcher--bottom-center:focus,
+    button.xabia-launcher.xabia-launcher--bottom-center:active {
+        transform: translateX(-50%);
+    }
+}
+.xabia-chatbox:not(.xabia-present-kiosk):not([data-totem="1"]) .xabia-immersive-avatar-stage {
+    display: none !important;
+}
+.xabia-chatbox.xabia-ui-modern.xabia-panel-shell.is-active.xabia-chatbox--fullscreen:not(.xabia-present-kiosk),
+.xabia-chatbox.xabia-ui-modern.xabia-panel-shell.layout-full-screen.is-active:not(.xabia-present-kiosk),
+.xabia-chatbox.xabia-ui-modern.xabia-panel-shell.layout-drawer.is-active:not(.xabia-present-kiosk) {
+    position: fixed !important;
+    inset: 0 !important;
+    top: 0 !important;
+    right: 0 !important;
+    bottom: 0 !important;
+    left: 0 !important;
+    width: 100vw !important;
+    width: 100dvw !important;
+    height: 100vh !important;
+    height: 100dvh !important;
+    max-width: none !important;
+    max-height: none !important;
+    min-height: 0 !important;
+    margin: 0 !important;
+    border: 0 !important;
+    border-radius: 0 !important;
+    transform: none !important;
+    box-shadow: none !important;
+    z-index: 999991 !important;
+}
+.xabia-chatbox.xabia-ui-modern.xabia-panel-shell.is-active:not(.xabia-present-kiosk) .xabia-voice-hero {
+    display: none !important;
+}
+
+@media (max-width: 768px) {
+    body.xabia-open.xabia-mobile-chat-stack .xabia-chatbox.xabia-ui-modern.xabia-panel-shell.is-active.layout-full-screen:not(.xabia-present-kiosk),
+    body.xabia-open.xabia-mobile-chat-stack .xabia-chatbox.xabia-ui-modern.xabia-panel-shell.is-active.xabia-chatbox--fullscreen:not(.xabia-present-kiosk) {
+        z-index: 999991 !important;
+    }
+}
+
+@media (min-width: 769px) {
+    .xabia-search-bar,
+    .xabia-search-bar__box {
+        min-width: 700px;
+    }
+}
+
+.xabia-chatbox .xabia-waiting-message,
+.xabia-ui-modern .xabia-waiting-message {
+    color: var(--xabia-text, #111111) !important;
+}
+
+.xabia-ui-modern .xabia-chat-header,
+.xabia-conversation-open .xabia-chat-header,
+.xabia-voice-overlay__top {
+    padding: calc(env(safe-area-inset-top, 0px) + 16px) 20px 12px !important;
+    background: var(--xabia-surface, #ffffff) !important;
+    background-image: none !important;
+    border-bottom: 0 !important;
+    min-height: 0 !important;
+}
+
+.xabia-ui-modern .xabia-chat-header__brand,
+.xabia-conversation-open .xabia-chat-header__brand {
+    gap: 8px !important;
+}
+
+.xabia-chat-header__mark svg,
+.xabia-voice-overlay__mark svg {
+    display: block;
+    width: 46px;
+    height: auto;
+}
+
+.xabia-ui-modern .xabia-chat-header__identity,
+.xabia-conversation-open .xabia-chat-header__identity,
+.xabia-voice-overlay__brand {
+    flex-direction: row !important;
+    align-items: center !important;
+    gap: 8px !important;
+}
+
+.xabia-ui-modern .xabia-chat-header__name,
+.xabia-conversation-open .xabia-chat-header__name,
+.xabia-voice-overlay__name {
+    font-size: 16px !important;
+    font-weight: 650 !important;
+    letter-spacing: -0.02em !important;
+    line-height: 1.2 !important;
+    color: var(--xabia-text, #111111) !important;
+}
+
+.xabia-chat-header__presence,
+.xabia-conversation-open .xabia-chat-header__presence,
+.xabia-voice-overlay__status {
+    display: inline !important;
+    margin: 0 !important;
+    font-size: 16px !important;
+    font-weight: 500 !important;
+    line-height: 1.2 !important;
+    color: #6b7280 !important;
+    white-space: nowrap !important;
+}
+
+.xabia-chatbox.xabia-ui-modern .xabia-panel-close,
+.xabia-conversation-open .xabia-panel-close,
+.xabia-voice-overlay__close,
+.xabia-voice-overlay .close-btn,
+.xabia-close-btn {
+    width: 42px !important;
+    height: 42px !important;
+    border: 1px solid rgba(0, 0, 0, 0.08) !important;
+    border-radius: 50% !important;
+    background: rgba(0, 0, 0, 0.04) !important;
+    color: var(--xabia-text, #111111) !important;
+    box-shadow: none !important;
+}
+
+.xabia-chatbox button.xabia-dock-chip {
+    margin: 0 !important;
+    border-radius: 999px !important;
+    background: #f4f4f5 !important;
+    background-color: #f4f4f5 !important;
+    border: 1px solid rgba(0, 0, 0, 0.08) !important;
+    padding: 8px 16px !important;
+    color: #111111 !important;
+    -webkit-text-fill-color: #111111 !important;
+    font-size: 0.9rem !important;
+    line-height: 1.3 !important;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06) !important;
+}
+
+.xabia-chatbox button.xabia-dock-chip:hover,
+.xabia-chatbox button.xabia-dock-chip:focus-visible {
+    background: #ffffff !important;
+    background-color: #ffffff !important;
+    border-color: rgba(0, 0, 0, 0.16) !important;
+    color: #111111 !important;
+    -webkit-text-fill-color: #111111 !important;
+}
+
+.xabia-chatbox.xabia-ui-modern:not(.xabia-state-empty) .xabia-dock-chips,
+.xabia-chatbox.xabia-conversation-open .xabia-dock-chips {
+    gap: 10px !important;
+}
+
+.xabia-voice-overlay__bar {
+    width: min(800px, 100%) !important;
+    padding: 8px 8px 8px 18px !important;
+    border-radius: 30px !important;
+    border: 1px solid rgba(0, 0, 0, 0.08) !important;
+    background: #ffffff !important;
+    box-shadow: 0 16px 40px rgba(0, 0, 0, 0.08) !important;
+}
+
+.xabia-voice-overlay__mic,
+.xabia-voice-overlay__send {
+    flex: 0 0 40px !important;
+    width: 40px !important;
+    height: 40px !important;
+    min-width: 40px !important;
+    min-height: 40px !important;
+}
+
+.xabia-voice-overlay__mic {
+    background: #ef4444 !important;
+    color: #ffffff !important;
+}
+
+.xabia-voice-overlay__send {
+    background: #111827 !important;
+    color: #ffffff !important;
+}
+
+.xabia-voice-overlay__bar:hover,
+.xabia-voice-overlay__bar:focus-within {
+    transform: translateY(-2px);
+    border-color: rgba(0, 0, 0, 0.14) !important;
+    box-shadow: 0 10px 28px rgba(0, 0, 0, 0.08), 0 0 16px color-mix(in srgb, var(--xabia-accent, #111111) 18%, transparent), 0 0 14px rgba(0, 0, 0, 0.07) !important;
+}
+
+@media (max-width: 768px) {
+    .xabia-ui-modern .xabia-voice-overlay__mic,
+    .xabia-ui-modern .xabia-voice-overlay__send {
+        flex: 0 0 48px !important;
+        width: 48px !important;
+        height: 40px !important;
+        min-width: 48px !important;
+        min-height: 40px !important;
+    }
+
+    .xabia-chatbox button.xabia-dock-chip {
+        padding: 5px 11px !important;
+        font-size: 0.78rem !important;
+        line-height: 1.25 !important;
+        box-shadow: none !important;
+    }
+
+    .xabia-chatbox.xabia-ui-modern:not(.xabia-state-empty) .xabia-dock-chips,
+    .xabia-chatbox.xabia-conversation-open .xabia-dock-chips {
+        gap: 8px !important;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .xabia-voice-orb::before {
+        animation: none;
+        opacity: 0.35;
+        transform: none;
+    }
+
+    .xabia-voice-overlay__bar:hover,
+    .xabia-voice-overlay__bar:focus-within {
+        transform: none;
+    }
 }

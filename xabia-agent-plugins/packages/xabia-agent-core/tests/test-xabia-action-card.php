@@ -133,4 +133,27 @@ $filtered = Xabia_Action_Card::decode(substr($filteredTag, strlen('[ACTION:CARD:
 assert(is_array($filtered) && $filtered['d'] === 'Extracto suave', 'filter can add description');
 assert($filtered['at'] === 'cart', 'filter keeps cart type');
 
+$thin = Xabia_Action_Card::encode(['t' => 'Caléndula', 'a' => 'CART:7', 'd' => 'Extracto']);
+$context = "[Entidad: Caléndula] [Clasificación: Extractos] [Dato clave: 10,60 €] [Estado: agotado] [Resumen: Extracto de flor] [Enlace: https://saludavida.com/producto/calendula/]\n"
+    . "[Imagen disponible: https://saludavida.com/cal.jpg]\n\n"
+    . "[Entidad: Concierto de mayo] [Dato clave: 12 de mayo] [Enlace: https://example.com/mayo]\n"
+    . "[Imagen disponible: https://example.com/mayo.jpg]";
+$enriched = Xabia_Action_Card::enrich_response_cards("Te recomiendo esto.\n\n" . $thin, $context);
+assert(preg_match('/\[ACTION:CARD:([^\]]+)\]/', $enriched, $em) === 1, 'enriched card present');
+$filled = Xabia_Action_Card::decode((string) $em[1]);
+assert(is_array($filled), 'enriched card decodes');
+assert($filled['p'] === '10,60 €', 'price from dato clave');
+assert($filled['i'] === 'https://saludavida.com/cal.jpg', 'image from imagen disponible');
+assert($filled['u'] === 'https://saludavida.com/producto/calendula/', 'permalink from enlace');
+assert($filled['a'] === 'CART:7', 'cart action kept');
+
+$dated = Xabia_Action_Card::encode(['t' => 'Concierto de mayo', 'a' => 'URL:https://example.com/mayo']);
+$datedOut = Xabia_Action_Card::enrich_response_cards($dated, $context);
+$datedCard = null;
+if (preg_match('/\[ACTION:CARD:([^\]]+)\]/', $datedOut, $dm)) {
+    $datedCard = Xabia_Action_Card::decode((string) $dm[1]);
+}
+assert(is_array($datedCard) && $datedCard['p'] === '', 'a date is not a price');
+assert($datedCard['i'] === 'https://example.com/mayo.jpg', 'event image still attaches');
+
 echo "OK xabia action card\n";

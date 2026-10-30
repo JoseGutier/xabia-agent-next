@@ -624,12 +624,15 @@
             }).join(''));
             var data = JSON.parse(json);
             if (!data || typeof data !== 'object') return null;
+            var imageUrl = String(data.image || data.img || data.i || data.imagen || data.imagen_url || data.Imagen_URL || '').trim();
             return {
                 t: String(data.t || data.title || '').trim(),
                 m: String(data.m || data.meta || '').trim(),
                 d: String(data.d || data.description || '').trim(),
                 p: String(data.p || data.highlight || data.price || '').trim(),
-                i: String(data.i || data.image || data.img || '').trim(),
+                i: imageUrl,
+                image: imageUrl,
+                img: imageUrl,
                 a: String(data.a || data.action || '').trim(),
                 at: String(data.at || data.action_type || '').trim(),
                 l: String(data.l || data.action_text || data.label || '').trim(),
@@ -800,17 +803,20 @@
         var copy = xabiaUniversalCopy(card);
         var desc = copy.desc;
         var price = xabiaFormatShopPrice(card.p);
+        var metaLeft = copy.meta;
         if (!price) {
-            var found = desc.match(/(\d{1,5}(?:[.,]\d{1,2})?\s*(?:€|eur))\b/i);
+            var priceSource = desc + ' ' + String((card && card.m) || '');
+            var found = priceSource.match(/((?:€|\$)\s*\d{1,5}(?:[.,]\d{1,2})?|\d{1,5}(?:[.,]\d{1,2})?\s*(?:€|eur))/i);
             if (found) {
                 price = xabiaFormatShopPrice(found[1]);
                 desc = desc.replace(found[0], '').replace(/^[\s,.;:-]+|[\s,.;:-]+$/g, '').trim();
+                metaLeft = String(metaLeft || '').replace(found[0], '').replace(/\s*[·|]\s*(?:[·|]\s*)+/g, ' · ').replace(/^\s*[·|]\s*|\s*[·|]\s*$/g, '').trim();
             }
         }
-        var src = '';
-        if (card.i) src = resolveActionImgSrc(card.i, imagesBase) || String(card.i);
+        var imageUrl = String((card && (card.image || card.img || card.i || card.imagen)) || '').trim();
+        var src = imageUrl ? (resolveActionImgSrc(imageUrl, imagesBase) || imageUrl) : '';
         var media = src
-            ? '<div class="xabia-card__media xabia-product-card__media"><img class="xabia-card__img xabia-product-card__img" src="' + escAttr(src) + '" alt="" loading="lazy" decoding="async"></div>'
+            ? '<div class="xabia-card__media xabia-product-card__media"><img src="' + escAttr(src) + '" alt="' + escAttr(title) + '" class="xabia-card__thumb xabia-card__img xabia-product-card__img" /></div>'
             : '';
         var priceHtml = price ? '<span class="xabia-card__price xabia-product-card__price">' + escAttr(price) + '</span>' : '';
         var descHtml = desc ? '<p class="xabia-card__desc xabia-product-card__desc">' + escAttr(desc) + '</p>' : '';
@@ -831,7 +837,7 @@
             + media
             + '<div class="xabia-card__info xabia-product-card__info">'
             + '<div class="xabia-card__headline xabia-product-card__headline">' + titleHtml + priceHtml + '</div>'
-            + xabiaUniversalMetaHtml(copy.meta, escAttr)
+            + xabiaUniversalMetaHtml(metaLeft, escAttr)
             + descHtml
             + '</div></div>'
             + footer
@@ -1058,7 +1064,7 @@
         if (!$box || !$box.length) return;
         var ph = xabiaI18n('inputPlaceholder', 'Escribe aquí o pulsa el micro para hablar...');
         $box.find('.xabia-input-field').attr('placeholder', ph);
-        $box.find('.xabia-voice-overlay__input').attr('placeholder', xabiaI18n('overlayPlaceholder', 'Pregunta lo que quieras...'));
+        $box.find('.xabia-voice-overlay__input').attr('placeholder', ph);
         $box.find('.xabia-voice-overlay__close').attr('aria-label', xabiaI18n('closeOverlay', 'Cerrar'));
     }
 
@@ -1366,7 +1372,7 @@
         $box.find('.xabia-voice-overlay__title').text(xabiaI18n('voiceListeningTitle', 'Te escucho...'));
         var $live = $box.find('.xabia-voice-overlay__transcript');
         if (!$live.text() || $live.attr('data-idle') === '1') {
-            $live.attr('data-idle', '1').text(xabiaI18n('voiceIdlePrompt', 'Dime qué quieres saber.'));
+            $live.attr('data-idle', '1').text('');
         }
         return true;
     }
@@ -1575,7 +1581,10 @@
         desc = xabiaCleanShopDesc(desc);
         if (!title || title.length > 140) return null;
         if (!linked && !img && !desc && title.length > 80) return null;
-        return { title: title, img: img, desc: desc, url: pageUrl };
+        var price = '';
+        var priceMatch = (title + ' ' + desc).match(/((?:€|\$)\s*\d{1,5}(?:[.,]\d{1,2})?|\d{1,5}(?:[.,]\d{1,2})?\s*(?:€|eur))/i);
+        if (priceMatch) price = String(priceMatch[1] || '').trim();
+        return { title: title, img: img, desc: desc, url: pageUrl, price: price };
     }
 
     function xabiaPeelShopLead(before) {
@@ -1583,12 +1592,13 @@
         var i = lines.length - 1;
         while (i >= 0 && String(lines[i] || '').trim() === '') i -= 1;
         if (i < 0) {
-            return { rest: before, img: '', desc: '', titleHint: '', url: '' };
+            return { rest: before, img: '', desc: '', titleHint: '', url: '', price: '' };
         }
         var desc = '';
         var img = '';
         var titleHint = '';
         var pageUrl = '';
+        var price = '';
         var sawBullet = false;
         var sawImg = false;
         var last = String(lines[i] || '').trim();
@@ -1614,18 +1624,24 @@
             if (bullet.img) img = img || bullet.img;
             if (bullet.url) pageUrl = bullet.url;
             if (bullet.desc && bullet.desc.length > String(desc || '').length) desc = bullet.desc;
+            if (bullet.price) price = bullet.price;
             sawBullet = true;
             i -= 1;
         }
         if (!sawBullet && !sawImg) {
-            return { rest: before, img: '', desc: '', titleHint: '', url: '' };
+            return { rest: before, img: '', desc: '', titleHint: '', url: '', price: '' };
+        }
+        if (!price) {
+            var priceInDesc = String(desc || '').match(/((?:€|\$)\s*\d{1,5}(?:[.,]\d{1,2})?|\d{1,5}(?:[.,]\d{1,2})?\s*(?:€|eur))/i);
+            if (priceInDesc) price = String(priceInDesc[1] || '').trim();
         }
         return {
             rest: lines.slice(0, i + 1).join('\n'),
             img: img,
             desc: xabiaCleanShopDesc(desc),
             titleHint: titleHint,
-            url: pageUrl
+            url: pageUrl,
+            price: price
         };
     }
 
@@ -1666,7 +1682,12 @@
         }
         if (!card) return '';
         if (!card.t && lead.titleHint) card.t = lead.titleHint;
-        if (lead.img && !card.i) card.i = lead.img;
+        if (lead.img && !card.i && !card.image && !card.img) {
+            card.i = lead.img;
+            card.image = lead.img;
+            card.img = lead.img;
+        }
+        if (!card.p && lead.price) card.p = lead.price;
         if (lead.url && !card.u) card.u = lead.url;
         if (lead.desc) card.m = lead.desc;
         if (!xabiaIsProductCard(card)) {
@@ -1887,7 +1908,10 @@
                 $botDiv.append($more);
             }
         }
-        speakText($box, raw);
+        var spoken = opts.speakText != null ? String(opts.speakText) : String(raw || '');
+        if ($.trim(spoken)) {
+            speakText($box, spoken);
+        }
         scrollMessages($box);
         syncChatUiState($box);
     }
@@ -2344,6 +2368,39 @@
         } catch (eHa) {}
         try { if (window.speechSynthesis) window.speechSynthesis.cancel(); } catch (eC) {}
         stopAvatarLipSync($box);
+    }
+
+    function stopCurrentAudioPlayback($box) {
+        if (!$box || !$box.length) {
+            $box = (xabiaLipSync.$box && xabiaLipSync.$box.length) ? xabiaLipSync.$box : $();
+        }
+        try {
+            if (xabiaLipSync.audioEl && typeof xabiaLipSync.audioEl.pause === 'function') {
+                xabiaLipSync.audioEl.pause();
+                xabiaLipSync.audioEl.currentTime = 0;
+            }
+        } catch (eLipAudio) {}
+        stopAllSpeech($box);
+        var nodes = [];
+        try {
+            if ($box && $box.length) {
+                nodes = $box.find('audio').get();
+            }
+        } catch (eFindAudio) {}
+        var i;
+        for (i = 0; i < nodes.length; i++) {
+            try {
+                nodes[i].pause();
+                nodes[i].currentTime = 0;
+            } catch (ePause) {}
+        }
+        try { if (window.speechSynthesis) window.speechSynthesis.cancel(); } catch (eCancel) {}
+        if ($box && $box.length) {
+            $box.removeClass('xabia-is-speaking');
+            $box.find('.xabia-mute').removeClass('xabia-mute-speaking');
+            syncMuteSpeakingUi($box, false);
+        }
+        try { document.body.classList.remove('xabia-avatar-speaking'); } catch (eBody) {}
     }
 
     function speakText($box, rawText, audioEl, opts) {
@@ -3077,7 +3134,7 @@
             }
             var text = $.trim(String(session.previewText || ''));
             if (!text) {
-                $live.attr('data-idle', '1').text(xabiaI18n('voiceIdlePrompt', 'Dime qué quieres saber.'));
+                $live.attr('data-idle', '1').text('');
                 return;
             }
             $live.attr('data-idle', '0').text(text);
@@ -3246,15 +3303,7 @@
             if (!$box.length) {
                 return;
             }
-            if ($box.hasClass('xabia-is-speaking') || document.body.classList.contains('xabia-avatar-speaking')) {
-                messagesStream($box).append(
-                    $('<div class="xabia-msg bot" style="color:#b91c1c"></div>').text(
-                        xabiaI18n('micBlockedWhileBotSpeaks', 'Espera a que termine de hablar y vuelve a pulsar el micrófono.')
-                    )
-                );
-                scrollMessages($box);
-                return;
-            }
+            stopCurrentAudioPlayback($box);
             if (!secure) {
                 messagesStream($box).append($('<div class="xabia-msg bot" style="color:orange"></div>').text(micInsecureHelpMessage()));
                 scrollMessages($box);
@@ -3290,13 +3339,14 @@
             micSessions.set($box[0], session);
             // Durante la escucha el textarea no muestra el dictado (evita ocupación vertical).
             $input.val('');
+            $input.trigger('input');
             autoSizeInput($input);
             syncChatUiState($box);
 
             rec.continuous = true;
             rec.interimResults = true;
             rec.lang = xabiaBcp47FromLang($box.data('lang')) || lang;
-            stopAllSpeech($box);
+            stopCurrentAudioPlayback($box);
 
             rec.onstart = function() {
                 setMicListeningUi($box, true);
@@ -3385,27 +3435,35 @@
             }
             var raw = data.response;
             if (isContinue) {
-                var $lastBot = $history.find('.xabia-msg.bot').last();
+                var $lastBot = $history.find('.xabia-msg.bot').not('.xabia-thinking-turn, .xabia-msg--error').last();
                 if ($lastBot.length) {
                     var prev = String($lastBot.attr('data-raw') || '');
                     var merged = raw;
-                    if (prev && raw.indexOf(prev) !== 0) {
+                    var addition = raw;
+                    if (prev && raw.indexOf(prev) === 0) {
+                        addition = raw.slice(prev.length).replace(/^\s+/, '');
+                    } else if (prev && prev.indexOf(raw) === 0) {
+                        merged = prev;
+                        addition = '';
+                    } else if (prev) {
                         merged = prev + '\n\n' + raw;
                     }
-                    $lastBot.attr('data-raw', merged);
-                    $lastBot.removeClass('xabia-msg-typing');
-                    $lastBot.find('.xabia-continue').remove();
-                    var $content = $lastBot.find('.xabia-msg-content');
-                    if ($content.length) {
-                        $content.html(renderBotHtml(merged, chatboxImagesBase($box)));
+                    if (!$.trim(addition)) {
+                        finishBotMessage($box, $history, $lastBot, prev || raw, { truncated: true, speakText: '' });
                     } else {
-                        $lastBot.append($('<div class="xabia-msg-content"></div>').html(renderBotHtml(merged, chatboxImagesBase($box))));
+                        $lastBot.attr('data-raw', merged);
+                        var $content = $lastBot.find('.xabia-msg-content');
+                        var mergedHtml = renderBotHtml(merged, chatboxImagesBase($box));
+                        if ($content.length) {
+                            $content.html(mergedHtml);
+                        } else {
+                            $lastBot.append($('<div class="xabia-msg-content"></div>').html(mergedHtml));
+                        }
+                        finishBotMessage($box, $history, $lastBot, merged, {
+                            truncated: !!data.truncated,
+                            speakText: addition
+                        });
                     }
-                    if (data.truncated) {
-                        $lastBot.append(' ').append(makeContinueButton());
-                    }
-                    attachMsgSpeakButton($box, $lastBot, merged);
-                    speakText($box, merged);
                 } else {
                     appendBotMessage($box, $history, raw, { truncated: !!data.truncated });
                 }
@@ -3612,7 +3670,18 @@
                         if ($live && $live.length) {
                             paintStreamingBot($box, $live, finalRaw);
                             $live.find('.xabia-continue').remove();
-                            finishBotMessage($box, $history, $live, finalRaw, { truncated: !!json.truncated });
+                            var continueSpeech = '';
+                            if (isContinue) {
+                                if (prevRaw && String(finalRaw).indexOf(prevRaw) === 0) {
+                                    continueSpeech = String(finalRaw).slice(prevRaw.length).replace(/^\s+/, '');
+                                } else {
+                                    continueSpeech = String(finalRaw || '');
+                                }
+                            }
+                            finishBotMessage($box, $history, $live, finalRaw, {
+                                truncated: !!json.truncated || (isContinue && !$.trim(continueSpeech) && xabiaReplyLooksCut(prevRaw || finalRaw)),
+                                speakText: isContinue ? continueSpeech : null
+                            });
                         } else {
                             applyChatSuccess($box, $history, json, isContinue);
                         }
@@ -3642,20 +3711,6 @@
                 || text.indexOf('no disponible') !== -1
                 || text.indexOf('unavailable') !== -1
                 || text.indexOf('pausad') !== -1;
-        }
-
-        function xabiaSetAgentAvailability($box, online) {
-            if (!$box || !$box.length) {
-                return;
-            }
-            var $presence = $box.find('.xabia-chat-header__presence').first();
-            var onText = ($presence.attr('data-online') || xabiaI18n('onlineStatus', 'En línea · Respuestas en tiempo real'));
-            var offText = ($presence.attr('data-offline') || xabiaI18n('offlineStatus', 'No disponible'));
-            $box.toggleClass('is-unavailable', !online);
-            $box.attr('data-agent-available', online ? '1' : '0');
-            if ($presence.length) {
-                $presence.text(online ? onText : offText);
-            }
         }
 
         function submitChatMessage($box, options) {
@@ -3760,6 +3815,7 @@
                     $history.append($userMsg);
                 }
                 $input.val('');
+                $input.trigger('input');
                 autoSizeInput($input);
                 syncChatUiState($box);
             }
@@ -3813,12 +3869,20 @@
             $(this).closest('.xabia-voice-overlay').find('.xabia-send').trigger('click');
         });
 
+        function xabiaChipSendText($chip) {
+            var query = String($chip.attr('data-query') || '').trim();
+            if (query) {
+                return query;
+            }
+            return $.trim($chip.text());
+        }
+
         $(document).on('click', '.xabia-dock-chip', function(e) {
             e.preventDefault();
             e.stopPropagation();
             var $chip = $(this);
             var $box = $chip.closest('.xabia-chatbox');
-            var text = String($chip.attr('data-query') || '').trim();
+            var text = xabiaChipSendText($chip);
             if (!$box.length || !text) {
                 return;
             }
@@ -3849,10 +3913,7 @@
             e.stopPropagation();
             var $chip = $(this);
             var $bar = $chip.closest('.xabia-search-bar');
-            var text = String($chip.attr('data-query') || '').trim();
-            if (!text) {
-                text = $.trim($chip.text());
-            }
+            var text = xabiaChipSendText($chip);
             var project = $bar.attr('data-project');
             var $box = xabiaFindChatbox($, project);
             if ($box.length) {
@@ -3870,15 +3931,6 @@
                 window.xabiaSubmitText(project, text);
             }, 480);
         });
-
-        function xabiaDefaultSearchPhrases() {
-            return [
-                '¿Qué casa tiene chimenea y admite mascotas?',
-                '¿Hay disponibilidad para el próximo fin de semana?',
-                '¿Tenéis cuna o cama supletoria para niños?',
-                '¿A qué distancia queda la playa de Laga o Laida?'
-            ];
-        }
 
         function xabiaStartSearchTypewriter($bar) {
             if (!$bar || !$bar.length || $bar.data('xabiaTypeOn') === 1) {
@@ -3899,7 +3951,7 @@
                 return String(phrase || '').trim();
             }).filter(Boolean);
             if (!phrases.length) {
-                phrases = xabiaDefaultSearchPhrases();
+                return;
             }
             var input = $bar.find('input.xabia-search-bar__input').get(0);
             if (!input) {
@@ -4011,7 +4063,25 @@
             submitChatMessage($box, { forceContinue: true });
         });
 
-        $(document).on('keydown keypress', '.xabia-input-field', function(e) {
+        $(document).on('focusin', '.xabia-input-field, .xabia-voice-overlay__input, .xabia-search-bar__input', function() {
+            var $field = $(this);
+            var $box = $field.closest('.xabia-chatbox');
+            if (!$box.length) {
+                $box = xabiaFindChatbox($, $field.closest('.xabia-search-bar').attr('data-project'));
+            }
+            stopCurrentAudioPlayback($box);
+        });
+
+        $(document).on('keydown keypress', '.xabia-input-field, .xabia-voice-overlay__input, .xabia-search-bar__input', function(e) {
+            var $field = $(this);
+            var $box = $field.closest('.xabia-chatbox');
+            if (!$box.length) {
+                $box = xabiaFindChatbox($, $field.closest('.xabia-search-bar').attr('data-project'));
+            }
+            stopCurrentAudioPlayback($box);
+            if (!$field.is('.xabia-input-field')) {
+                return;
+            }
             var isEnter = e.key === 'Enter' || e.which === 13 || e.keyCode === 13;
             if (isEnter && !e.shiftKey && !e.isComposing) {
                 e.preventDefault();
@@ -4382,6 +4452,20 @@
             ensureImmersiveKinetic($box);
         }
 
+        function xabiaSetAgentAvailability($box, online) {
+            if (!$box || !$box.length) {
+                return;
+            }
+            var $presence = $box.find('.xabia-chat-header__presence');
+            var onText = ($presence.first().attr('data-online') || xabiaI18n('onlineStatus', '· En línea'));
+            var offText = ($presence.attr('data-offline') || xabiaI18n('offlineStatus', 'No disponible'));
+            $box.toggleClass('is-unavailable', !online);
+            $box.attr('data-agent-available', online ? '1' : '0');
+            if ($presence.length) {
+                $presence.text(online ? onText : offText);
+            }
+        }
+
         function initXabiaChatboxes() {
             var isBoxPage = document.body && document.body.classList.contains('xabia-box-page');
             $('.xabia-chatbox').each(function() {
@@ -4431,7 +4515,175 @@
             });
         }
 
+        function xabiaSyncLauncherShell(box) {
+            if (!box || box.classList.contains('xabia-present-kiosk')) {
+                return;
+            }
+            if (box.classList.contains('is-active')) {
+                box.setAttribute('data-xabia-launcher-shell', '1');
+                box.classList.add('xabia-conversation-open');
+                document.body.classList.add('xabia-conversation-open');
+                return;
+            }
+            if (box.getAttribute('data-xabia-launcher-shell') !== '1') {
+                return;
+            }
+            box.setAttribute('data-xabia-launcher-shell', '0');
+            box.classList.remove('xabia-conversation-open');
+            if (!document.querySelector('.xabia-chatbox.xabia-conversation-open')) {
+                document.body.classList.remove('xabia-conversation-open');
+            }
+        }
+
+        function xabiaWatchLauncherShell() {
+            if (window.__xabiaLauncherShell) {
+                return;
+            }
+            window.__xabiaLauncherShell = true;
+            function watch(box) {
+                if (!box || box.getAttribute('data-xabia-shell-watch') === '1') {
+                    return;
+                }
+                box.setAttribute('data-xabia-shell-watch', '1');
+                xabiaSyncLauncherShell(box);
+                if (typeof MutationObserver !== 'function') {
+                    return;
+                }
+                var observer = new MutationObserver(function() {
+                    xabiaSyncLauncherShell(box);
+                });
+                observer.observe(box, { attributes: true, attributeFilter: ['class'] });
+            }
+            document.querySelectorAll('.xabia-chatbox').forEach(watch);
+            if (typeof MutationObserver === 'function') {
+                var rootObserver = new MutationObserver(function(mutations) {
+                    mutations.forEach(function(mutation) {
+                        mutation.addedNodes.forEach(function(node) {
+                            if (!node || node.nodeType !== 1) {
+                                return;
+                            }
+                            if (node.classList && node.classList.contains('xabia-chatbox')) {
+                                watch(node);
+                            }
+                            if (node.querySelectorAll) {
+                                node.querySelectorAll('.xabia-chatbox').forEach(watch);
+                            }
+                        });
+                    });
+                });
+                rootObserver.observe(document.documentElement, { childList: true, subtree: true });
+            }
+        }
+
+        function xabiaBindLauncherScroll() {
+            if (window.__xabiaLauncherScroll) {
+                return;
+            }
+            window.__xabiaLauncherScroll = true;
+            var lastY = window.scrollY || 0;
+            window.addEventListener('scroll', function() {
+                var y = window.scrollY || 0;
+                if (!document.body.classList.contains('xabia-open') && !window.matchMedia('(max-width: 600px)').matches) {
+                    document.querySelectorAll('button.xabia-launcher').forEach(function(btn) {
+                        if (btn.getAttribute('data-placement') === 'inline') {
+                            return;
+                        }
+                        if (y > lastY + 2) {
+                            btn.classList.remove('footer-hidden');
+                        } else if (y < lastY - 2 && y > 100) {
+                            btn.classList.add('footer-hidden');
+                        }
+                    });
+                }
+                lastY = y;
+            }, { passive: true });
+        }
+
         bindXabiaChatboxHandlers();
+        xabiaWatchLauncherShell();
+        function xabiaSyncDockAction(field) {
+            var dock = field && field.closest ? field.closest('.xabia-dock__input-box') : null;
+            if (!dock) {
+                return;
+            }
+            dock.classList.toggle('is-typing', String(field.value || '').length > 0);
+        }
+
+        $(document).on('input', '.xabia-input-field', function() {
+            xabiaSyncDockAction(this);
+        });
+
+        function xabiaBindSmartPill() {
+            if (window.__xabiaSmartPill) {
+                return;
+            }
+            window.__xabiaSmartPill = true;
+            var mq = window.matchMedia('(max-width: 600px)');
+            var scrollTimer = 0;
+            var lastY = window.scrollY || 0;
+            function launchers() {
+                return document.querySelectorAll('button.xabia-launcher:not(.xabia-launcher--inline)');
+            }
+            function syncHero() {
+                var heroes = document.querySelectorAll('.xabia-search-bar, .xabia-search-box');
+                var visible = false;
+                if (mq.matches) {
+                    heroes.forEach(function(hero) {
+                        var rect = hero.getBoundingClientRect();
+                        if (rect.width > 0 && rect.bottom > 0 && rect.top < window.innerHeight) {
+                            visible = true;
+                        }
+                    });
+                }
+                launchers().forEach(function(btn) {
+                    btn.classList.toggle('is-behind-hero', mq.matches && heroes.length > 0 && visible);
+                });
+            }
+            window.addEventListener('scroll', function() {
+                var y = window.scrollY || 0;
+                var scrollingDown = y > lastY + 2;
+                lastY = y;
+                if (!mq.matches || !scrollingDown || document.body.classList.contains('xabia-open')) {
+                    return;
+                }
+                launchers().forEach(function(btn) {
+                    if (!btn.classList.contains('is-behind-hero')) {
+                        btn.classList.add('is-collapsed');
+                    }
+                });
+                window.clearTimeout(scrollTimer);
+                scrollTimer = window.setTimeout(function() {
+                    launchers().forEach(function(btn) {
+                        btn.classList.remove('is-collapsed');
+                    });
+                }, 700);
+            }, { passive: true });
+            if (typeof IntersectionObserver === 'function') {
+                var io = new IntersectionObserver(function() {
+                    syncHero();
+                }, { threshold: [0, 0.01] });
+                function watchHeroes() {
+                    document.querySelectorAll('.xabia-search-bar, .xabia-search-box').forEach(function(el) {
+                        if (el.getAttribute('data-xabia-hero-watch') === '1') {
+                            return;
+                        }
+                        el.setAttribute('data-xabia-hero-watch', '1');
+                        io.observe(el);
+                    });
+                    syncHero();
+                }
+                watchHeroes();
+                document.addEventListener('xabia:chatbox:mounted', watchHeroes);
+            } else {
+                syncHero();
+            }
+            if (mq.addEventListener) {
+                mq.addEventListener('change', syncHero);
+            }
+        }
+
+        xabiaBindLauncherScroll();
+        xabiaBindSmartPill();
         xabiaApplyColorSchemes();
         preloadSpeechVoices();
         if (window.speechSynthesis) {

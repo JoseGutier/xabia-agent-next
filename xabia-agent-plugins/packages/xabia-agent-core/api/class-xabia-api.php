@@ -1097,6 +1097,45 @@ if (!class_exists('Xabia_API')) {
         }
 
         /**
+         * Ya hubo una respuesta del asistente: el saludo solo corresponde al primer turno.
+         *
+         * @param list<array<string, mixed>> $history
+         */
+        private static function history_has_assistant_turn(array $history): bool {
+            foreach ($history as $msg) {
+                if (!is_array($msg) || ($msg['role'] ?? '') !== 'assistant') {
+                    continue;
+                }
+                if (trim((string) ($msg['content'] ?? '')) !== '') {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        /**
+         * Quita un saludo inicial cuando la conversación ya está abierta.
+         */
+        private static function strip_followup_greeting(string $response): string {
+            $response = ltrim($response);
+            if ($response === '') {
+                return $response;
+            }
+            $stripped = preg_replace(
+                '/^(?:¡\s*)?(?:hola|buenos\s+d[ií]as|buenas(?:\s+tardes|\s+noches)?|kaixo|egun\s+on|hello|hi|qu[eé]\s+tal|encantad[oa](?:\s+de\s+(?:saludarte|ayudarte|verte))?)\b(?:\s+de\s+nuevo|\s+otra\s+vez)?(?:\s*,?\s*soy\s+[^,!.\n]{1,48})?\s*[.!]?\s*/iu',
+                '',
+                $response,
+                1
+            );
+            if (!is_string($stripped) || trim($stripped) === '') {
+                return $response;
+            }
+
+            return ltrim($stripped);
+        }
+
+        /**
          * Historial asimétrico: user íntegro; assistant pasado sin tags UI y truncado.
          * Reduce tokens del hilo sin tocar RAG ni system prompt ni la respuesta que verá el usuario.
          *
@@ -1228,8 +1267,9 @@ if (!class_exists('Xabia_API')) {
         }
 
         private static function is_protocol_continuation(string $user_msg, bool $is_continue_request): bool {
+            // x_continue es el botón Continuar: debe generar el resto, no devolver el mismo corte.
             if ($is_continue_request) {
-                return true;
+                return false;
             }
             if (!class_exists('Xabia_Rag_Query_Rewriter', false)) {
                 return false;
@@ -2121,6 +2161,9 @@ if (!class_exists('Xabia_API')) {
                 }
             }
 
+            if ($is_continue_request) {
+                $skip_response_cache = true;
+            }
             if (self::is_protocol_continuation($user_msg, $is_continue_request)) {
                 self::answer_without_secondary_generation($project_id);
                 return;
@@ -2935,21 +2978,23 @@ if (!class_exists('Xabia_API')) {
 
             if (!$knowledge_free) {
                 $entity_intent = ($named_entity !== '' || $entity_anchor !== '' || !empty($utility_request));
+                $ambiguous_entity = ($named_entity !== '' || $entity_anchor !== '');
                 $context = apply_filters(
                     'xabia_agent_context_injection',
                     $context,
                     $project_id,
                     $config,
                     [
-                        'user_message'   => $user_msg,
-                        'date_context'   => $date_context,
-                        'search_term'    => $search_term,
-                        'scope'          => $ente_scope,
-                        'lang_code'      => $lang_code,
-                        'user_lang'      => $user_lang,
-                        'knowledge_free' => false,
-                        'chunk_count'    => (int) $chunk_count,
-                        'entity_intent'  => $entity_intent,
+                        'user_message'      => $user_msg,
+                        'date_context'      => $date_context,
+                        'search_term'       => $search_term,
+                        'scope'             => $ente_scope,
+                        'lang_code'         => $lang_code,
+                        'user_lang'         => $user_lang,
+                        'knowledge_free'    => false,
+                        'chunk_count'       => (int) $chunk_count,
+                        'entity_intent'     => $entity_intent,
+                        'ambiguous_entity'  => $ambiguous_entity,
                     ]
                 );
             }
@@ -3039,6 +3084,9 @@ if (!class_exists('Xabia_API')) {
                 $user_msg_clean,
                 is_array($rag_keyword_needles) ? $rag_keyword_needles : []
             );
+            if (self::history_has_assistant_turn(is_array($history) ? $history : [])) {
+                $system_prompt .= "\n\nCONVERSACIÓN YA ABIERTA: No saludes, no digas hola, no te presentes y no repitas tu nombre. Empieza por la respuesta.";
+            }
             
             $history = self::maybe_summarize_history(is_array($history) ? $history : [], $project_id, $config);
             if (!session_id() && !headers_sent()) {
@@ -3066,8 +3114,13 @@ if (!class_exists('Xabia_API')) {
                 $meta_cont = $_SESSION['xabia_last_response_meta'][$project_id] ?? [];
                 $prev_resp = trim((string) ($meta_cont['response'] ?? ''));
                 if ($prev_resp !== '') {
-                    $tail = mb_strlen($prev_resp) > 500 ? mb_substr($prev_resp, -500) : $prev_resp;
-                    $system_prompt_final .= "\n\nCONTINUACIÓN OBLIGATORIA: La respuesta anterior quedó incompleta. Sigue EXACTAMENTE donde se cortó, sin repetir saludos ni párrafos ya escritos. Fragmento final previo:\n---\n" . $tail . "\n---";
+                    $tail_source = preg_replace('/\[ACTION:[^\]]+\]/i', ' ', $prev_resp);
+                    $tail_source = trim((string) preg_replace('/\s+/u', ' ', (string) $tail_source));
+                    if ($tail_source === '') {
+                        $tail_source = $prev_resp;
+                    }
+                    $tail = mb_strlen($tail_source) > 700 ? mb_substr($tail_source, -700) : $tail_source;
+                    $system_prompt_final .= "\n\nCONTINUACIÓN OBLIGATORIA: La respuesta anterior quedó incompleta. Sigue EXACTAMENTE donde se cortó, sin repetir saludos ni párrafos ya escritos. Cierra la lista o la frase que quedó a medias. Fragmento final previo:\n---\n" . $tail . "\n---";
                 }
             }
             $messages = [['role' => 'system', 'content' => $system_prompt_final]];
@@ -3150,13 +3203,20 @@ if (!class_exists('Xabia_API')) {
              * @param string               $response Texto del asistente.
              * @param array<string, mixed> $args     context, project_id, config, user_message, search_term.
              */
+            if (self::history_has_assistant_turn(is_array($history) ? $history : [])) {
+                $response = self::strip_followup_greeting((string) $response);
+            }
             $response = (string) apply_filters('xabia_chat_response_postprocess', (string) $response, [
                 'context'      => (string) $context,
                 'project_id'   => (string) $project_id,
                 'config'       => is_array($config) ? $config : [],
                 'user_message' => (string) $user_msg,
                 'search_term'  => (string) $search_term,
+                'history'      => is_array($history) ? $history : [],
             ]);
+            if (class_exists('Xabia_Action_Card', false)) {
+                $response = Xabia_Action_Card::enrich_response_cards((string) $response, (string) $context);
+            }
             $response = self::rewrite_remote_media_hosts_in_response($response, $project_id);
             $response = self::format_chat_markdown_for_display((string) $response);
             $finish_reason = strtolower(trim((string) self::$last_generation_finish_reason));
@@ -6220,7 +6280,47 @@ if (!class_exists('Xabia_API')) {
                 'salidas', 'salida', 'rutas', 'ruta', 'paseos', 'paseo', 'tours', 'tour', 'excursiones',
                 'excursion', 'experiencias', 'experiencia', 'ofrece', 'ofrecen', 'hacéis', 'haceis', 'hacen',
                 'tenéis', 'teneis', 'tienen', 'disfrutar', 'disfruta',
+                'porque', 'porqué', 'según', 'segun', 'sobre', 'desde', 'hasta', 'entre', 'hacia',
+                'también', 'tambien', 'pero', 'aunque', 'mientras', 'después', 'despues', 'antes',
+                'siempre', 'nunca', 'ahora', 'entonces', 'ella', 'ello', 'ellas', 'ellos',
+                'usted', 'ustedes', 'nosotros', 'vosotros', 'nuestro', 'nuestra', 'vuestro', 'vuestra',
+                'mismo', 'misma', 'mismos', 'mismas', 'puede', 'pueden', 'podría', 'podria',
+                'algo', 'alguien', 'mediante', 'durante', 'contra', 'través', 'traves', 'esto',
             ];
+        }
+
+        /**
+         * Comparación de stop-words sin tildes: «cómo» y «cuándo» no pueden ser agujas.
+         */
+        private static function fold_rag_keyword_token(string $word): string {
+            $word = mb_strtolower(trim($word), 'UTF-8');
+            if ($word === '') {
+                return '';
+            }
+
+            return strtr($word, [
+                'á' => 'a', 'é' => 'e', 'í' => 'i', 'ó' => 'o', 'ú' => 'u', 'ü' => 'u',
+                'à' => 'a', 'è' => 'e', 'ì' => 'i', 'ò' => 'o', 'ù' => 'u',
+            ]);
+        }
+
+        private static function rag_keyword_is_function_word(string $word): bool {
+            $folded = self::fold_rag_keyword_token($word);
+            if ($folded === '') {
+                return true;
+            }
+            static $map = null;
+            if ($map === null) {
+                $map = [];
+                foreach (self::default_rag_keyword_stop_words() as $stop) {
+                    $key = self::fold_rag_keyword_token((string) $stop);
+                    if ($key !== '') {
+                        $map[$key] = true;
+                    }
+                }
+            }
+
+            return isset($map[$folded]);
         }
 
         /**
@@ -6238,7 +6338,7 @@ if (!class_exists('Xabia_API')) {
             $stop = apply_filters('xabia_rag_keyword_stop_words', self::default_rag_keyword_stop_words(), $text);
             $stop_map = [];
             foreach ((array) $stop as $word) {
-                $word = trim((string) $word);
+                $word = self::fold_rag_keyword_token((string) $word);
                 if ($word !== '') {
                     $stop_map[$word] = true;
                 }
@@ -6247,7 +6347,11 @@ if (!class_exists('Xabia_API')) {
             $needles = [];
             if ($raw_text !== '' && preg_match_all('/\b[\p{Lu}]{2,12}\b/u', $raw_text, $acro_matches)) {
                 foreach ($acro_matches[0] as $acro) {
-                    $needles[] = mb_strtolower((string) $acro, 'UTF-8');
+                    $acro = mb_strtolower((string) $acro, 'UTF-8');
+                    if ($acro === '' || isset($stop_map[self::fold_rag_keyword_token($acro)]) || self::rag_keyword_is_function_word($acro)) {
+                        continue;
+                    }
+                    $needles[] = $acro;
                 }
             }
 
@@ -6257,7 +6361,7 @@ if (!class_exists('Xabia_API')) {
                     if ($word === '' || mb_strlen($word, 'UTF-8') < 4) {
                         continue;
                     }
-                    if (isset($stop_map[$word])) {
+                    if (isset($stop_map[self::fold_rag_keyword_token($word)]) || self::rag_keyword_is_function_word($word)) {
                         continue;
                     }
                     $needles[] = $word;
@@ -6428,8 +6532,8 @@ if (!class_exists('Xabia_API')) {
             if ($title === '') {
                 return $body;
             }
-            $prefix = self::resolve_entity_field_prefix($config);
-            $header = $prefix . ' ' . $title;
+            $prefix = '[Entidad:';
+            $header = '[Entidad: ' . $title . ']';
             if (preg_match('/^' . preg_quote($prefix, '/') . '\s*' . preg_quote($title, '/') . '/iu', $body)) {
                 return $body;
             }
@@ -6785,7 +6889,7 @@ if (!class_exists('Xabia_API')) {
             $missing = [];
             foreach ($needles as $needle) {
                 $needle = self::sanitize_rag_search_term((string) $needle);
-                if ($needle === '' || mb_strlen($needle, 'UTF-8') < 4) {
+                if ($needle === '' || mb_strlen($needle, 'UTF-8') < 4 || self::rag_keyword_is_function_word($needle)) {
                     continue;
                 }
                 if (class_exists('Xabia_Rag_Language_Bridge', false)
@@ -6889,6 +6993,16 @@ if (!class_exists('Xabia_API')) {
             }
 
             $needles = self::select_keyword_needles_for_boost($needles, $context_so_far);
+            $rescue = [];
+            foreach ($needles as $needle) {
+                $needle = self::sanitize_rag_search_term((string) $needle);
+                if ($needle === '' || self::rag_keyword_is_function_word($needle) || mb_strlen($needle, 'UTF-8') <= 4) {
+                    continue;
+                }
+                $rescue[] = $needle;
+            }
+            // Una sola búsqueda remota. Sin sustantivo de más de 4 letras, ningún HTTP de rescate.
+            $needles = array_slice($rescue, 0, 1);
             if ($needles === []) {
                 return '';
             }

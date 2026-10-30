@@ -1231,6 +1231,10 @@ class Xabia_Brain {
         if ($chunk === '') {
             return '';
         }
+        $contract = self::format_generic_entity_contract($chunk);
+        if ($contract !== '') {
+            return $contract;
+        }
 
         $imagen_tail = '';
         if (preg_match_all('/\[Imagen disponible:\s*https?:\/\/[^\s\]]+\s*\]/iu', $chunk, $m)) {
@@ -1261,6 +1265,195 @@ class Xabia_Brain {
         $chunk = trim($chunk);
 
         return rtrim($chunk) . $imagen_tail;
+    }
+
+    /**
+     * Ficha compacta e idéntica para cualquier origen (producto, evento, alojamiento, servicio).
+     * Vacío si el bloque no es una ficha de ente.
+     */
+    public static function format_generic_entity_contract(string $chunk): string {
+        $chunk = self::ensure_valid_utf8(trim($chunk));
+        if ($chunk === '' || !self::chunk_looks_like_entity_record($chunk)) {
+            return '';
+        }
+        if (preg_match('/^\[Entidad:\s*[^\]]+\]/u', $chunk)
+            && !preg_match('/\b(?:EMPRESA|PRODUCTO|EVENTO|HOTEL|SERVICIO|CATEGOR[IÍ]A|PRECIO|STOCK)\s*:/iu', $chunk)) {
+            return $chunk;
+        }
+
+        $image = '';
+        if (preg_match('/\[Imagen disponible:\s*(https?:\/\/[^\s\]]+)\s*\]/iu', $chunk, $im)) {
+            $image = trim((string) ($im[1] ?? ''));
+            $stripped = preg_replace('/\[Imagen disponible:\s*https?:\/\/[^\s\]]+\s*\]/iu', '', $chunk);
+            $chunk = trim(is_string($stripped) ? $stripped : $chunk);
+        }
+
+        $pairs = self::extract_entity_labeled_pairs($chunk);
+        $title = self::first_entity_pair($pairs, [
+            'entidad', 'empresa', 'nombre del producto', 'nombre', 'name', 'titulo', 'title', 'producto', 'evento', 'hotel', 'servicio', 'ficha', 'proveedor',
+        ]);
+        if ($title === '') {
+            if (preg_match('/\[Entidad:\s*([^\]]+)\]/iu', $chunk, $em)) {
+                $title = trim((string) ($em[1] ?? ''));
+            }
+        }
+        if ($title === '') {
+            return '';
+        }
+
+        $classification = self::join_entity_pairs($pairs, [
+            'clasificacion', 'categoria', 'categorias', 'subcategorias', 'subcategoria', 'tipo', 'tags', 'experiencias',
+        ]);
+        $highlight = self::first_entity_pair($pairs, [
+            'precio actual', 'precio oferta', 'precio', 'precio regular', 'precio de referencia', 'price', 'pvp',
+            'dato clave', 'fecha', 'date', 'hora', 'horario',
+        ]);
+        $availability = self::first_entity_pair($pairs, [
+            'estado', 'stock', 'stock_estado', 'disponibilidad', 'availability', 'plazas',
+        ]);
+        $excerpt = self::first_entity_pair($pairs, [
+            'resumen', 'summary', 'excerpt', 'descripcion', 'descripcion general', 'description',
+        ]);
+        $url = self::first_entity_pair($pairs, [
+            'enlace', 'url', 'link', 'web', 'permalink', 'url de compra', 'enlace al producto',
+        ]);
+        if ($url === '' && preg_match('#https?://[^\s<>\[\]"\']+#u', $chunk, $um)) {
+            $candidate = rtrim((string) $um[0], '.,;)');
+            if ($image === '' || $candidate !== $image) {
+                $url = $candidate;
+            }
+        }
+        if ($excerpt !== '') {
+            $excerpt = preg_replace('/\s+/u', ' ', $excerpt) ?? $excerpt;
+            if (mb_strlen($excerpt, 'UTF-8') > 180) {
+                $excerpt = rtrim(mb_substr($excerpt, 0, 180, 'UTF-8')) . '…';
+            }
+        }
+
+        $product_id = self::first_entity_pair($pairs, [
+            'id del producto', 'product id', 'product_id', 'post_id', 'id',
+        ]);
+        $id_num = '';
+        if ($product_id !== '' && preg_match('/\d{1,12}/', $product_id, $idm)) {
+            $id_num = (string) $idm[0];
+        }
+
+        $parts = ['[Entidad: ' . $title . ']'];
+        if ($id_num !== '') {
+            $parts[] = '[ID: ' . $id_num . ']';
+        }
+        if ($classification !== '') {
+            $parts[] = '[Clasificación: ' . $classification . ']';
+        }
+        if ($highlight !== '') {
+            $parts[] = '[Dato clave: ' . $highlight . ']';
+        }
+        if ($availability !== '') {
+            $parts[] = '[Estado: ' . $availability . ']';
+        }
+        if ($excerpt !== '') {
+            $parts[] = '[Resumen: ' . $excerpt . ']';
+        }
+        if ($url !== '') {
+            $parts[] = '[Enlace: ' . $url . ']';
+        }
+        $line = implode(' ', $parts);
+        if ($image !== '') {
+            $line .= "\n[Imagen disponible: " . $image . ']';
+        }
+
+        return $line;
+    }
+
+    private static function chunk_looks_like_entity_record(string $chunk): bool {
+        if (preg_match('/^(?:SYSTEM_NOTE|###|\[CAT[AÁ]LOGO|\[FUENTE)\b/u', $chunk)) {
+            return false;
+        }
+
+        return (bool) preg_match(
+            '/(?:\[Entidad:|\b(?:EMPRESA|ENTIDAD|ENTITY|NOMBRE(?:\s+DEL\s+PRODUCTO)?|T[IÍ]TULO|TITLE|PRODUCTO|EVENTO|HOTEL|SERVICIO|CATEGOR[IÍ]A|PRECIO(?:\s+ACTUAL)?|STOCK|RESUMEN|DESCRIPCI[ÓO]N)\b[^|:\n]{0,220}:)/iu',
+            $chunk
+        );
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    private static function extract_entity_labeled_pairs(string $chunk): array {
+        $chunk = str_replace(['[Producto:', '[PRODUCTO:'], '[Entidad:', $chunk);
+        $flat = str_replace(["\r\n", "\r", "\n", ' | '], ' | ', $chunk);
+        $bits = preg_split('/\s+\|\s+/u', $flat) ?: [];
+        $pairs = [];
+        foreach ($bits as $bit) {
+            $bit = trim((string) $bit);
+            $bit = preg_replace('/^[-*•]\s+/u', '', $bit) ?? $bit;
+            /* El índice guarda «Etiqueta (instrucción del mapeo): valor». La instrucción no forma parte de la clave. */
+            $bit = preg_replace('/\s*\((?:[^()]|\([^()]*\))*\)(?=\s*:)/u', '', $bit) ?? $bit;
+            $bit = trim($bit);
+            if ($bit === '' || !preg_match('/^(?:\[)?([^:\[\]]{2,40})\]?\s*:\s*(.+)$/u', $bit, $m)) {
+                continue;
+            }
+            $key = self::fold_entity_label((string) $m[1]);
+            $val = trim((string) $m[2], " \t[]");
+            $val = preg_replace('/\s+/u', ' ', $val) ?? $val;
+            if ($key === '' || $val === '' || isset($pairs[$key])) {
+                continue;
+            }
+            $pairs[$key] = $val;
+        }
+
+        return $pairs;
+    }
+
+    /**
+     * @param array<string, string> $pairs
+     * @param list<string>          $keys
+     */
+    private static function first_entity_pair(array $pairs, array $keys): string {
+        foreach ($keys as $key) {
+            $folded = self::fold_entity_label($key);
+            if ($folded !== '' && !empty($pairs[$folded])) {
+                return $pairs[$folded];
+            }
+        }
+
+        return '';
+    }
+
+    /**
+     * @param array<string, string> $pairs
+     * @param list<string>          $keys
+     */
+    private static function join_entity_pairs(array $pairs, array $keys): string {
+        $vals = [];
+        foreach ($keys as $key) {
+            $folded = self::fold_entity_label($key);
+            if ($folded === '' || empty($pairs[$folded])) {
+                continue;
+            }
+            foreach (preg_split('/\s*,\s*/u', $pairs[$folded]) ?: [] as $piece) {
+                $piece = trim((string) $piece);
+                if ($piece !== '') {
+                    $vals[] = $piece;
+                }
+            }
+        }
+        $vals = array_values(array_unique($vals));
+        if ($vals === []) {
+            return '';
+        }
+
+        return implode(', ', array_slice($vals, 0, 8));
+    }
+
+    private static function fold_entity_label(string $label): string {
+        $label = mb_strtolower(trim($label), 'UTF-8');
+        $label = strtr($label, [
+            'á' => 'a', 'é' => 'e', 'í' => 'i', 'ó' => 'o', 'ú' => 'u', 'ü' => 'u', 'ñ' => 'n',
+        ]);
+        $label = preg_replace('/[^a-z0-9]+/u', ' ', $label) ?? $label;
+
+        return trim((string) preg_replace('/\s+/u', ' ', $label));
     }
 
     /**
@@ -1323,6 +1516,17 @@ class Xabia_Brain {
             }
             $stripped = preg_replace('/\[Imagen disponible:\s*https?:\/\/[^\s\]]+\s*\]/iu', '', $chunk);
             $chunk = trim(is_string($stripped) ? $stripped : $chunk);
+        }
+        $fact_re = '/(?:\[(?:Enlace|Dato clave):\s*[^\]]+\]|(?:Precio(?:\s+(?:actual|oferta|regular|de\s+referencia))?|Price|PVP|Link|URL(?:\s+de\s+compra)?|Enlace(?:\s+al\s+producto)?|permalink)(?:\s*\((?:[^()]|\([^()]*\))*\))?\s*:\s*[^|\n\]]+)/iu';
+        if (preg_match_all($fact_re, $chunk, $facts)) {
+            foreach (array_unique($facts[0]) as $fact) {
+                $fact = trim((string) $fact);
+                if ($fact !== '') {
+                    $preserved[] = $fact;
+                }
+            }
+            $stripped_facts = preg_replace($fact_re, ' ', $chunk);
+            $chunk = trim(is_string($stripped_facts) ? $stripped_facts : $chunk);
         }
 
         $url_placeholders = [];

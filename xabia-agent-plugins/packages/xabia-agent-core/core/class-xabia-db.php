@@ -1260,10 +1260,14 @@ class Xabia_DB {
         }
         $wpdb->query($wpdb->prepare(
             "UPDATE $table
-             SET tokens_remaining = GREATEST(0, tokens_remaining - %d),
+             SET tokens_remaining = CASE
+                 WHEN tokens_remaining <= %d THEN 0
+                 ELSE tokens_remaining - %d
+             END,
                  tokens_used_total = tokens_used_total + %d,
                  updated_at = %s
              WHERE license_id = %s",
+            $tokens,
             $tokens,
             $tokens,
             $now,

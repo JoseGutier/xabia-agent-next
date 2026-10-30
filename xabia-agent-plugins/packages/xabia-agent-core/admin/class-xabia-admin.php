@@ -2090,10 +2090,8 @@ ORDER BY name ASC";
                         : 0,
                     'custom_daily_limit_message' => sanitize_textarea_field((string) ($post['custom_daily_limit_message'] ?? '')),
                     'greeting'     => wp_kses_post($post['greeting']),
-                    'starter_questions_enabled' => !empty($post['starter_questions_enabled']) ? 1 : 0,
-                    'starter_questions' => class_exists('Xabia_Starter_Questions', false)
-                        ? Xabia_Starter_Questions::normalize_manual_list($post['starter_questions'] ?? '')
-                        : [],
+                    'starter_questions_enabled' => 0,
+                    'starter_questions' => [],
                     'search_bar_placeholders' => self::search_bar_lines_from_post($post['search_bar_placeholders'] ?? ''),
                     'search_bar_chips' => self::search_bar_lines_from_post($post['search_bar_chips'] ?? ''),
                     'rag_behavior_preset' => in_array(sanitize_key($post['rag_behavior_preset'] ?? ''), ['neutral', 'compact', 'custom'], true)
@@ -3901,11 +3899,6 @@ ORDER BY name ASC";
         $tts_clean_patterns = $data['design']['tts_clean_patterns'] ?? [];
         $tts_clean_patterns_str = is_array($tts_clean_patterns) ? implode("\n", $tts_clean_patterns) : '';
         $greet = $data['rules']['greeting'] ?? 'Hola, soy tu asistente.';
-        $starter_questions_enabled = !isset($data['rules']['starter_questions_enabled']) || !empty($data['rules']['starter_questions_enabled']);
-        $starter_questions_raw = '';
-        if (!empty($data['rules']['starter_questions']) && is_array($data['rules']['starter_questions'])) {
-            $starter_questions_raw = implode("\n", array_map('strval', $data['rules']['starter_questions']));
-        }
         $search_bar_placeholders_raw = '';
         if (!empty($data['rules']['search_bar_placeholders']) && is_array($data['rules']['search_bar_placeholders'])) {
             $search_bar_placeholders_raw = implode("\n", array_map('strval', $data['rules']['search_bar_placeholders']));
@@ -4999,7 +4992,7 @@ ORDER BY name ASC";
                                 <div class="xabia-admin-section">
                                     <div class="xabia-admin-section__head">
                                         <h3 class="xabia-admin-section__title"><?php echo esc_html__('Identidad del agente', 'xabia-intelligence'); ?></h3>
-                                        <p class="description"><?php echo esc_html__('Nombre interno, saludo y primeras preguntas que verá el visitante.', 'xabia-intelligence'); ?></p>
+                                        <p class="description"><?php echo esc_html__('Nombre interno y saludo del chat.', 'xabia-intelligence'); ?></p>
                                     </div>
                                     <label for="xabia-agent-name"><strong><?php echo esc_html__('Nombre del Agente', 'xabia-intelligence'); ?></strong></label>
                                     <input type="text" name="name" id="xabia-agent-name" value="<?php echo esc_attr($data['name'] ?? ''); ?>" class="widefat">
@@ -5011,22 +5004,19 @@ ORDER BY name ASC";
                                     <?php endif; ?>
                                     <label style="display:block;margin-top:14px;"><strong><?php echo esc_html__('Saludo inicial', 'xabia-intelligence'); ?></strong></label>
                                     <textarea name="greeting" class="widefat" rows="3"><?php echo esc_textarea($greet); ?></textarea>
-                                    <p style="margin:14px 0 6px;">
-                                        <label>
-                                            <input type="checkbox" name="starter_questions_enabled" value="1" <?php checked($starter_questions_enabled); ?>>
-                                            <?php echo esc_html__('Mostrar preguntas sugeridas', 'xabia-intelligence'); ?>
-                                        </label>
-                                    </p>
-                                    <p class="description"><?php echo esc_html__('Chips clicables bajo el saludo para animar la primera interacción.', 'xabia-intelligence'); ?></p>
-                                    <label style="display:block;margin-top:10px;"><strong><?php echo esc_html__('Preguntas manuales (una por línea)', 'xabia-intelligence'); ?></strong></label>
-                                    <textarea name="starter_questions" class="widefat" rows="4" placeholder="<?php echo esc_attr__('Opcional. Una pregunta por línea.', 'xabia-intelligence'); ?>"><?php echo esc_textarea($starter_questions_raw); ?></textarea>
-                                    <p class="description"><?php echo esc_html__('Si lo dejas vacío, Xabia generará preguntas según el contenido del agente.', 'xabia-intelligence'); ?></p>
-                                    <label style="display:block;margin-top:16px;"><strong><?php echo esc_html__('Barra hero: frases del placeholder', 'xabia-intelligence'); ?></strong></label>
-                                    <textarea name="search_bar_placeholders" class="widefat" rows="4" placeholder="<?php echo esc_attr__('Una frase por línea. Si está vacío, el placeholder no rota.', 'xabia-intelligence'); ?>"><?php echo esc_textarea($search_bar_placeholders_raw); ?></textarea>
-                                    <p class="description"><?php echo esc_html__('Se turnan en [xabia_search_bar]. No sustituyen a las preguntas del chat.', 'xabia-intelligence'); ?></p>
-                                    <label style="display:block;margin-top:10px;"><strong><?php echo esc_html__('Barra hero: chips', 'xabia-intelligence'); ?></strong></label>
-                                    <textarea name="search_bar_chips" class="widefat" rows="4" placeholder="<?php echo esc_attr__('Etiqueta | consulta', 'xabia-intelligence'); ?>"><?php echo esc_textarea($search_bar_chips_raw); ?></textarea>
-                                    <p class="description"><?php echo esc_html__('Una línea por chip. Formato «Etiqueta | consulta». Sin barra vertical, el texto se envía tal cual.', 'xabia-intelligence'); ?></p>
+                                </div>
+
+                                <div class="xabia-admin-section">
+                                    <div class="xabia-admin-section__head">
+                                        <h3 class="xabia-admin-section__title"><?php echo esc_html__('Barra hero', 'xabia-intelligence'); ?></h3>
+                                        <p class="description"><?php echo esc_html__('Solo afecta a [xabia_search_bar]. El chat no muestra preguntas sugeridas propias.', 'xabia-intelligence'); ?></p>
+                                    </div>
+                                    <label style="display:block;"><strong><?php echo esc_html__('Frases del placeholder', 'xabia-intelligence'); ?></strong></label>
+                                    <textarea name="search_bar_placeholders" class="widefat" rows="4" placeholder="<?php echo esc_attr__('Una frase por línea.', 'xabia-intelligence'); ?>"><?php echo esc_textarea($search_bar_placeholders_raw); ?></textarea>
+                                    <p class="description"><?php echo esc_html__('Se escriben solas, una detrás de otra, dentro del campo vacío. Si lo dejas vacío, el campo no rota.', 'xabia-intelligence'); ?></p>
+                                    <label style="display:block;margin-top:16px;"><strong><?php echo esc_html__('Etiquetas', 'xabia-intelligence'); ?></strong></label>
+                                    <textarea name="search_bar_chips" class="widefat" rows="4" placeholder="<?php echo esc_attr__('Dolores | ¿cómo se mitigan los dolores?', 'xabia-intelligence'); ?>"><?php echo esc_textarea($search_bar_chips_raw); ?></textarea>
+                                    <p class="description"><?php echo esc_html__('Una línea por etiqueta. Formato «Etiqueta | consulta». El visitante ve la etiqueta y, al pulsar, se envía la consulta. Sin barra vertical, se envía el texto entero.', 'xabia-intelligence'); ?></p>
                                 </div>
 
                                 <div class="xabia-admin-section">

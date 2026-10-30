@@ -16,7 +16,7 @@
         full_screen: 'layout-full-screen',
     };
 
-    const DEFAULT_PANEL_LAYOUT = 'drawer';
+    const DEFAULT_PANEL_LAYOUT = 'full_screen';
 
     function panelMode(layout) {
         if (layout === 'drawer') {
@@ -554,6 +554,15 @@
         trigger.classList.toggle('is-active', open);
         trigger.setAttribute('aria-expanded', open ? 'true' : 'false');
         panel.classList.toggle('is-active', open);
+        if (!panel.classList.contains('xabia-present-kiosk')) {
+            panel.classList.toggle('xabia-chatbox--fullscreen', open);
+            panel.classList.toggle('xabia-conversation-open', open);
+            if (open) {
+                document.body.classList.add('xabia-conversation-open');
+            } else if (!document.querySelector('.xabia-chatbox.xabia-conversation-open')) {
+                document.body.classList.remove('xabia-conversation-open');
+            }
+        }
         panel.setAttribute('aria-hidden', open ? 'false' : 'true');
         applyImmersiveState(open, immersive, trigger, panel, overlay, layout, footerBox);
         syncBodyMobilePreset(trigger, open);
@@ -583,6 +592,10 @@
         window.addEventListener('scroll', function () {
             const currentScrollY = window.scrollY;
 
+            if (window.matchMedia('(max-width: 600px)').matches) {
+                lastScrollY = currentScrollY;
+                return;
+            }
             if (!document.body.classList.contains('xabia-open') && footerBox) {
                 if (!footerBox.classList.contains('is-anchored')) {
                     if (currentScrollY > lastScrollY + 2) {
@@ -597,55 +610,8 @@
         }, { passive: true });
     }
 
-    function bindAvatarHint(footerBox) {
-        if (!footerBox) {
-            return;
-        }
-        let bubble = footerBox.querySelector('.xabia-avatar-hint-bubble');
-        if (!bubble) {
-            bubble = document.createElement('span');
-            bubble.className = 'xabia-avatar-hint-bubble';
-            bubble.setAttribute('aria-hidden', 'true');
-            footerBox.appendChild(bubble);
-        }
-        const hints = ['?', (rootCfg.i18n && rootCfg.i18n.avatarHint) ? rootCfg.i18n.avatarHint : '¿Te puedo ayudar?'];
-        let showTimer = null;
-        let hideTimer = null;
-
-        function clearTimers() {
-            if (showTimer) {
-                window.clearTimeout(showTimer);
-                showTimer = null;
-            }
-            if (hideTimer) {
-                window.clearTimeout(hideTimer);
-                hideTimer = null;
-            }
-        }
-
-        function canShow() {
-            return !document.body.classList.contains('xabia-open')
-                && !footerBox.classList.contains('footer-hidden');
-        }
-
-        function scheduleNext() {
-            clearTimers();
-            const wait = 12000 + Math.floor(Math.random() * 18000);
-            showTimer = window.setTimeout(function () {
-                if (!canShow()) {
-                    scheduleNext();
-                    return;
-                }
-                bubble.textContent = Math.random() < 0.38 ? '?' : hints[1];
-                bubble.classList.add('is-visible');
-                hideTimer = window.setTimeout(function () {
-                    bubble.classList.remove('is-visible');
-                    scheduleNext();
-                }, 2600);
-            }, wait);
-        }
-
-        scheduleNext();
+    function bindAvatarHint() {
+        /* El bocadillo del avatar flotante no se crea en la navegación web. */
     }
 
     function bindFooterAnchor(footerBox) {
@@ -725,18 +691,27 @@
             return;
         }
         document.body.classList.add('xabia-native-interface');
-        list.forEach(bindTrigger);
+        list.forEach(function (trigger) {
+            bindTrigger(trigger);
+        });
     }
 
     function finishBind(trigger, footerBox, panel, overlay) {
 
         const cfg = projectCfg(trigger);
-        const layout = cfg.panelLayout || trigger.getAttribute('data-panel-layout') || DEFAULT_PANEL_LAYOUT;
-        const layoutCls = layoutClass(layout);
-        const isOverlayLayout = layout === 'centered_modal' || layout === 'full_screen';
+        const kiosk = panel.classList.contains('xabia-present-kiosk');
+        const layout = kiosk
+            ? (cfg.panelLayout || trigger.getAttribute('data-panel-layout') || 'drawer')
+            : 'full_screen';
+        const layoutCls = kiosk ? '' : 'layout-full-screen';
+        const isOverlayLayout = !kiosk || layout === 'centered_modal' || layout === 'full_screen';
 
         portalPanel(panel);
-        panel.classList.add('xabia-panel-shell', layoutCls);
+        panel.classList.add('xabia-panel-shell');
+        if (layoutCls) {
+            panel.classList.remove('layout-drawer', 'layout-right-float', 'layout-left-float', 'layout-centered-modal');
+            panel.classList.add(layoutCls);
+        }
         panel.setAttribute('data-mode', panelMode(layout));
         bindMobilePanelBehavior(trigger, panel);
         try {
@@ -749,7 +724,7 @@
         panel.setAttribute('aria-modal', isOverlayLayout ? 'true' : 'false');
         panel.setAttribute('aria-hidden', 'true');
 
-        if (overlay) {
+        if (overlay && layoutCls) {
             overlay.classList.add(layoutCls);
         }
 
@@ -780,15 +755,20 @@
 
         ensurePanelCloseButton(panel, closePanel);
 
-        trigger.addEventListener('click', function (e) {
+        var lastLauncherToggle = 0;
+        function openFromLauncher(e) {
             e.preventDefault();
             e.stopPropagation();
-            if (typeof window.xabiaOpenVoiceOverlay === 'function') {
-                window.xabiaOpenVoiceOverlay(trigger.getAttribute('data-project') || '', trigger);
+            var now = Date.now();
+            if (now - lastLauncherToggle < 450) {
                 return;
             }
+            lastLauncherToggle = now;
             togglePanel();
-        });
+        }
+        trigger.setAttribute('data-xabia-fast-tap', '1');
+        trigger.addEventListener('pointerdown', openFromLauncher);
+        trigger.addEventListener('click', openFromLauncher);
 
         if (overlay) {
             overlay.addEventListener('click', closePanel);
@@ -858,7 +838,9 @@
             }
         });
 
-        if (footerBox) {
+        if (trigger.classList.contains('xabia-launcher') && trigger.getAttribute('data-placement') !== 'inline') {
+            bindScrollBehavior(trigger);
+        } else if (footerBox) {
             const isInline = footerBox.classList.contains('xabia-trigger--inline')
                 || trigger.getAttribute('data-placement') === 'inline';
             if (!isInline) {

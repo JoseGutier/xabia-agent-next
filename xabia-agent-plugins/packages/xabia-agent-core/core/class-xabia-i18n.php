@@ -321,8 +321,8 @@ final class Xabia_I18n {
             'voiceListeningTitle'  => 'Te escucho...',
             'voiceIdlePrompt'      => 'Dime qué quieres saber.',
             'voiceHelp'            => '¿En qué puedo ayudarte?',
-            'overlayPlaceholder'   => 'Pregunta lo que quieras...',
-            'onlineStatus'         => 'En línea · Respuestas en tiempo real',
+            'overlayPlaceholder'   => 'Escribe aquí o pulsa el micro para hablar...',
+            'onlineStatus'         => '· En línea',
             'offlineStatus'        => 'No disponible',
             'closeOverlay'         => 'Cerrar',
         ];

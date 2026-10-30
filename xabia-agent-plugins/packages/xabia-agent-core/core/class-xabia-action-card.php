@@ -35,7 +35,7 @@ class Xabia_Action_Card {
         $m = self::clean_field(self::first_value($fields, ['m', 'meta']));
         $d = self::clean_field(self::first_value($fields, ['d', 'description']));
         $p = self::clean_field(self::first_value($fields, ['p', 'highlight', 'price']));
-        $i = self::clean_url(self::first_value($fields, ['i', 'image', 'img']));
+        $i = self::clean_url(self::first_value($fields, ['i', 'image', 'img', 'imagen', 'imagen_url', 'Imagen_URL']));
         $l = self::clean_field(self::first_value($fields, ['l', 'action_text', 'label']));
         $u = self::clean_url(self::first_value($fields, ['u', 'url', 'permalink']));
         $cu = self::clean_url(self::first_value($fields, ['cu', 'cart_url']));
@@ -109,6 +109,169 @@ class Xabia_Action_Card {
         }
 
         return '[ACTION:CARD:' . self::b64url_encode($json) . ']';
+    }
+
+    /**
+     * Rellena precio e imagen vacíos de cada [ACTION:CARD] con la ficha genérica del contexto.
+     * Solo usa [Dato clave] cuando es un precio, y [Imagen disponible] cuando la hay.
+     * No interpreta el origen (tienda, evento, alojamiento o servicio).
+     */
+    public static function enrich_response_cards(string $response, string $context): string {
+        if ($response === '' || strpos($response, '[ACTION:CARD:') === false || $context === '') {
+            return $response;
+        }
+        $index = self::entity_contract_index($context);
+        if ($index === []) {
+            return $response;
+        }
+        $out = preg_replace_callback(
+            '/\[ACTION:CARD:([^\]]+)\]/u',
+            static function (array $m) use ($index): string {
+                $decoded = self::decode((string) ($m[1] ?? ''));
+                if (!is_array($decoded)) {
+                    return (string) ($m[0] ?? '');
+                }
+                $hit = self::match_entity_contract((string) ($decoded['t'] ?? ''), $index);
+                if ($hit === null) {
+                    return (string) ($m[0] ?? '');
+                }
+                $changed = false;
+                if (($decoded['p'] ?? '') === '' && $hit['price'] !== '') {
+                    $decoded['p'] = $hit['price'];
+                    $changed = true;
+                }
+                if (($decoded['i'] ?? '') === '' && $hit['img'] !== '') {
+                    $decoded['i'] = $hit['img'];
+                    $changed = true;
+                }
+                if (($decoded['u'] ?? '') === '' && ($hit['url'] ?? '') !== '') {
+                    $decoded['u'] = $hit['url'];
+                    $changed = true;
+                }
+                if (!$changed) {
+                    return (string) ($m[0] ?? '');
+                }
+                $tag = self::encode($decoded);
+                return $tag !== '' ? $tag : (string) ($m[0] ?? '');
+            },
+            $response
+        );
+
+        return is_string($out) ? $out : $response;
+    }
+
+    /**
+     * @return list<array{title:string,title_n:string,price:string,img:string,url:string}>
+     */
+    private static function entity_contract_index(string $context): array {
+        $parts = preg_split('/(?=\[Entidad:)/u', $context) ?: [];
+        $out = [];
+        foreach ($parts as $part) {
+            if (!preg_match('/\[Entidad:\s*([^\]]+)\]/u', (string) $part, $tm)) {
+                continue;
+            }
+            $title = trim((string) ($tm[1] ?? ''));
+            if ($title === '') {
+                continue;
+            }
+            $price = '';
+            if (preg_match('/\[Dato clave:\s*([^\]]+)\]/u', (string) $part, $hm)) {
+                $highlight = trim((string) ($hm[1] ?? ''));
+                if (self::highlight_is_price($highlight)) {
+                    $price = $highlight;
+                }
+            }
+            $img = '';
+            if (preg_match('/\[Imagen disponible:\s*(https?:\/\/[^\s\]]+)\s*\]/iu', (string) $part, $im)) {
+                $img = trim((string) ($im[1] ?? ''));
+            }
+            $url = '';
+            if (preg_match('/\[Enlace:\s*(https?:\/\/[^\s\]]+)\s*\]/iu', (string) $part, $um)) {
+                $url = trim((string) ($um[1] ?? ''));
+            }
+            if ($price === '' && $img === '' && $url === '') {
+                continue;
+            }
+            $out[] = [
+                'title'   => $title,
+                'title_n' => self::fold_match_title($title),
+                'price'   => $price,
+                'img'     => $img,
+                'url'     => $url,
+            ];
+        }
+
+        return $out;
+    }
+
+    /**
+     * @param list<array{title:string,title_n:string,price:string,img:string,url:string}> $index
+     * @return array{title:string,title_n:string,price:string,img:string,url:string}|null
+     */
+    private static function match_entity_contract(string $title, array $index): ?array {
+        $needle = self::fold_match_title($title);
+        if ($needle === '') {
+            return null;
+        }
+        $best = null;
+        $best_len = 0;
+        foreach ($index as $row) {
+            $hay = (string) ($row['title_n'] ?? '');
+            if ($hay === '') {
+                continue;
+            }
+            $ok = $hay === $needle;
+            if (!$ok) {
+                $hay_len = function_exists('mb_strlen') ? mb_strlen($hay, 'UTF-8') : strlen($hay);
+                $needle_len = function_exists('mb_strlen') ? mb_strlen($needle, 'UTF-8') : strlen($needle);
+                $ok = min($hay_len, $needle_len) >= 6 && (strpos($hay, $needle) !== false || strpos($needle, $hay) !== false);
+            }
+            if (!$ok) {
+                continue;
+            }
+            $len = function_exists('mb_strlen') ? mb_strlen($hay, 'UTF-8') : strlen($hay);
+            if ($best === null || $len > $best_len) {
+                $best = $row;
+                $best_len = $len;
+            }
+        }
+
+        return $best;
+    }
+
+    private static function highlight_is_price(string $value): bool {
+        $s = trim($value);
+        if ($s === '' || !preg_match('/\d/u', $s)) {
+            return false;
+        }
+        if (preg_match('/\d{4}-\d{2}-\d{2}|\d{1,2}:\d{2}\b/u', $s) && !preg_match('/[€$£]|eur/iu', $s)) {
+            return false;
+        }
+        if (preg_match('/\b(?:enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|octubre|noviembre|diciembre|lunes|martes|mi[eé]rcoles|jueves|viernes|s[aá]bado|domingo)\b/iu', $s)) {
+            return false;
+        }
+        if (preg_match('/[€$£]|eur|usd|gbp/iu', $s)) {
+            return true;
+        }
+
+        return (bool) preg_match('/^\d{1,6}(?:[.,]\d{1,2})?(?:\s*\/\s*\p{L}+)?$/u', $s);
+    }
+
+    private static function fold_match_title(string $title): string {
+        $s = trim(wp_strip_all_tags($title));
+        if (function_exists('remove_accents')) {
+            $s = remove_accents($s);
+        } else {
+            $s = strtr($s, [
+                'á' => 'a', 'é' => 'e', 'í' => 'i', 'ó' => 'o', 'ú' => 'u', 'ü' => 'u', 'ñ' => 'n',
+                'Á' => 'A', 'É' => 'E', 'Í' => 'I', 'Ó' => 'O', 'Ú' => 'U', 'Ü' => 'U', 'Ñ' => 'N',
+            ]);
+        }
+        $s = function_exists('mb_strtolower') ? mb_strtolower($s, 'UTF-8') : strtolower($s);
+        $s = preg_replace('/[^\p{L}\p{N}\s]+/u', ' ', $s) ?? $s;
+        $s = preg_replace('/\s+/u', ' ', $s) ?? $s;
+
+        return trim((string) $s);
     }
 
     /**

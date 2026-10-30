@@ -60,6 +60,8 @@ class Xabia_Interface {
     public const OPT_PRESENTATION_MODE          = 'presentation_mode';
     /** light | dark | auto. Claro por defecto. */
     public const OPT_COLOR_SCHEME               = 'color_scheme';
+    /** Frase visible del botón lanzador en escritorio. */
+    public const OPT_LAUNCHER_LABEL             = 'launcher_label';
 
     /** @return list<string> */
     public static function presentation_mode_keys(): array {
@@ -82,9 +84,9 @@ class Xabia_Interface {
             'web_adaptive' => [
                 'group'       => 'web',
                 'group_label' => __('Sitio web', 'xabia-intelligence'),
-                'title'       => __('Burbuja flotante', 'xabia-intelligence'),
-                'summary'     => __('Se abre en la esquina inferior derecha. Ideal para escritorio.', 'xabia-intelligence'),
-                'hint'        => __('En móvil pasa a pantalla completa automáticamente', 'xabia-intelligence'),
+                'title'       => __('Botón de chat', 'xabia-intelligence'),
+                'summary'     => __('Una barra pequeña abre el chat a pantalla completa.', 'xabia-intelligence'),
+                'hint'        => __('En el móvil se queda en un círculo', 'xabia-intelligence'),
                 'thumb'       => 'web',
             ],
             'totem_transparent_vertical' => [
@@ -164,7 +166,10 @@ class Xabia_Interface {
         if (self::is_kiosk_presentation_mode($settings[self::OPT_PRESENTATION_MODE])) {
             return false;
         }
-        return !empty($settings[self::OPT_AUTOLOAD_WITHOUT_SHORTCODE]);
+        if (($settings[self::OPT_TRIGGER_POSITION] ?? '') === 'shortcode') {
+            return false;
+        }
+        return true;
     }
 
     public static function init(): void {
@@ -308,7 +313,7 @@ class Xabia_Interface {
             }
         }
 
-        if (!preg_match_all('/\[xabia_(?:agent|chat|launcher|avatar)\b([^\]]*)\]/i', $text, $matches, PREG_SET_ORDER)) {
+        if (!preg_match_all('/\[xabia_(?:agent|chat|launcher|avatar|chat_button)\b([^\]]*)\]/i', $text, $matches, PREG_SET_ORDER)) {
             return;
         }
         foreach ($matches as $match) {
@@ -321,7 +326,7 @@ class Xabia_Interface {
                 self::$primed_projects[] = $id;
             }
             $tag = strtolower((string) ($match[0] ?? ''));
-            if (str_contains($tag, 'xabia_launcher') || str_contains($tag, 'xabia_avatar')) {
+            if (str_contains($tag, 'xabia_launcher') || str_contains($tag, 'xabia_avatar') || str_contains($tag, 'xabia_chat_button')) {
                 self::register_launcher_project($id);
             }
         }
@@ -424,7 +429,7 @@ class Xabia_Interface {
             self::OPT_TRIGGER_POSITION          => 'bottom_right',
             self::OPT_TRIGGER_MARGIN_X          => '24px',
             self::OPT_TRIGGER_MARGIN_Y          => '24px',
-            self::OPT_PANEL_LAYOUT              => 'drawer',
+            self::OPT_PANEL_LAYOUT              => 'full_screen',
             self::OPT_EXCLUDE_POST_TYPES        => [],
             self::OPT_EXCLUDE_IDS               => [],
             self::OPT_EXCLUDE_WOO_CART_CHECKOUT => 1,
@@ -434,6 +439,7 @@ class Xabia_Interface {
             self::OPT_SPEAKING_AVATAR            => 1,
             self::OPT_PRESENTATION_MODE          => 'web_adaptive',
             self::OPT_COLOR_SCHEME               => 'light',
+            self::OPT_LAUNCHER_LABEL             => '¿Cómo puedo ayudarte?',
         ];
     }
 
@@ -493,8 +499,45 @@ class Xabia_Interface {
     }
 
     public static function sanitize_panel_layout(string $value): string {
+        unset($value);
+        return 'full_screen';
+    }
+
+    /**
+     * @return list<string>
+     */
+    public static function launcher_position_keys(): array {
+        return ['bottom_right', 'bottom_left', 'bottom_center', 'shortcode'];
+    }
+
+    public static function sanitize_launcher_position(string $value): string {
         $value = sanitize_key($value);
-        return in_array($value, self::panel_layout_keys(), true) ? $value : 'drawer';
+        if ($value === 'custom') {
+            $value = 'bottom_right';
+        }
+        return in_array($value, self::launcher_position_keys(), true) ? $value : 'bottom_right';
+    }
+
+    public static function project_is_totem(string $project_id): bool {
+        $project_id = sanitize_key($project_id);
+        $projects = get_option('xabia_projects_config', []);
+        if ($project_id !== '' && isset($projects[$project_id]) && is_array($projects[$project_id])) {
+            $totem = $projects[$project_id]['totem'] ?? [];
+            if (is_array($totem) && (!empty($totem['enabled']) || !empty($totem['totem_mode']) || !empty($totem['is_totem']))) {
+                return true;
+            }
+            if (!empty($projects[$project_id]['is_totem']) || !empty($projects[$project_id]['totem_mode'])) {
+                return true;
+            }
+            $interface = $projects[$project_id]['interface'] ?? [];
+            if (is_array($interface)) {
+                $mode = self::sanitize_presentation_mode((string) ($interface[self::OPT_PRESENTATION_MODE] ?? ''));
+                if (self::is_kiosk_presentation_mode($mode)) {
+                    return true;
+                }
+            }
+        }
+        return false;
     }
 
     public static function sanitize_mobile_preset(string $value): string {
@@ -602,12 +645,9 @@ class Xabia_Interface {
             $trigger_type = 'native_avatar';
         }
 
-        $position = sanitize_key((string) ($raw[self::OPT_TRIGGER_POSITION] ?? $defaults[self::OPT_TRIGGER_POSITION]));
-        if (!in_array($position, ['bottom_right', 'bottom_left', 'custom'], true)) {
-            $position = 'bottom_right';
-        }
+        $position = self::sanitize_launcher_position((string) ($raw[self::OPT_TRIGGER_POSITION] ?? $defaults[self::OPT_TRIGGER_POSITION]));
 
-        $layout = self::sanitize_panel_layout((string) ($raw[self::OPT_PANEL_LAYOUT] ?? $defaults[self::OPT_PANEL_LAYOUT]));
+        $layout = 'full_screen';
 
         $excluded_types = [];
         if (!empty($raw[self::OPT_EXCLUDE_POST_TYPES]) && is_array($raw[self::OPT_EXCLUDE_POST_TYPES])) {
@@ -671,8 +711,16 @@ class Xabia_Interface {
         $color_scheme = self::sanitize_color_scheme(
             (string) ($raw[self::OPT_COLOR_SCHEME] ?? $defaults[self::OPT_COLOR_SCHEME])
         );
-        if (self::is_kiosk_presentation_mode($presentation_mode)) {
+        $totem_on = self::is_kiosk_presentation_mode($presentation_mode) || self::project_is_totem($project_id);
+        if ($totem_on) {
             $speaking_avatar = 1;
+            if (self::is_kiosk_presentation_mode($presentation_mode)) {
+                $autoload = false;
+            }
+        } else {
+            $speaking_avatar = 0;
+        }
+        if ($position === 'shortcode') {
             $autoload = false;
         }
 
@@ -703,7 +751,24 @@ class Xabia_Interface {
             self::OPT_SPEAKING_AVATAR            => $speaking_avatar,
             self::OPT_PRESENTATION_MODE          => $presentation_mode,
             self::OPT_COLOR_SCHEME               => $color_scheme,
+            self::OPT_LAUNCHER_LABEL             => self::sanitize_launcher_label(
+                (string) ($raw[self::OPT_LAUNCHER_LABEL] ?? $defaults[self::OPT_LAUNCHER_LABEL])
+            ),
         ];
+    }
+
+    public static function sanitize_launcher_label(string $raw): string {
+        $raw = trim(wp_strip_all_tags($raw));
+        if (function_exists('mb_substr')) {
+            $raw = mb_substr($raw, 0, 80);
+        } else {
+            $raw = substr($raw, 0, 80);
+        }
+        $raw = trim($raw);
+        if ($raw === '') {
+            return '¿Cómo puedo ayudarte?';
+        }
+        return $raw;
     }
 
     /**
@@ -747,6 +812,69 @@ class Xabia_Interface {
         return 0;
     }
 
+    /**
+     * Código del idioma original (WPML o Polylang). Vacío si el sitio no es multilingüe.
+     */
+    private static function original_content_language(): string {
+        $wpml = apply_filters('wpml_default_language', null);
+        if (is_string($wpml) && $wpml !== '') {
+            return $wpml;
+        }
+        if (function_exists('pll_default_language')) {
+            $pll = pll_default_language();
+            if (is_string($pll) && $pll !== '') {
+                return $pll;
+            }
+        }
+        return '';
+    }
+
+    /**
+     * ID de la página o entrada en el idioma original. Las traducciones usan ese mismo ID.
+     */
+    private static function original_language_post_id(int $post_id): int {
+        if ($post_id < 1) {
+            return 0;
+        }
+        $post_type = get_post_type($post_id);
+        if (!is_string($post_type) || $post_type === '') {
+            return $post_id;
+        }
+        $wpml = apply_filters('wpml_default_language', null);
+        if (is_string($wpml) && $wpml !== '') {
+            $mapped = apply_filters('wpml_object_id', $post_id, $post_type, true, $wpml);
+            if (is_numeric($mapped) && (int) $mapped > 0) {
+                return (int) $mapped;
+            }
+            return $post_id;
+        }
+        if (function_exists('pll_get_post') && function_exists('pll_default_language')) {
+            $pll = pll_default_language();
+            if (is_string($pll) && $pll !== '') {
+                $mapped = pll_get_post($post_id, $pll);
+                if (is_numeric($mapped) && (int) $mapped > 0) {
+                    return (int) $mapped;
+                }
+            }
+        }
+        return $post_id;
+    }
+
+    /**
+     * @param list<int> $ids
+     * @return list<int>
+     */
+    private static function original_language_post_ids(array $ids): array {
+        $out = [];
+        foreach ($ids as $id) {
+            $mapped = self::original_language_post_id(absint($id));
+            if ($mapped > 0) {
+                $out[] = $mapped;
+            }
+        }
+        return array_values(array_unique($out));
+    }
+
     public static function should_render_for_project(string $project_id): bool {
         if (self::is_box_route() || self::is_project_paused($project_id)) {
             return false;
@@ -758,9 +886,9 @@ class Xabia_Interface {
 
         $settings = self::get_project_settings($project_id);
 
-        $include_ids = $settings[self::OPT_INCLUDE_PAGE_IDS];
+        $include_ids = self::original_language_post_ids($settings[self::OPT_INCLUDE_PAGE_IDS]);
         if ($include_ids !== []) {
-            $view_id = self::get_current_view_post_id();
+            $view_id = self::original_language_post_id(self::get_current_view_post_id());
             if ($view_id < 1 || !in_array($view_id, $include_ids, true)) {
                 return false;
             }
@@ -779,8 +907,9 @@ class Xabia_Interface {
                 && in_array($post_type, $settings[self::OPT_EXCLUDE_POST_TYPES], true)) {
                 return false;
             }
-            $post_id = (int) get_the_ID();
-            if ($post_id > 0 && in_array($post_id, $settings[self::OPT_EXCLUDE_IDS], true)) {
+            $post_id = self::original_language_post_id((int) get_the_ID());
+            $excluded_ids = self::original_language_post_ids($settings[self::OPT_EXCLUDE_IDS]);
+            if ($post_id > 0 && in_array($post_id, $excluded_ids, true)) {
                 return false;
             }
         }
@@ -1070,12 +1199,9 @@ class Xabia_Interface {
             $trigger_type = 'native_avatar';
         }
 
-        $position = sanitize_key((string) ($post['xabia_trigger_position'] ?? $defaults[self::OPT_TRIGGER_POSITION]));
-        if (!in_array($position, ['bottom_right', 'bottom_left', 'custom'], true)) {
-            $position = 'bottom_right';
-        }
+        $position = self::sanitize_launcher_position((string) ($post['xabia_trigger_position'] ?? $defaults[self::OPT_TRIGGER_POSITION]));
 
-        $layout = self::sanitize_panel_layout((string) ($post['xabia_panel_layout'] ?? $defaults[self::OPT_PANEL_LAYOUT]));
+        $layout = 'full_screen';
 
         $excluded_types = [];
         if (!empty($post['xabia_exclude_post_types']) && is_array($post['xabia_exclude_post_types'])) {
@@ -1090,20 +1216,49 @@ class Xabia_Interface {
         $presentation_mode = self::sanitize_presentation_mode(
             (string) ($post['xabia_presentation_mode'] ?? $defaults[self::OPT_PRESENTATION_MODE])
         );
-        $autoload = !empty($post['xabia_autoload_without_shortcode']) ? 1 : 0;
-        $speaking_avatar = !empty($post['xabia_speaking_avatar']) ? 1 : 0;
-        if (self::is_kiosk_presentation_mode($presentation_mode)) {
-            $autoload = 0;
+        $autoload = $position !== 'shortcode' ? 1 : 0;
+        $speaking_avatar = 0;
+        $pid = sanitize_key((string) ($post['project_id'] ?? ''));
+        if (self::is_kiosk_presentation_mode($presentation_mode) || ($pid !== '' && self::project_is_totem($pid))) {
             $speaking_avatar = 1;
         }
+        if (self::is_kiosk_presentation_mode($presentation_mode)) {
+            $autoload = 0;
+        }
 
-        return [
-            self::OPT_TRIGGER_TYPE              => $trigger_type,
-            self::OPT_CUSTOM_TRIGGER            => self::sanitize_custom_trigger_url((string) ($post['xabia_custom_trigger_url'] ?? '')),
-            self::OPT_AVATAR_COLORS             => [
+        $kept_colors = $defaults[self::OPT_AVATAR_COLORS];
+        $kept_trigger = $trigger_type;
+        $kept_custom = (string) ($post['xabia_custom_trigger_url'] ?? '');
+        $pid_keep = sanitize_key((string) ($post['project_id'] ?? ''));
+        if ($pid_keep !== '' && !array_key_exists('xabia_avatar_color_bg', $post)) {
+            $projects_keep = get_option('xabia_projects_config', []);
+            $prev = (isset($projects_keep[$pid_keep]['interface']) && is_array($projects_keep[$pid_keep]['interface']))
+                ? $projects_keep[$pid_keep]['interface']
+                : [];
+            if (isset($prev[self::OPT_AVATAR_COLORS]) && is_array($prev[self::OPT_AVATAR_COLORS])) {
+                $kept_colors = wp_parse_args($prev[self::OPT_AVATAR_COLORS], $kept_colors);
+            }
+            if (!empty($prev[self::OPT_TRIGGER_TYPE])) {
+                $kept_trigger = sanitize_key((string) $prev[self::OPT_TRIGGER_TYPE]);
+            }
+            if (!array_key_exists('xabia_custom_trigger_url', $post)) {
+                $kept_custom = (string) ($prev[self::OPT_CUSTOM_TRIGGER] ?? '');
+            }
+        } else {
+            $kept_colors = [
                 'bg'     => self::sanitize_color((string) ($post['xabia_avatar_color_bg'] ?? '')),
                 'shadow' => self::sanitize_color((string) ($post['xabia_avatar_color_shadow'] ?? '')),
                 'dots'   => self::sanitize_color((string) ($post['xabia_avatar_color_dots'] ?? '')),
+            ];
+        }
+
+        return [
+            self::OPT_TRIGGER_TYPE              => $kept_trigger,
+            self::OPT_CUSTOM_TRIGGER            => self::sanitize_custom_trigger_url($kept_custom),
+            self::OPT_AVATAR_COLORS             => [
+                'bg'     => self::sanitize_color((string) ($kept_colors['bg'] ?? '')),
+                'shadow' => self::sanitize_color((string) ($kept_colors['shadow'] ?? '')),
+                'dots'   => self::sanitize_color((string) ($kept_colors['dots'] ?? '')),
             ],
             self::OPT_TRIGGER_POSITION          => $position,
             self::OPT_TRIGGER_MARGIN_X          => self::sanitize_css_length(
@@ -1127,6 +1282,11 @@ class Xabia_Interface {
             self::OPT_PRESENTATION_MODE          => $presentation_mode,
             self::OPT_COLOR_SCHEME               => self::sanitize_color_scheme(
                 (string) ($post['xabia_color_scheme'] ?? $defaults[self::OPT_COLOR_SCHEME])
+            ),
+            self::OPT_LAUNCHER_LABEL             => self::sanitize_launcher_label(
+                array_key_exists('xabia_launcher_label', $post)
+                    ? (string) $post['xabia_launcher_label']
+                    : (string) ($defaults[self::OPT_LAUNCHER_LABEL])
             ),
         ];
     }
@@ -1153,15 +1313,15 @@ class Xabia_Interface {
         if ($text !== '') {
             $ids = array_merge($ids, self::parse_exclude_ids($text));
         }
-        return array_values(array_unique($ids));
+        return self::original_language_post_ids(array_values(array_unique($ids)));
     }
 
     /**
      * @param list<int> $selected_ids
      */
     private static function render_page_id_checklist(string $array_field, string $text_field, array $selected_ids, string $legend): void {
-        $selected_ids = array_map('absint', $selected_ids);
-        $posts = get_posts([
+        $selected_ids = self::original_language_post_ids(array_map('absint', $selected_ids));
+        $query = [
             'post_type'              => ['page', 'post'],
             'post_status'            => 'publish',
             'posts_per_page'         => 200,
@@ -1170,7 +1330,21 @@ class Xabia_Interface {
             'no_found_rows'          => true,
             'update_post_meta_cache' => false,
             'update_post_term_cache' => false,
-        ]);
+        ];
+        $original_lang = self::original_content_language();
+        $restore_lang = '';
+        if ($original_lang !== '') {
+            $query['lang'] = $original_lang;
+            $current_lang = apply_filters('wpml_current_language', null);
+            if (is_string($current_lang) && $current_lang !== '' && $current_lang !== $original_lang) {
+                do_action('wpml_switch_language', $original_lang);
+                $restore_lang = $current_lang;
+            }
+        }
+        $posts = get_posts($query);
+        if ($restore_lang !== '') {
+            do_action('wpml_switch_language', $restore_lang);
+        }
         if (!is_array($posts)) {
             $posts = [];
         }
@@ -1234,20 +1408,30 @@ class Xabia_Interface {
             self::ping_chatbox_mounted();
         }
 
-        if (self::$page_projects === []) {
+        $project_ids = array_values(array_unique(array_merge(
+            self::$page_projects,
+            self::$search_bar_projects,
+            self::$rendered_chatbox
+        )));
+        if ($project_ids === []) {
             return;
         }
 
-        foreach (self::$page_projects as $project_id) {
-            if (!self::should_render_for_project($project_id)) {
-                continue;
-            }
-            /* Solo burbuja nativa si el agente tiene autoload; el shortcode embebido no debe forzar launcher. */
-            if (!self::project_uses_web_launcher($project_id) && !in_array($project_id, self::$launcher_projects, true)) {
+        foreach ($project_ids as $project_id) {
+            $with_search_bar = in_array($project_id, self::$search_bar_projects, true);
+            $with_chatbox = in_array($project_id, self::$rendered_chatbox, true);
+            if (!$with_search_bar && !$with_chatbox && !self::should_render_for_project($project_id)) {
                 continue;
             }
             $settings = self::get_project_settings($project_id);
             if (self::is_kiosk_presentation_mode($settings[self::OPT_PRESENTATION_MODE])) {
+                continue;
+            }
+            /* shortcode: el botón solo sale donde se inserte [xabia_chat_button], salvo en la home con barra Hero. */
+            if (!$with_search_bar && ($settings[self::OPT_TRIGGER_POSITION] ?? '') === 'shortcode') {
+                continue;
+            }
+            if (!$with_search_bar && !$with_chatbox && !self::project_uses_web_launcher($project_id) && !in_array($project_id, self::$launcher_projects, true)) {
                 continue;
             }
             self::render_trigger_markup($project_id);
@@ -1317,9 +1501,10 @@ class Xabia_Interface {
         $overlay_id     = 'xabia-blur-overlay-' . $project_id;
         $panel_selector = '#xabia-chatbox-' . $project_id;
         $position_class = $placement === 'inline'
-            ? 'xabia-trigger--inline'
-            : 'xabia-trigger--' . str_replace('_', '-', $position);
-        $layout_class   = 'layout-' . str_replace('_', '-', $layout);
+            ? 'xabia-launcher--inline'
+            : 'xabia-launcher--' . str_replace('_', '-', $position);
+        $layout = 'full_screen';
+        $layout_class   = 'layout-full-screen';
         $size_class = '';
         $size_mobile_class = '';
         if ($placement === 'inline') {
@@ -1338,12 +1523,8 @@ class Xabia_Interface {
         }
 
         $box_classes = trim(implode(' ', array_filter([
-            'xabia-sticky-footer-box',
-            'xabia-trigger-anchor',
+            'xabia-launcher',
             $position_class,
-            $mobile_preset_class,
-            $size_class,
-            $size_mobile_class,
             $extra_class,
         ])));
 
@@ -1352,9 +1533,6 @@ class Xabia_Interface {
             : ($project_id === 'default' ? 'sticky-footer-box' : 'sticky-footer-box-' . $project_id);
 
         $inline_style = '';
-        if ($placement === 'fixed' && $position === 'custom') {
-            $inline_style = sprintf('bottom:%s;right:%s;left:auto;', esc_attr($margin_y), esc_attr($margin_x));
-        }
         if ($placement === 'inline') {
             $vars = [];
             $desktop_css = $size_value !== '' ? $size_value : ($size !== '' ? self::launcher_preset_css($size) : self::launcher_preset_css('md'));
@@ -1373,6 +1551,7 @@ class Xabia_Interface {
 
             $inline_style = trim($inline_style . ' ' . implode(';', $vars) . ';');
         }
+        $label = self::sanitize_launcher_label((string) ($settings[self::OPT_LAUNCHER_LABEL] ?? ''));
         ?>
         <style id="xabia-interface-vars-<?php echo esc_attr($project_id . ($placement === 'inline' ? '-i' . $instance : '')); ?>">
             .xabia-interface-trigger[data-project="<?php echo esc_attr($project_id); ?>"] {
@@ -1394,53 +1573,26 @@ class Xabia_Interface {
         ></div>
         <?php endif; ?>
 
-        <div
-            id="<?php echo esc_attr($box_id); ?>"
-            class="<?php echo esc_attr($box_classes); ?>"
+        <button
+            type="button"
+            id="<?php echo esc_attr($trigger_id); ?>"
+            class="<?php echo esc_attr($box_classes . ' xabia-interface-trigger ' . $layout_class); ?>"
             data-project="<?php echo esc_attr($project_id); ?>"
-            data-mobile-preset="<?php echo esc_attr($mobile_preset); ?>"
+            data-panel-selector="<?php echo esc_attr($panel_selector); ?>"
+            data-overlay-id="<?php echo esc_attr($overlay_id); ?>"
+            data-panel-layout="full_screen"
             data-placement="<?php echo esc_attr($placement); ?>"
-            <?php echo self::color_scheme_attributes((string) ($settings[self::OPT_COLOR_SCHEME] ?? 'light')); ?>
+            data-speaking-avatar="<?php echo !empty($settings[self::OPT_SPEAKING_AVATAR]) ? '1' : '0'; ?>"
+            aria-expanded="false"
+            aria-controls="xabia-chatbox-<?php echo esc_attr($project_id); ?>"
+            aria-label="<?php echo esc_attr($label); ?>"
             <?php if ($inline_style !== '') : ?>style="<?php echo esc_attr($inline_style); ?>"<?php endif; ?>
         >
-            <?php if ($placement === 'fixed') : ?>
-            <span class="xabia-avatar-hint-bubble" aria-hidden="true"></span>
-            <?php endif; ?>
-            <button
-                type="button"
-                id="<?php echo esc_attr($trigger_id); ?>"
-                class="xabia-interface-trigger <?php echo esc_attr($layout_class); ?>"
-                data-project="<?php echo esc_attr($project_id); ?>"
-                data-panel-selector="<?php echo esc_attr($panel_selector); ?>"
-                data-overlay-id="<?php echo esc_attr($overlay_id); ?>"
-                data-panel-layout="<?php echo esc_attr($layout); ?>"
-                data-mobile-preset="<?php echo esc_attr($mobile_preset); ?>"
-                data-placement="<?php echo esc_attr($placement); ?>"
-                data-speaking-avatar="<?php echo !empty($settings[self::OPT_SPEAKING_AVATAR]) ? '1' : '0'; ?>"
-                aria-expanded="false"
-                aria-controls="xabia-chatbox-<?php echo esc_attr($project_id); ?>"
-                aria-label="<?php echo esc_attr__('Abrir asistente Xabia', 'xabia-intelligence'); ?>"
-            >
-                <?php if ($settings[self::OPT_TRIGGER_TYPE] === 'custom_image' && $settings[self::OPT_CUSTOM_TRIGGER] !== '') : ?>
-                    <img src="<?php echo esc_url($settings[self::OPT_CUSTOM_TRIGGER]); ?>" alt="" class="xabia-trigger-custom-img" width="125" height="125" loading="lazy" decoding="async" />
-                <?php else : ?>
-                    <?php
-                    if (!function_exists('xabia_render_kinetic_avatar_svg')) {
-                        require_once XABIA_PATH . 'frontend/widgets/avatar-svg.php';
-                    }
-                    echo xabia_render_kinetic_avatar_svg([
-                        'bg'     => $colors['bg'] ?? '#99ccff',
-                        'shadow' => $colors['shadow'] ?? '#ffffff',
-                        'dots'   => $colors['dots'] ?? '#ff9966',
-                        'mouth'  => '#FFFFFF',
-                    ]);
-                    ?>
-                <?php endif; ?>
-                <?php if ($placement === 'fixed') : ?>
-                    <span class="xabia-trigger-pill__label"><?php echo esc_html(class_exists('Xabia_I18n', false) ? Xabia_I18n::t('¿En qué puedo ayudarte?') : __('¿En qué puedo ayudarte?', 'xabia-intelligence')); ?></span>
-                <?php endif; ?>
-            </button>
-        </div>
+            <span class="material-symbols-outlined xabia-launcher__spark" aria-hidden="true">auto_awesome</span>
+            <span class="xabia-launcher__label"><?php echo esc_html($label); ?></span>
+            <span class="xabia-launcher__desk"><?php echo esc_html__('Mostrador Virtual', 'xabia-intelligence'); ?></span>
+            <span class="xabia-launcher__mic" aria-hidden="true"><span class="material-symbols-outlined">mic</span></span>
+        </button>
         <?php
     }
 
@@ -1507,12 +1659,12 @@ class Xabia_Interface {
             <?php endforeach; ?>
             <div class="xabia-presentation-detail xabia-presentation-kiosk-note" style="<?php echo self::is_kiosk_presentation_mode($presentation_mode) ? '' : 'display:none;'; ?>">
                 <strong><?php echo esc_html__('Pantalla dedicada', 'xabia-intelligence'); ?></strong>
-                <p><?php echo esc_html__('No aparece la burbuja flotante. Usa una página con el shortcode o la URL dedicada del agente. El avatar y el chat ocupan toda la pantalla.', 'xabia-intelligence'); ?></p>
+                <p><?php echo esc_html__('No aparece el botón flotante. Usa una página con el shortcode o la URL dedicada del agente. El avatar parlante y el chat ocupan la pantalla.', 'xabia-intelligence'); ?></p>
                 <p><code>[xabia_agent id="<?php echo esc_html($edit_id); ?>"]</code> · <code>/xabia-box/?x_project=<?php echo esc_html($edit_id); ?></code></p>
             </div>
             <div class="xabia-presentation-detail xabia-presentation-web-note" style="<?php echo $presentation_mode === 'web_adaptive' ? '' : 'display:none;'; ?>">
-                <strong><?php echo esc_html__('Burbuja flotante', 'xabia-intelligence'); ?></strong>
-                <p><?php echo esc_html__('El chat se abre desde la esquina inferior derecha sin tapar toda la web. En dispositivos móviles se adapta siempre a pantalla completa de forma automática.', 'xabia-intelligence'); ?></p>
+                <strong><?php echo esc_html__('Botón de chat', 'xabia-intelligence'); ?></strong>
+                <p><?php echo esc_html__('En escritorio es una barra pequeña, como la barra hero. En el móvil se queda en un círculo. Siempre abre el chat a pantalla completa.', 'xabia-intelligence'); ?></p>
             </div>
         </div>
         <?php
@@ -1558,73 +1710,24 @@ class Xabia_Interface {
                 <option value="auto" <?php selected($color_scheme, 'auto'); ?>><?php echo esc_html__('Automático', 'xabia-intelligence'); ?></option>
             </select>
         </div>
-        <div class="xabia-admin-section xabia-avatar-section">
-        <div class="xabia-admin-section__head">
-            <h3 class="xabia-admin-section__title"><?php echo esc_html__('Avatar', 'xabia-intelligence'); ?></h3>
-            <p class="description"><?php echo esc_html__('Aspecto del asistente en la burbuja, en el chat y en pantalla completa.', 'xabia-intelligence'); ?></p>
-        </div>
-
-        <p class="xabia-interface-kiosk-speaking-note description" style="margin:0 0 12px;<?php echo $is_kiosk ? '' : 'display:none;'; ?>">
-            <?php echo esc_html__('En pantalla dedicada el avatar grande se muestra siempre.', 'xabia-intelligence'); ?>
-        </p>
-        <p style="margin:0 0 12px;" class="xabia-interface-web-speaking">
-            <label>
-                <input type="checkbox" name="xabia_speaking_avatar" value="1" <?php checked(!empty($s[self::OPT_SPEAKING_AVATAR])); ?><?php echo $is_kiosk ? ' disabled="disabled"' : ''; ?>>
-                <?php echo esc_html__('Mostrar avatar grande al abrir el chat', 'xabia-intelligence'); ?>
-            </label>
-        </p>
-        <p class="description xabia-interface-web-speaking" style="margin-top:0;<?php echo $is_kiosk ? 'display:none;' : ''; ?>">
-            <?php echo esc_html__('Desactiva si prefieres solo el panel de mensajes (sin retrato del avatar).', 'xabia-intelligence'); ?>
-        </p>
-
-        <label class="xabia-label" for="xabia_trigger_type" style="display:block;margin-top:14px;"><strong><?php echo esc_html__('Tipo de avatar', 'xabia-intelligence'); ?></strong></label>
-        <select name="xabia_trigger_type" id="xabia_trigger_type" class="widefat" style="max-width:400px;">
-            <option value="native_avatar" <?php selected($trigger_type, 'native_avatar'); ?>><?php echo esc_html__('Animado (cinético)', 'xabia-intelligence'); ?></option>
-            <option value="custom_image" <?php selected($trigger_type, 'custom_image'); ?>><?php echo esc_html__('Imagen propia (PNG, GIF…)', 'xabia-intelligence'); ?></option>
-        </select>
-
-        <div class="xabia-interface-avatar-colors" style="margin-top:14px;<?php echo $trigger_type === 'native_avatar' ? '' : 'display:none;'; ?>">
-            <p class="description" style="margin:0 0 10px;"><?php echo esc_html__('Colores del avatar cinético (cada agente puede tener los suyos).', 'xabia-intelligence'); ?></p>
-            <p style="margin:8px 0 4px;"><strong><?php echo esc_html__('Fondo (círculo grande)', 'xabia-intelligence'); ?></strong></p>
-            <input type="text" name="xabia_avatar_color_bg" value="<?php echo esc_attr($colors['bg']); ?>" class="xabia-color-field">
-            <p style="margin:8px 0 4px;"><strong><?php echo esc_html__('Órbitas / sombra (círculos claros)', 'xabia-intelligence'); ?></strong></p>
-            <input type="text" name="xabia_avatar_color_shadow" value="<?php echo esc_attr($colors['shadow']); ?>" class="xabia-color-field">
-            <p style="margin:8px 0 4px;"><strong><?php echo esc_html__('Ojos', 'xabia-intelligence'); ?></strong></p>
-            <input type="text" name="xabia_avatar_color_dots" value="<?php echo esc_attr($colors['dots']); ?>" class="xabia-color-field">
-        </div>
-
-        <div class="xabia-interface-custom-url-wrap" style="margin-top:14px;<?php echo $trigger_type === 'custom_image' ? '' : 'display:none;'; ?>">
-            <label for="xabia_custom_trigger_url"><strong><?php echo esc_html__('Imagen del avatar', 'xabia-intelligence'); ?></strong></label>
-            <p class="description" style="margin:4px 0 8px;"><?php echo esc_html__('Sube un PNG (con transparencia), GIF animado, JPG o WebP. Se usa en el botón, en [xabia_launcher] y en el avatar del chat.', 'xabia-intelligence'); ?></p>
-            <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:6px;">
-                <input type="url" name="xabia_custom_trigger_url" id="xabia_custom_trigger_url" class="regular-text" value="<?php echo esc_attr($custom_url); ?>" placeholder="https://…/avatar.png">
-                <button type="button" class="button" id="xabia_custom_trigger_upload"><?php echo esc_html__('Subir / biblioteca', 'xabia-intelligence'); ?></button>
-                <button type="button" class="button" id="xabia_custom_trigger_clear" style="<?php echo $custom_url !== '' ? '' : 'display:none;'; ?>"><?php echo esc_html__('Quitar', 'xabia-intelligence'); ?></button>
-            </div>
-            <div id="xabia_custom_trigger_preview" style="margin-top:12px;<?php echo $custom_url !== '' ? '' : 'display:none;'; ?>">
-                <img src="<?php echo esc_url($custom_url); ?>" alt="" style="max-width:120px;max-height:120px;width:auto;height:auto;border-radius:50%;background:#f0f0f1;border:1px solid #c3c4c7;object-fit:contain;">
-            </div>
-        </div>
-
-        </div>
-
         <div class="xabia-admin-section xabia-interface-web-only xabia-web-section" style="<?php echo $is_kiosk ? 'display:none;' : ''; ?>">
         <div class="xabia-admin-section__head">
-            <h3 class="xabia-admin-section__title"><?php echo esc_html__('Burbuja flotante (solo web)', 'xabia-intelligence'); ?></h3>
-            <p class="description"><?php echo esc_html__('Controla el botón que aparece en las páginas de tu sitio. No aplica a tótem ni pantalla dedicada.', 'xabia-intelligence'); ?></p>
+            <h3 class="xabia-admin-section__title"><?php echo esc_html__('Posición del botón de chat', 'xabia-intelligence'); ?></h3>
+            <p class="description"><?php echo esc_html__('El botón abre el chat a pantalla completa. En escritorio es una barra pequeña; en el móvil, un círculo. En modo tótem no se muestra: el avatar parlante vive en la pantalla dedicada.', 'xabia-intelligence'); ?></p>
         </div>
+        <label for="xabia_trigger_position"><strong><?php echo esc_html__('Posición del botón de chat', 'xabia-intelligence'); ?></strong></label>
+        <select name="xabia_trigger_position" id="xabia_trigger_position" class="widefat" style="max-width:400px;">
+            <option value="bottom_right" <?php selected($position, 'bottom_right'); ?>><?php echo esc_html__('Abajo a la derecha', 'xabia-intelligence'); ?></option>
+            <option value="bottom_center" <?php selected($position, 'bottom_center'); ?>><?php echo esc_html__('Abajo al centro', 'xabia-intelligence'); ?></option>
+            <option value="bottom_left" <?php selected($position, 'bottom_left'); ?>><?php echo esc_html__('Abajo a la izquierda', 'xabia-intelligence'); ?></option>
+            <option value="shortcode" <?php selected($position, 'shortcode'); ?>><?php echo esc_html__('Solo mediante shortcode', 'xabia-intelligence'); ?></option>
+        </select>
+        <p class="description"><?php echo esc_html__('Shortcode: no inyecta el botón fijo. Colócalo con [xabia_chat_button] o en un menú.', 'xabia-intelligence'); ?></p>
+        <label for="xabia_launcher_label" style="display:block;margin-top:14px;"><strong><?php echo esc_html__('Frase del botón', 'xabia-intelligence'); ?></strong></label>
+        <input type="text" name="xabia_launcher_label" id="xabia_launcher_label" class="widefat" style="max-width:400px;" maxlength="80" value="<?php echo esc_attr((string) ($s[self::OPT_LAUNCHER_LABEL] ?? '¿Cómo puedo ayudarte?')); ?>">
+        <p class="description"><?php echo esc_html__('Se lee en la barra del escritorio. En el móvil solo se ve el símbolo de la barra hero.', 'xabia-intelligence'); ?></p>
 
-        <p style="margin:0 0 6px;">
-            <label>
-                <input type="checkbox" name="xabia_autoload_without_shortcode" value="1" <?php checked(!empty($s[self::OPT_AUTOLOAD_WITHOUT_SHORTCODE])); ?>>
-                <?php echo esc_html__('Mostrar burbuja en el sitio automáticamente', 'xabia-intelligence'); ?>
-            </label>
-        </p>
-        <p class="description" style="margin-top:0;">
-            <?php echo esc_html__('Recomendado. Si lo desactivas, el chat solo aparece donde insertes el shortcode.', 'xabia-intelligence'); ?>
-        </p>
-
-        <div class="xabia-native-interface-options" style="<?php echo !empty($s[self::OPT_AUTOLOAD_WITHOUT_SHORTCODE]) ? '' : 'display:none;'; ?>">
+        <div class="xabia-native-interface-options" style="<?php echo $position === 'shortcode' ? 'display:none;' : ''; ?>">
             <hr style="margin:16px 0;">
             <h4 style="margin:0 0 8px;"><?php echo esc_html__('¿En qué páginas?', 'xabia-intelligence'); ?></h4>
 
@@ -1640,7 +1743,7 @@ class Xabia_Interface {
 
             <div class="xabia-interface-exclusions-wrap">
                 <strong><?php echo esc_html__('Excluir estas páginas o entradas', 'xabia-intelligence'); ?></strong>
-                <p class="description"><?php echo esc_html__('Use exclusiones solo cuando el avatar esté activo en todo el sitio o en muchas URLs.', 'xabia-intelligence'); ?></p>
+                <p class="description"><?php echo esc_html__('Sin ninguna marcada = todo el sitio. Si marca páginas aquí, esta lista tiene prioridad y las exclusiones no se aplican.', 'xabia-intelligence'); ?></p>
                 <div style="display:flex;flex-wrap:wrap;gap:8px 14px;margin:8px 0;">
                     <?php foreach ($public_post_types as $pt_obj) :
                         if (!is_object($pt_obj) || empty($pt_obj->name)) {
@@ -1665,86 +1768,25 @@ class Xabia_Interface {
                 <?php endif; ?>
             </div>
             <p class="description xabia-interface-exclusions-muted" style="display:none;"><?php echo esc_html__('Las exclusiones se ocultan porque ya se ha elegido una lista cerrada en «Mostrar solo en estas páginas».', 'xabia-intelligence'); ?></p>
-
-        <hr style="margin:16px 0;">
-        <label for="xabia_trigger_position"><strong><?php echo esc_html__('Esquina de la burbuja', 'xabia-intelligence'); ?></strong></label>
-        <select name="xabia_trigger_position" id="xabia_trigger_position" class="widefat" style="max-width:400px;">
-            <option value="bottom_right" <?php selected($position, 'bottom_right'); ?>><?php echo esc_html__('Abajo a la derecha', 'xabia-intelligence'); ?></option>
-            <option value="bottom_left" <?php selected($position, 'bottom_left'); ?>><?php echo esc_html__('Abajo a la izquierda', 'xabia-intelligence'); ?></option>
-            <option value="custom" <?php selected($position, 'custom'); ?>><?php echo esc_html__('Márgenes personalizados', 'xabia-intelligence'); ?></option>
-        </select>
-
-        <div class="xabia-interface-margins-wrap" style="margin-top:10px;<?php echo $position === 'custom' ? '' : 'display:none;'; ?>">
-            <label for="xabia_trigger_margin_x"><?php echo esc_html__('Margen horizontal', 'xabia-intelligence'); ?></label>
-            <input type="text" name="xabia_trigger_margin_x" id="xabia_trigger_margin_x" class="small-text" value="<?php echo esc_attr($s[self::OPT_TRIGGER_MARGIN_X]); ?>">
-            <label for="xabia_trigger_margin_y" style="display:block;margin-top:8px;"><?php echo esc_html__('Margen vertical', 'xabia-intelligence'); ?></label>
-            <input type="text" name="xabia_trigger_margin_y" id="xabia_trigger_margin_y" class="small-text" value="<?php echo esc_attr($s[self::OPT_TRIGGER_MARGIN_Y]); ?>">
-        </div>
-
-        <hr style="margin:16px 0;">
-        <label for="xabia_mobile_preset"><strong><?php echo esc_html__('Tamaño en móvil', 'xabia-intelligence'); ?></strong></label>
-        <select name="xabia_mobile_preset" id="xabia_mobile_preset" class="widefat" style="max-width:400px;">
-            <option value="compact" <?php selected($mobile_preset, 'compact'); ?>><?php echo esc_html__('Normal (recomendado)', 'xabia-intelligence'); ?></option>
-            <option value="ultra_compact" <?php selected($mobile_preset, 'ultra_compact'); ?>><?php echo esc_html__('Compacto (más espacio al contenido)', 'xabia-intelligence'); ?></option>
-        </select>
-
-        <hr style="margin:16px 0;">
-        <label for="xabia_panel_layout"><strong><?php echo esc_html__('Formato del chat al abrirse', 'xabia-intelligence'); ?></strong></label>
-        <select name="xabia_panel_layout" id="xabia_panel_layout" class="widefat" style="max-width:400px;">
-            <option value="drawer" <?php selected($layout, 'drawer'); ?>><?php echo esc_html__('Panel lateral deslizable (recomendado)', 'xabia-intelligence'); ?></option>
-            <option value="right_float" <?php selected($layout, 'right_float'); ?>><?php echo esc_html__('Burbuja / ventana flotante (derecha)', 'xabia-intelligence'); ?></option>
-            <option value="left_float" <?php selected($layout, 'left_float'); ?>><?php echo esc_html__('Ventana flotante (izquierda)', 'xabia-intelligence'); ?></option>
-            <option value="centered_modal" <?php selected($layout, 'centered_modal'); ?>><?php echo esc_html__('Ventana centrada', 'xabia-intelligence'); ?></option>
-            <option value="full_screen" <?php selected($layout, 'full_screen'); ?>><?php echo esc_html__('Pantalla amplia (avatar + chat)', 'xabia-intelligence'); ?></option>
-        </select>
-        <p class="description"><?php echo esc_html__('Panel lateral deslizable: ocupa el lateral derecho completo sin tapar la web (ideal para catálogos y reservas). Burbuja flotante: chat compacto en esquina. En móvil el chat pasa siempre a pantalla completa.', 'xabia-intelligence'); ?></p>
         </div>
         </div>
 
         <script>
         jQuery(function($) {
-            function xabiaSyncCustomPreview(url) {
-                url = $.trim(url || '');
-                var $prev = $('#xabia_custom_trigger_preview');
-                var $img = $prev.find('img');
-                if (url) {
-                    $img.attr('src', url);
-                    $prev.show();
-                    $('#xabia_custom_trigger_clear').show();
-                } else {
-                    $img.attr('src', '');
-                    $prev.hide();
-                    $('#xabia_custom_trigger_clear').hide();
-                }
-            }
             function xabiaSyncAgentInterfaceUi() {
-                var t = $('#xabia_trigger_type').val();
                 var pres = $('#xabia_presentation_mode').val() || 'web_adaptive';
                 var isKiosk = pres !== 'web_adaptive';
                 var isTransparent = pres.indexOf('totem_transparent_') === 0;
-                var nativeEnabled = $('input[name="xabia_autoload_without_shortcode"]').is(':checked') && !isKiosk;
+                var fixedButton = $('#xabia_trigger_position').val() !== 'shortcode';
                 var hasIncludes = $('input[name="xabia_include_page_ids[]"]:checked').length > 0 || $.trim($('input[name="xabia_include_page_ids_manual"]').val() || '') !== '';
-                $('.xabia-native-interface-options').toggle(!isKiosk && $('input[name="xabia_autoload_without_shortcode"]').is(':checked'));
+                $('.xabia-native-interface-options').toggle(!isKiosk && fixedButton);
                 $('.xabia-presentation-kiosk-note').toggle(isKiosk);
                 $('.xabia-presentation-web-note').toggle(!isKiosk);
                 $('.xabia-interface-web-only').toggle(!isKiosk);
-                $('.xabia-interface-kiosk-speaking-note').toggle(isKiosk);
-                $('.xabia-interface-web-speaking').toggle(!isKiosk);
                 $('.xabia-design-bg-note-transparent').toggle(isTransparent);
                 $('.xabia-design-bg-note-kiosk').toggle(isKiosk && !isTransparent);
-                if (isKiosk) {
-                    $('input[name="xabia_speaking_avatar"]:checkbox').prop('checked', true).prop('disabled', true);
-                } else {
-                    $('input[name="xabia_speaking_avatar"]:checkbox').prop('disabled', false);
-                }
-                $('.xabia-interface-exclusions-wrap').toggle(nativeEnabled && !hasIncludes);
-                $('.xabia-interface-exclusions-muted').toggle(nativeEnabled && hasIncludes);
-                $('.xabia-interface-custom-url-wrap').toggle(t === 'custom_image');
-                $('.xabia-interface-avatar-colors').toggle(t === 'native_avatar');
-                $('.xabia-interface-margins-wrap').toggle($('#xabia_trigger_position').val() === 'custom');
-                if (t === 'custom_image') {
-                    xabiaSyncCustomPreview($('#xabia_custom_trigger_url').val());
-                }
+                $('.xabia-interface-exclusions-wrap').toggle(!hasIncludes);
+                $('.xabia-interface-exclusions-muted').toggle(hasIncludes);
             }
             function xabiaSelectPresentationMode(mode) {
                 mode = mode || 'web_adaptive';
@@ -1759,36 +1801,8 @@ class Xabia_Interface {
                 e.preventDefault();
                 xabiaSelectPresentationMode($(this).data('presentation-mode'));
             });
-            $('#xabia_trigger_type, #xabia_trigger_position, input[name="xabia_autoload_without_shortcode"], input[name="xabia_include_page_ids[]"], input[name="xabia_include_page_ids_manual"]').on('change input', xabiaSyncAgentInterfaceUi);
-            $('#xabia_custom_trigger_url').on('change input', function(){ xabiaSyncCustomPreview($(this).val()); });
+            $('#xabia_trigger_position, input[name="xabia_include_page_ids[]"], input[name="xabia_include_page_ids_manual"]').on('change input', xabiaSyncAgentInterfaceUi);
             xabiaSyncAgentInterfaceUi();
-            var frame;
-            $('#xabia_custom_trigger_upload').on('click', function(e) {
-                e.preventDefault();
-                if (typeof wp === 'undefined' || !wp.media) {
-                    window.alert(<?php echo wp_json_encode(__('La biblioteca de medios no está disponible en esta pantalla.', 'xabia-intelligence')); ?>);
-                    return;
-                }
-                if (frame) { frame.open(); return; }
-                frame = wp.media({
-                    title: <?php echo wp_json_encode(__('Imagen del avatar (PNG, GIF, JPG, WebP)', 'xabia-intelligence')); ?>,
-                    button: { text: <?php echo wp_json_encode(__('Usar como avatar', 'xabia-intelligence')); ?> },
-                    library: { type: 'image' },
-                    multiple: false
-                });
-                frame.on('select', function() {
-                    var att = frame.state().get('selection').first().toJSON();
-                    var url = (att && att.url) ? att.url : '';
-                    $('#xabia_custom_trigger_url').val(url);
-                    xabiaSyncCustomPreview(url);
-                });
-                frame.open();
-            });
-            $('#xabia_custom_trigger_clear').on('click', function(e) {
-                e.preventDefault();
-                $('#xabia_custom_trigger_url').val('');
-                xabiaSyncCustomPreview('');
-            });
         });
         </script>
         <?php

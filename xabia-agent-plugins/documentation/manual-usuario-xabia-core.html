@@ -384,11 +384,11 @@ img[alt="Xabia"] {
 <body>
 <h1>Manual de usuario — Xabia Agent Core</h1>
 <blockquote>
-<p><strong>Versión del producto:</strong> Xabia Agent Core <strong>v1.0.342</strong> (octubre 2026)<br><strong>Índice de manuales:</strong> <a href="https://xabia.ai/docs/">https://xabia.ai/docs/</a><br><strong>PDF en línea:</strong> <a href="https://xabia.ai/docs/manual-usuario-xabia-core.pdf">https://xabia.ai/docs/manual-usuario-xabia-core.pdf</a><br><strong>HTML en línea:</strong> <a href="https://xabia.ai/docs/manual-usuario-xabia-core.html">https://xabia.ai/docs/manual-usuario-xabia-core.html</a></p>
+<p><strong>Versión del producto:</strong> Xabia Agent Core <strong>v1.0.368</strong> (octubre 2026)<br><strong>Índice de manuales:</strong> <a href="https://xabia.ai/docs/">https://xabia.ai/docs/</a><br><strong>PDF en línea:</strong> <a href="https://xabia.ai/docs/manual-usuario-xabia-core.pdf">https://xabia.ai/docs/manual-usuario-xabia-core.pdf</a><br><strong>HTML en línea:</strong> <a href="https://xabia.ai/docs/manual-usuario-xabia-core.html">https://xabia.ai/docs/manual-usuario-xabia-core.html</a></p>
 </blockquote>
 <h2>Guía rápida de instalación</h2>
 <ol>
-<li>Descargue el ZIP de <strong>Xabia Agent Core</strong> (<code>xabia-agent-core-1.0.342.zip</code> o paquete retail equivalente).</li>
+<li>Descargue el ZIP de <strong>Xabia Agent Core</strong> (<code>xabia-agent-core-1.0.368.zip</code> o paquete retail equivalente).</li>
 <li>En WordPress, vaya a <strong>Plugins → Añadir nuevo → Subir plugin</strong>, seleccione el ZIP y pulse <strong>Instalar ahora → Activar</strong>.</li>
 <li>Abra <strong>Xabia Agent</strong> y configure <strong>Conexión a la IA</strong>: pegue la licencia <code>XABIA--…</code>, elija <strong>Xabia Cloud</strong> (recomendado) o <strong>Infraestructura propia</strong>, y guarde.</li>
 <li>Cree un agente desde <strong>Nuevo agente</strong>. En <strong>Identidad y Tono</strong> escriba nombre, saludo y personalidad; en <strong>Conocimiento</strong> elija la fuente de información.</li>
@@ -696,7 +696,7 @@ img[alt="Xabia"] {
 </div>
 
 
-<p>Las reglas <strong>Mostrar solo en estas páginas</strong> y <strong>Excluir estas páginas o entradas</strong> pertenecen a la burbuja de <strong>Web adaptable</strong>. En modo shortcode o lanzador el chat o botón aparece <strong>únicamente</strong> donde esté pegado el shortcode.</p>
+<p>Las reglas <strong>Mostrar solo en estas páginas</strong> y <strong>Excluir estas páginas o entradas</strong> pertenecen a la burbuja de <strong>Web adaptable</strong>. En un sitio con WPML o Polylang, esas listas muestran solo las páginas y entradas del idioma original. Si marca una, sus traducciones hacen lo mismo: el botón aparece o se oculta igual que en el original. En modo shortcode o lanzador el chat o botón aparece <strong>únicamente</strong> donde esté pegado el shortcode.</p>
 <table>
 <thead>
 <tr>
@@ -767,7 +767,7 @@ img[alt="Xabia"] {
 </tr>
 <tr>
 <td><strong>Scroll</strong></td>
-<td>Al <strong>bajar</strong> la página el botón aparece; al <strong>subir</strong> se oculta (como en la versión clásica de Xabia).</td>
+<td>En escritorio, al <strong>bajar</strong> la página el botón aparece y al <strong>subir</strong> se oculta. En el móvil (pantallas de menos de 600 px) la pastilla no desaparece: se pliega a un círculo mientras se hace scroll y vuelve a mostrar el texto al parar. Si la página tiene la barra hero, la pastilla espera a que esa barra salga de la pantalla.</td>
 </tr>
 <tr>
 <td><strong>Panel de chat</strong></td>
@@ -816,8 +816,10 @@ img[alt="Xabia"] {
 </tr>
 </tbody></table>
 <p>Guarde con <strong>Guardar agente</strong>. En modo nativo el plugin inyecta disparador y assets en <code>wp_footer</code> automáticamente. En modo shortcode, pegue <code>[xabia_agent id=&quot;su-agente&quot;]</code> o <code>[xabia_launcher id=&quot;su-agente&quot; size=&quot;lg&quot;]</code> donde corresponda.</p>
-<h4>Aspecto del chat (v1.0.342)</h4>
+<h4>Aspecto del chat (v1.0.368)</h4>
 <p>La cabecera cubre todo el ancho, sin esquinas redondeadas arriba. A la izquierda va el nombre del agente y el estado: <strong>En línea · Respuestas en tiempo real</strong> cuando puede contestar, o <strong>No disponible</strong> si el agente está pausado, no hay saldo de licencia o el servicio no responde. El botón de cerrar queda a la derecha.</p>
+<p>En escritorio el botón flotante permanece abierto y muestra la frase configurada en <strong>Frase del botón</strong>. En el móvil es una pastilla con el texto <strong>Mostrador Virtual</strong>. El botón de la esquina abre la misma conversación que la barra de búsqueda.</p>
+<p>El saludo escrito en <strong>Identidad y Tono</strong> se muestra al abrir el chat. La primera respuesta del asistente puede saludar una vez. A partir del segundo mensaje no vuelve a presentarse: entra directo en la contestación.</p>
 <p>En la conversación, los mensajes del visitante van en una burbuja a la derecha. Las respuestas admiten <strong>Markdown básico</strong> (<code>**negrita**</code>, listas). Varias fichas seguidas (producto, enlace o reserva) se agrupan en una rejilla de dos columnas en escritorio y en una sola columna en el móvil.</p>
 <h4>Chat embebido con shortcode: halo y foco</h4>
 <p>El chat generado por shortcode conserva la estética del panel nativo: borde luminoso animado y sombra suave. Al hacer foco en el campo de texto, el plugin puede elevar el chat sobre la página y mostrar un <strong>overlay con blur</strong> que tapa el fondo para mejorar la lectura.</p>
@@ -1581,6 +1583,14 @@ img[alt="Xabia"] {
 <h3>¿Hay saldo en la cartera pero el visitante ve “modo mantenimiento”?</h3>
 <p>Mire en <strong>Comportamiento IA</strong> el <strong>tope diario de tokens por agente</strong>. La barra lateral <strong>Tokens hoy</strong> muestra si ya alcanzó ese techo para el día técnico en curso; al día siguiente ese contador vuelve a cero para el agente, aunque su <strong>cartera global</strong> siga teniendo saldo disponible para otros agentes u otros días.</p>
 <h2>Notas de versión (Core)</h2>
+<h3>Core v1.0.368 (octubre 2026)</h3>
+<ul>
+<li>El asistente saluda solo en la primera respuesta. En las siguientes empieza por la contestación.</li>
+<li><strong>Apariencia:</strong> «Mostrar solo en estas páginas» y «Excluir estas páginas o entradas» listan el idioma original. Las traducciones siguen esa misma selección.</li>
+<li>Botón flotante: en escritorio, frase visible y scroll clásico (bajar muestra, subir oculta). En móvil, pastilla <strong>Mostrador Virtual</strong> que se pliega al hacer scroll y espera a que la barra hero salga de la pantalla.</li>
+<li>El botón de la esquina abre la misma pantalla de conversación que la barra hero.</li>
+<li>Assets del chat: <code>styles-v1.0.368.css</code> y <code>chatbox-v1.0.368.js</code>. Tras instalar, vacíe la caché de página si el HTML sigue sirviendo una versión anterior.</li>
+</ul>
 <h3>Core v1.0.342 (octubre 2026)</h3>
 <ul>
 <li>Cabecera del chat a sangre: identidad y estado a la izquierda, cerrar a la derecha. El estado pasa a <strong>No disponible</strong> si el agente está pausado, el saldo de la licencia está a cero o la respuesta indica que no hay servicio.</li>

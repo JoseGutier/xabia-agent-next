@@ -109,7 +109,7 @@ El plugin sigue una arquitectura modular con separación de responsabilidades:
 
 **`xabia-intelligence.php`**
 - Punto de entrada del plugin
-- Define constantes globales (`XABIA_PATH`, `XABIA_URL`, **`XABIA_VERSION`** — debe coincidir con la cabecera `Version:` del plugin; versión oficial actual **1.0.0**)
+- Define constantes globales (`XABIA_PATH`, `XABIA_URL`, **`XABIA_VERSION`** — debe coincidir con la cabecera `Version:` del plugin; versión oficial actual **1.0.368**)
 - Inicializa sesiones PHP para memoria conversacional
 - Carga todos los módulos core
 - Registra hooks de activación y shortcodes
@@ -635,6 +635,7 @@ Con esto se consigue: archivos en carpetas normales de WP, CSV con rutas relativ
 
 ## 12. CHANGELOG / Cambios recientes
 
+- **v1.0.368 (octubre 2026) — Lanzador, idioma y fichas:** el saludo del modelo solo en el primer turno. En Apariencia, incluir y excluir páginas lista solo el idioma original; las traducciones siguen esa decisión. Escritorio: pastilla abierta con la frase del botón y scroll (bajar muestra, subir oculta). Móvil (&lt; 600 px): pastilla «Mostrador Virtual», se pliega al hacer scroll y se esconde mientras la barra hero está visible. Woo **1.0.24**: hasta 4 fichas por respuesta, también si una pregunta siguiente nombra el producto, con el precio junto al título. Assets `styles-v1.0.368.css` y `chatbox-v1.0.368.js`.
 - **v1.0.342 (octubre 2026) — Chat y Woo:** cabecera a sangre (identidad y estado a la izquierda, cerrar a la derecha; **No disponible** si el agente está pausado, no hay saldo o el servicio no responde). Fichas universales `[ACTION:CARD]` y rejilla de dos columnas. Woo **1.0.15**: descubrimiento solo `instock`, marca `[AGOTADO / SIN STOCK]` en el índice y resolución de `[ACTION:CART]` aunque el modelo escriba el nombre en lugar del ID. Assets `styles-v{versión}.css` y `chatbox-v{versión}.js`.
 - **v1.0.329 (octubre 2026) — Panel de control para no técnicos:** pestañas **Identidad y Tono**, **Conocimiento**, **Apariencia**, **Estadísticas**, **Conversaciones**, **Reservas** (Avirato). Modelos de chat como tarjetas de propósito (Rápido y Dinámico / Analítico Avanzado). Tokens → extensión de respuesta + límite de mensajes por visitante. CTA único **Actualizar conocimiento del agente** (cadena sync→train→cloud) con progreso amigable; pasos manuales en herramientas avanzadas. Tooltips (`dashicons-editor-help` + `data-tooltip`). Filtro de idioma WPML/Polylang en el picker de páginas (`Xabia_Web_Pages_Source`). Apariencia: copy «Burbuja flotante» / «Panel lateral deslizable». Avirato **1.0.27**. Manuales Core/Avirato actualizados.
 - **v1.0.322–1.0.328:** sesión PHP lazy (caché LiteSpeed); sync CTA; límites de sesión; auto-scrape Avirato / catálogo canónico; commercial directives.
@@ -954,7 +955,7 @@ Para **usuarios finales y administradores de WordPress** (instalación, mapeo, s
 
 La **versión del producto** visible en WordPress (listado de plugins) y en recursos encolados con `XABIA_VERSION` está definida en la cabecera del archivo principal y en la constante:
 
-- **`xabia-intelligence.php`**: comentario `Version:` y `define('XABIA_VERSION', '…')` deben mantenerse **alineados** (actualmente **1.0.0**).
+- **`xabia-intelligence.php`**: comentario `Version:` y `define('XABIA_VERSION', '…')` deben mantenerse **alineados** (actualmente **1.0.368**). Woo de esta release: **1.0.24**.
 - La **descripción** del plugin en la misma cabecera resume capacidades clave (RAG, Xabia Central, WooCommerce, reservas MEC/Amelia, etc.) para el listado de plugins.
 
 ### 16.2 Generar los ZIP de instalación

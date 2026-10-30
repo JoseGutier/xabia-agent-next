@@ -299,4 +299,80 @@ assert(is_array($missing_card) && stripos((string) $missing_card['t'], 'Propoliu
 assert((string) ($missing_card['d'] ?? '') !== '', 'fallback card keeps the sentence');
 assert((string) ($missing_card['a'] ?? '') === '', 'fallback card does not invent a cart id');
 
+$link_ctx = "ID del producto: 120 | Nombre del producto: Aloe Verum Premium | Link: https://saludavida.com/producto/aloe-verum-premium/ | Precio: 18.90";
+$link_resp = "Te recomiendo Aloe Verum Premium.\n[ACTION:CART:120:Aloe Verum Premium]";
+$out_link = xabia_woo_maybe_append_cart_actions($link_resp, $link_ctx, '');
+$link_card = null;
+if (preg_match('/\[ACTION:CARD:([^\]]+)\]/', $out_link, $lm)) {
+    $link_card = Xabia_Action_Card::decode((string) $lm[1]);
+}
+assert(is_array($link_card), 'product with Link becomes a card');
+assert((string) ($link_card['u'] ?? '') === 'https://saludavida.com/producto/aloe-verum-premium/', 'card title target is the product permalink');
+assert((string) ($link_card['p'] ?? '') === '18.90 €', 'card keeps the catalog price');
+
+$mapped_ctx = 'ID del producto (Identificador del post product (carrito).): 77 | '
+    . 'Nombre del producto (Título comercial para listados y búsqueda.): Citrobiotic Bio | '
+    . 'Precio actual (Meta _price (en oferta suele ser el precio rebajado; en variables puede ser «desde»).): 18.90';
+$mapped_resp = "Te recomiendo Citrobiotic Bio.\n[ACTION:CART:77:Citrobiotic Bio]";
+$out_mapped = xabia_woo_maybe_append_cart_actions($mapped_resp, $mapped_ctx, '');
+$mapped_card = null;
+if (preg_match('/\[ACTION:CARD:([^\]]+)\]/', $out_mapped, $mapm)) {
+    $mapped_card = Xabia_Action_Card::decode((string) $mapm[1]);
+}
+assert(is_array($mapped_card), 'mapped product with instructions becomes a card');
+assert((string) ($mapped_card['p'] ?? '') === '18.90 €', 'price survives the mapping instruction');
+
+$options_ctx = "ID del producto: 120 | Nombre del producto: Aloe Verum Premium | Precio: 18.90 | Stock_estado: instock\n\n"
+    . "ID del producto: 121 | Nombre del producto: Citrobiotic Bio | Precio: 16.50 | Stock_estado: instock";
+$options_resp = "Para la garganta te recomiendo Aloe Verum Premium.";
+$out_options = xabia_woo_maybe_append_cart_actions($options_resp, $options_ctx, 'me duele la garganta');
+assert(preg_match_all('/\[ACTION:CARD:/u', $out_options) === 2, 'open ask shows the other retrieved product too');
+
+$list_resp = "Te recomiendo Aloe Verum Premium.\n[ACTION:CART:120:Aloe Verum Premium]\n\n- Citrobiotic Bio: otra opción para la garganta.";
+$out_list = xabia_woo_maybe_append_cart_actions($list_resp, $options_ctx, 'aloe');
+assert(preg_match_all('/\[ACTION:CARD:/u', $out_list) === 2, 'a named extra in the list also becomes a pill');
+assert(strpos($out_list, '- Citrobiotic Bio') === false, 'the bare list line is replaced by its pill');
+
+$prior = Xabia_Action_Card::encode([
+    't' => 'Citrobiotic Bio',
+    'p' => '16.50 €',
+    'u' => 'https://saludavida.com/producto/citrobiotic/',
+    'a' => 'CART:121',
+    'l' => 'Comprar',
+]);
+$again = "Estas son las opciones:\n- Citrobiotic Bio";
+$out_again = xabia_woo_maybe_append_cart_actions($again, '', 'qué más opciones hay', [], [
+    ['role' => 'assistant', 'content' => "Mira este.\n" . $prior],
+]);
+assert(strpos($out_again, '[ACTION:CARD:') !== false, 'follow-up list reuses the earlier pill');
+assert(strpos($out_again, '- Citrobiotic Bio') === false, 'follow-up list line does not stay linkless');
+$again_card = null;
+if (preg_match('/\[ACTION:CARD:([^\]]+)\]/', $out_again, $agm)) {
+    $again_card = Xabia_Action_Card::decode((string) $agm[1]);
+}
+assert(is_array($again_card) && ($again_card['a'] ?? '') === 'CART:121', 'follow-up pill keeps the product id');
+assert((string) ($again_card['u'] ?? '') === 'https://saludavida.com/producto/citrobiotic/', 'follow-up pill keeps the product link');
+
+$aloe = Xabia_Action_Card::encode([
+    't' => 'Aloe Verum',
+    'p' => '18.90 €',
+    'u' => 'https://saludavida.com/producto/aloe-verum/',
+    'a' => 'CART:120',
+    'l' => 'Comprar',
+]);
+$out_short = xabia_woo_maybe_append_cart_actions('El aloe me interesa.', '', 'me interesa', [], [
+    ['role' => 'assistant', 'content' => "Mira este.\n" . $aloe],
+]);
+assert(strpos($out_short, '[ACTION:CARD:') !== false, 'a later reply that shortens the product name still gets its pill');
+$short_card = null;
+if (preg_match('/\[ACTION:CARD:([^\]]+)\]/', $out_short, $shm)) {
+    $short_card = Xabia_Action_Card::decode((string) $shm[1]);
+}
+assert(is_array($short_card) && ($short_card['a'] ?? '') === 'CART:120', 'the shortened follow-up keeps the same product');
+assert((string) ($short_card['u'] ?? '') === 'https://saludavida.com/producto/aloe-verum/', 'the shortened follow-up keeps the product link');
+
+$dense = "[Entidad: Aloe Verum Premium] [ID: 120] [Dato clave: 18.90] [Enlace: https://saludavida.com/producto/aloe-verum/]";
+$out_dense = xabia_woo_maybe_append_cart_actions('Te recomiendo Aloe Verum Premium.', $dense, 'aloe');
+assert(preg_match_all('/\[ACTION:CARD:/u', $out_dense) === 1, 'a densified product row still becomes a pill');
+
 echo "OK xabia-woo cart append cards\n";

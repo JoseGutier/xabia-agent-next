@@ -117,16 +117,9 @@ function xabia_search_bar_suggested_questions(string $project_id, array $rules):
  * @return list<string>
  */
 function xabia_search_bar_resolve_placeholders(string $project_id, array $rules): array {
-    $own = xabia_search_bar_placeholders_from_rules($rules);
-    if ($own !== []) {
-        return $own;
-    }
-    $suggested = xabia_search_bar_suggested_questions($project_id, $rules);
-    if ($suggested !== []) {
-        return $suggested;
-    }
+    unset($project_id);
 
-    return xabia_search_bar_default_placeholders();
+    return xabia_search_bar_placeholders_from_rules($rules);
 }
 
 /**
@@ -136,26 +129,9 @@ function xabia_search_bar_resolve_placeholders(string $project_id, array $rules)
  * @return list<array{label:string,query:string}>
  */
 function xabia_search_bar_resolve_chips(string $project_id, array $rules): array {
-    $own = xabia_search_bar_chips_from_rules($rules);
-    if ($own !== []) {
-        return $own;
-    }
-    $chips = [];
-    foreach (xabia_search_bar_suggested_questions($project_id, $rules) as $question) {
-        $question = trim((string) $question);
-        if ($question === '') {
-            continue;
-        }
-        $chips[] = [
-            'label' => $question,
-            'query' => $question,
-        ];
-    }
-    if ($chips !== []) {
-        return $chips;
-    }
+    unset($project_id);
 
-    return xabia_search_bar_default_chips();
+    return xabia_search_bar_chips_from_rules($rules);
 }
 
 /**
