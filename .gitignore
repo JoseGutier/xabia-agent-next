@@ -27,6 +27,11 @@ vendor/
 build/
 xabia-agent-plugins/dist/
 
+# Copias CDN del chat. Se generan al publicar y no deben aparecer en git status.
+# La pareja ya versionada sigue en el índice; una versión nueva se añade con git add -f.
+xabia-agent-plugins/packages/xabia-agent-core/frontend/widgets/chatbox-v*.js
+xabia-agent-plugins/packages/xabia-agent-core/frontend/widgets/styles-v*.css
+
 # Backups locales no versionados
 central-api_BACKUP-*/
 
