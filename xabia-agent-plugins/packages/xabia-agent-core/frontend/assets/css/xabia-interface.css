@@ -31,12 +31,18 @@ body.xabia-native-interface {
 }
 
 body.xabia-open .xabia-blur-overlay.is-active,
-body.xabia-open .xabia-blur-overlay:not([hidden]),
 body.xabia-open .xabia-blur-overlay.is-active:hover {
     opacity: 1;
     visibility: visible;
-    pointer-events: auto;
+    pointer-events: none;
     background: rgba(0, 0, 0, 0.2) !important;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+}
+
+body.xabia-scroll-lock .xabia-blur-overlay.is-active,
+body.xabia-scroll-lock .xabia-blur-overlay.is-active:hover {
+    pointer-events: auto;
     backdrop-filter: blur(8px) !important;
     -webkit-backdrop-filter: blur(8px) !important;
 }
@@ -1393,9 +1399,11 @@ body.xabia-keyboard-open.xabia-mobile-chat-stack .xabia-chatbox.xabia-panel-shel
     display: flex !important;
     flex-direction: row !important;
     align-items: center !important;
-    justify-content: center !important;
-    gap: 22px !important;
-    width: 100% !important;
+    justify-content: flex-end !important;
+    gap: 8px !important;
+    width: auto !important;
+    flex: 0 0 auto !important;
+    margin-left: auto !important;
     padding: 0 !important;
     border-radius: 0 !important;
     background: transparent !important;
@@ -1803,9 +1811,12 @@ body.xabia-keyboard-open.xabia-mobile-chat-stack .xabia-chatbox.xabia-panel-shel
     .xabia-chatbox.xabia-ui-modern.xabia-immersive-mode .xabia-input-pill,
     .xabia-chatbox.xabia-ui-modern.xabia-chatbox--fullscreen .xabia-input-pill {
         flex-wrap: nowrap !important;
-        justify-content: center !important;
+        justify-content: flex-end !important;
         align-items: center !important;
-        gap: 22px !important;
+        gap: 8px !important;
+        width: auto !important;
+        flex: 0 0 auto !important;
+        margin-left: auto !important;
         padding: 0 !important;
     }
 
@@ -2238,15 +2249,18 @@ button.xabia-launcher .xabia-launcher__mic {
 .xabia-launcher--bottom-right { position: fixed; bottom: 24px; right: 24px; z-index: 999990; }
 .xabia-launcher--bottom-left  { position: fixed; bottom: 24px; left: 24px; z-index: 999990; }
 .xabia-launcher--bottom-center{ position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); z-index: 999990; }
-button.xabia-launcher.footer-hidden {
+button.xabia-launcher.footer-hidden,
+button.xabia-launcher.footer-hidden:hover,
+button.xabia-launcher.footer-hidden:focus,
+button.xabia-launcher.footer-hidden:active {
     opacity: 0 !important;
-    visibility: hidden;
     pointer-events: none !important;
-    transform: translateY(18px);
+    visibility: hidden !important;
+    transform: translateY(calc(100% + 40px)) !important;
 }
 button.xabia-launcher.xabia-launcher--bottom-center.footer-hidden,
 button.xabia-launcher.xabia-launcher--bottom-center.footer-hidden:hover {
-    transform: translateX(-50%) translateY(18px);
+    transform: translateX(-50%) translateY(calc(100% + 40px));
 }
 body.xabia-open .xabia-launcher--bottom-right,
 body.xabia-open .xabia-launcher--bottom-left,
@@ -2391,12 +2405,57 @@ body.xabia-open .xabia-launcher--bottom-center {
     margin: 0 !important;
     border-radius: 0 !important;
     transform: none !important;
-    z-index: 999991 !important;
+    z-index: 2147483000 !important;
 }
 
 @media (max-width: 768px) {
     body.xabia-open.xabia-mobile-chat-stack .xabia-chatbox.xabia-ui-modern.xabia-panel-shell.is-active.layout-full-screen:not(.xabia-present-kiosk),
     body.xabia-open.xabia-mobile-chat-stack .xabia-chatbox.xabia-ui-modern.xabia-panel-shell.is-active.xabia-chatbox--fullscreen:not(.xabia-present-kiosk) {
-        z-index: 999991 !important;
+        z-index: 2147483000 !important;
+    }
+}
+
+/* Micro y enviar a la derecha del campo. En móvil, vacío = micro; al escribir, enviar. */
+.xabia-chatbox.xabia-ui-modern .xabia-convo-dock,
+.xabia-chatbox.xabia-ui-modern .xabia-dock__input-box {
+    display: flex !important;
+    flex-direction: row !important;
+    align-items: center !important;
+}
+.xabia-chatbox.xabia-ui-modern .xabia-convo-dock .xabia-compose-area,
+.xabia-chatbox.xabia-ui-modern .xabia-dock__input-box .xabia-compose-area {
+    flex: 1 1 auto !important;
+    min-width: 0 !important;
+    width: auto !important;
+}
+.xabia-chatbox.xabia-ui-modern .xabia-input-pill,
+.xabia-chatbox.xabia-ui-modern.xabia-panel-shell .xabia-input-pill,
+.xabia-chatbox.xabia-ui-modern.xabia-panel-shell.is-active .xabia-input-pill,
+.xabia-chatbox.xabia-ui-modern.xabia-chatbox--fullscreen .xabia-input-pill {
+    width: auto !important;
+    flex: 0 0 auto !important;
+    margin-left: auto !important;
+    justify-content: flex-end !important;
+}
+@media (min-width: 601px) {
+    .xabia-chatbox.xabia-ui-modern .xabia-input-pill .xabia-send,
+    .xabia-chatbox.xabia-ui-modern.xabia-panel-shell .xabia-input-pill .xabia-send,
+    .xabia-chatbox.xabia-ui-modern .xabia-dock__input-box .xabia-input-pill .xabia-send {
+        display: inline-flex !important;
+    }
+}
+@media (max-width: 600px) {
+    .xabia-chatbox.xabia-ui-modern .xabia-dock__input-box .xabia-input-pill .xabia-mute,
+    .xabia-chatbox.xabia-ui-modern .xabia-dock__input-box .xabia-input-pill .xabia-send,
+    .xabia-chatbox.xabia-ui-modern.xabia-panel-shell .xabia-dock__input-box .xabia-input-pill .xabia-send {
+        display: none !important;
+    }
+    .xabia-chatbox.xabia-ui-modern .xabia-dock__input-box.is-typing .xabia-input-pill .xabia-mic,
+    .xabia-chatbox.xabia-ui-modern.xabia-panel-shell .xabia-dock__input-box.is-typing .xabia-input-pill .xabia-mic {
+        display: none !important;
+    }
+    .xabia-chatbox.xabia-ui-modern .xabia-dock__input-box.is-typing .xabia-input-pill .xabia-send,
+    .xabia-chatbox.xabia-ui-modern.xabia-panel-shell .xabia-dock__input-box.is-typing .xabia-input-pill .xabia-send {
+        display: inline-flex !important;
     }
 }

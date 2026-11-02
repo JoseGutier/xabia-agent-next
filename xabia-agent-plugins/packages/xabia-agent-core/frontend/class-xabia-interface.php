@@ -1434,6 +1434,10 @@ class Xabia_Interface {
             if (!$with_search_bar && !$with_chatbox && !self::project_uses_web_launcher($project_id) && !in_array($project_id, self::$launcher_projects, true)) {
                 continue;
             }
+            /* Sin panel en la página, el botón fijo tapa al launcher que sí abre el chat. */
+            if (!in_array($project_id, self::$rendered_chatbox, true)) {
+                continue;
+            }
             self::render_trigger_markup($project_id);
         }
     }

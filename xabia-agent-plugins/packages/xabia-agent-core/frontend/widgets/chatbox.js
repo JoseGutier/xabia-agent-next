@@ -4515,23 +4515,43 @@
             });
         }
 
+        function xabiaClassToken(el, name, on) {
+            if (!el || !el.classList || !name) {
+                return;
+            }
+            var has = el.classList.contains(name);
+            if (on) {
+                if (!has) {
+                    el.classList.add(name);
+                }
+                return;
+            }
+            if (has) {
+                el.classList.remove(name);
+            }
+        }
+
         function xabiaSyncLauncherShell(box) {
             if (!box || box.classList.contains('xabia-present-kiosk')) {
                 return;
             }
             if (box.classList.contains('is-active')) {
-                box.setAttribute('data-xabia-launcher-shell', '1');
-                box.classList.add('xabia-conversation-open');
-                document.body.classList.add('xabia-conversation-open');
+                if (box.getAttribute('data-xabia-launcher-shell') !== '1') {
+                    box.setAttribute('data-xabia-launcher-shell', '1');
+                }
+                /* Chrome notifica al MutationObserver aunque la clase ya esté.
+                   Volver a hacer classList.add aquí congela el hilo principal. */
+                xabiaClassToken(box, 'xabia-conversation-open', true);
+                xabiaClassToken(document.body, 'xabia-conversation-open', true);
                 return;
             }
             if (box.getAttribute('data-xabia-launcher-shell') !== '1') {
                 return;
             }
             box.setAttribute('data-xabia-launcher-shell', '0');
-            box.classList.remove('xabia-conversation-open');
+            xabiaClassToken(box, 'xabia-conversation-open', false);
             if (!document.querySelector('.xabia-chatbox.xabia-conversation-open')) {
-                document.body.classList.remove('xabia-conversation-open');
+                xabiaClassToken(document.body, 'xabia-conversation-open', false);
             }
         }
 
@@ -4549,8 +4569,19 @@
                 if (typeof MutationObserver !== 'function') {
                     return;
                 }
+                var burst = 0;
                 var observer = new MutationObserver(function() {
+                    burst += 1;
+                    if (burst > 12) {
+                        observer.disconnect();
+                        return;
+                    }
                     xabiaSyncLauncherShell(box);
+                    if (burst === 1 && typeof window.requestAnimationFrame === 'function') {
+                        window.requestAnimationFrame(function() {
+                            burst = 0;
+                        });
+                    }
                 });
                 observer.observe(box, { attributes: true, attributeFilter: ['class'] });
             }
@@ -4580,22 +4611,51 @@
                 return;
             }
             window.__xabiaLauncherScroll = true;
-            var lastY = window.scrollY || 0;
+            function buttons() {
+                return document.querySelectorAll('button.xabia-launcher:not(.xabia-launcher--inline)');
+            }
+            function setHidden(on) {
+                buttons().forEach(function(btn) {
+                    if (btn.getAttribute('data-placement') === 'inline' || btn.getAttribute('data-xabia-ghost') === '1') {
+                        return;
+                    }
+                    btn.classList.toggle('footer-hidden', on);
+                });
+            }
+            setHidden(false);
+            var mark = window.scrollY || window.pageYOffset || 0;
+            var hidden = false;
             window.addEventListener('scroll', function() {
-                var y = window.scrollY || 0;
-                if (!document.body.classList.contains('xabia-open') && !window.matchMedia('(max-width: 600px)').matches) {
-                    document.querySelectorAll('button.xabia-launcher').forEach(function(btn) {
-                        if (btn.getAttribute('data-placement') === 'inline') {
-                            return;
-                        }
-                        if (y > lastY + 2) {
-                            btn.classList.remove('footer-hidden');
-                        } else if (y < lastY - 2 && y > 100) {
-                            btn.classList.add('footer-hidden');
-                        }
-                    });
+                var y = window.scrollY || window.pageYOffset || 0;
+                if (document.body.classList.contains('xabia-open') || (window.matchMedia && window.matchMedia('(max-width: 600px)').matches)) {
+                    mark = y;
+                    return;
                 }
-                lastY = y;
+                if (y < 80) {
+                    if (hidden) {
+                        hidden = false;
+                        setHidden(false);
+                    }
+                    mark = y;
+                    return;
+                }
+                if (!hidden) {
+                    if (y > mark) {
+                        mark = y;
+                    } else if (mark - y >= 28) {
+                        hidden = true;
+                        mark = y;
+                        setHidden(true);
+                    }
+                    return;
+                }
+                if (y < mark) {
+                    mark = y;
+                } else if (y - mark >= 36) {
+                    hidden = false;
+                    mark = y;
+                    setHidden(false);
+                }
             }, { passive: true });
         }
 
@@ -4613,37 +4673,47 @@
             xabiaSyncDockAction(this);
         });
 
+        function xabiaShowLaunchers() {
+            document.querySelectorAll('button.xabia-launcher, .xabia-smart-pill, #xabiaTrigger').forEach(function(btn) {
+                btn.classList.remove('footer-hidden');
+                btn.classList.remove('is-behind-hero');
+                btn.classList.remove('is-collapsed');
+            });
+        }
+
         function xabiaBindSmartPill() {
             if (window.__xabiaSmartPill) {
                 return;
             }
             window.__xabiaSmartPill = true;
-            var mq = window.matchMedia('(max-width: 600px)');
+            var mq = window.matchMedia ? window.matchMedia('(max-width: 600px)') : null;
             var scrollTimer = 0;
             var lastY = window.scrollY || 0;
             function launchers() {
                 return document.querySelectorAll('button.xabia-launcher:not(.xabia-launcher--inline)');
             }
             function syncHero() {
-                var heroes = document.querySelectorAll('.xabia-search-bar, .xabia-search-box');
+                var heroBar = document.querySelector('.xabia-search-box, .hero-search-dock, .xabia-search-bar');
+                if (!heroBar || !mq || !mq.matches) {
+                    xabiaShowLaunchers();
+                    return;
+                }
                 var visible = false;
-                if (mq.matches) {
-                    heroes.forEach(function(hero) {
-                        var rect = hero.getBoundingClientRect();
-                        if (rect.width > 0 && rect.bottom > 0 && rect.top < window.innerHeight) {
-                            visible = true;
-                        }
-                    });
+                try {
+                    var rect = heroBar.getBoundingClientRect();
+                    visible = rect.width > 0 && rect.bottom > 0 && rect.top < window.innerHeight;
+                } catch (errRect) {
+                    visible = false;
                 }
                 launchers().forEach(function(btn) {
-                    btn.classList.toggle('is-behind-hero', mq.matches && heroes.length > 0 && visible);
+                    btn.classList.toggle('is-behind-hero', visible);
                 });
             }
             window.addEventListener('scroll', function() {
                 var y = window.scrollY || 0;
                 var scrollingDown = y > lastY + 2;
                 lastY = y;
-                if (!mq.matches || !scrollingDown || document.body.classList.contains('xabia-open')) {
+                if (!mq || !mq.matches || !scrollingDown || document.body.classList.contains('xabia-open')) {
                     return;
                 }
                 launchers().forEach(function(btn) {
@@ -4658,32 +4728,56 @@
                     });
                 }, 700);
             }, { passive: true });
-            if (typeof IntersectionObserver === 'function') {
-                var io = new IntersectionObserver(function() {
-                    syncHero();
-                }, { threshold: [0, 0.01] });
-                function watchHeroes() {
-                    document.querySelectorAll('.xabia-search-bar, .xabia-search-box').forEach(function(el) {
-                        if (el.getAttribute('data-xabia-hero-watch') === '1') {
-                            return;
-                        }
-                        el.setAttribute('data-xabia-hero-watch', '1');
-                        io.observe(el);
-                    });
-                    syncHero();
+            var heroBar = document.querySelector('.xabia-search-box, .hero-search-dock, .xabia-search-bar');
+            if (heroBar && window.IntersectionObserver) {
+                try {
+                    var observer = new IntersectionObserver(function() {
+                        syncHero();
+                    }, { threshold: 0.1 });
+                    observer.observe(heroBar);
+                } catch (errHero) {
+                    xabiaShowLaunchers();
                 }
-                watchHeroes();
-                document.addEventListener('xabia:chatbox:mounted', watchHeroes);
             } else {
-                syncHero();
+                xabiaShowLaunchers();
             }
-            if (mq.addEventListener) {
+            if (mq && mq.addEventListener) {
                 mq.addEventListener('change', syncHero);
             }
         }
 
         xabiaBindLauncherScroll();
+        document.querySelectorAll('button.xabia-launcher[data-panel-selector]').forEach(function(btn) {
+            if (btn.getAttribute('data-placement') === 'inline') {
+                return;
+            }
+            var sel = btn.getAttribute('data-panel-selector') || '';
+            if (sel && document.querySelector(sel)) {
+                return;
+            }
+            btn.setAttribute('data-xabia-ghost', '1');
+            btn.setAttribute('hidden', 'hidden');
+            btn.setAttribute('aria-hidden', 'true');
+            btn.style.setProperty('display', 'none', 'important');
+        });
         xabiaBindSmartPill();
+        if (!window.__xabiaDeskClickBound) {
+            window.__xabiaDeskClickBound = true;
+            document.addEventListener('click', function(e) {
+                var node = e.target;
+                if (!node || typeof node.closest !== 'function') {
+                    return;
+                }
+                var trigger = node.closest('.xabia-smart-pill, .xabia-launcher, #xabiaTrigger');
+                if (!trigger) {
+                    return;
+                }
+                e.preventDefault();
+                if (typeof window.openVirtualDesk === 'function') {
+                    window.openVirtualDesk(trigger);
+                }
+            });
+        }
         xabiaApplyColorSchemes();
         preloadSpeechVoices();
         if (window.speechSynthesis) {

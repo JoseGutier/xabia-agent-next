@@ -585,9 +585,120 @@
                 window.setTimeout(function () { input.focus(); }, 280);
             }
         }
+        scheduleBodyScrollLock(open, panel);
+    }
+
+    function scheduleBodyScrollLock(open, panel) {
+        document.body.classList.remove('xabia-scroll-lock');
+        if (document.body.style.position === 'fixed') {
+            document.body.style.position = '';
+        }
+        if (!open || !panel) {
+            return;
+        }
+        var token = (panel.__xabiaLockToken || 0) + 1;
+        panel.__xabiaLockToken = token;
+        window.setTimeout(function () {
+            if (!panel || panel.__xabiaLockToken !== token || !panel.classList.contains('is-active')) {
+                return;
+            }
+            var opacity = 1;
+            try {
+                opacity = parseFloat(window.getComputedStyle(panel).opacity || '1');
+            } catch (errOpacity) {
+                opacity = 1;
+            }
+            if (opacity >= 0.99) {
+                document.body.classList.add('xabia-scroll-lock');
+            }
+        }, 420);
+    }
+
+    function launcherButtons() {
+        return document.querySelectorAll('button.xabia-launcher:not(.xabia-launcher--inline)');
+    }
+
+    function setLaunchersHidden(hidden) {
+        launcherButtons().forEach(function (btn) {
+            if (btn.getAttribute('data-placement') === 'inline' || btn.getAttribute('data-xabia-ghost') === '1') {
+                return;
+            }
+            btn.classList.toggle('footer-hidden', hidden);
+        });
+    }
+
+    /**
+     * Un solo listener. Sigue el extremo del gesto y solo cambia al cruzar el umbral,
+     * para que un rebote de pocos píxeles no vuelva a mostrar el botón.
+     */
+    function bindLauncherScroll() {
+        if (window.__xabiaLauncherScroll) {
+            return;
+        }
+        window.__xabiaLauncherScroll = true;
+        setLaunchersHidden(false);
+        var mark = window.scrollY || window.pageYOffset || 0;
+        var hidden = false;
+        window.addEventListener('scroll', function () {
+            var y = window.scrollY || window.pageYOffset || 0;
+            if (document.body.classList.contains('xabia-open') || (window.matchMedia && window.matchMedia('(max-width: 600px)').matches)) {
+                mark = y;
+                return;
+            }
+            if (y < 80) {
+                if (hidden) {
+                    hidden = false;
+                    setLaunchersHidden(false);
+                }
+                mark = y;
+                return;
+            }
+            if (!hidden) {
+                if (y > mark) {
+                    mark = y;
+                } else if (mark - y >= 28) {
+                    hidden = true;
+                    mark = y;
+                    setLaunchersHidden(true);
+                }
+                return;
+            }
+            if (y < mark) {
+                mark = y;
+            } else if (y - mark >= 36) {
+                hidden = false;
+                mark = y;
+                setLaunchersHidden(false);
+            }
+        }, { passive: true });
+    }
+
+    function retireGhostLaunchers(root) {
+        var scope = root && root.querySelectorAll ? root : document;
+        var list = scope.querySelectorAll('button.xabia-launcher[data-panel-selector]');
+        list.forEach(function (btn) {
+            if (btn.getAttribute('data-placement') === 'inline') {
+                return;
+            }
+            var sel = btn.getAttribute('data-panel-selector') || '';
+            if (sel && document.querySelector(sel)) {
+                return;
+            }
+            btn.setAttribute('data-xabia-ghost', '1');
+            btn.setAttribute('hidden', 'hidden');
+            btn.setAttribute('aria-hidden', 'true');
+            btn.style.setProperty('display', 'none', 'important');
+        });
     }
 
     function bindScrollBehavior(footerBox) {
+        if (!footerBox) {
+            return;
+        }
+        if (footerBox.classList && footerBox.classList.contains('xabia-launcher') && footerBox.getAttribute('data-placement') !== 'inline') {
+            bindLauncherScroll();
+            return;
+        }
         footerBox.classList.remove('footer-hidden');
         window.addEventListener('scroll', function () {
             const currentScrollY = window.scrollY;
@@ -620,18 +731,25 @@
             return;
         }
 
-        const observer = new IntersectionObserver(function (entries) {
-            entries.forEach(function (entry) {
-                if (entry.isIntersecting) {
-                    footerBox.classList.add('is-anchored');
-                    footerBox.classList.remove('footer-hidden');
-                } else {
-                    footerBox.classList.remove('is-anchored');
-                }
-            });
-        }, { threshold: 0.1 });
-
-        observer.observe(siteFooter);
+        if (typeof IntersectionObserver !== 'function') {
+            return;
+        }
+        try {
+            const observer = new IntersectionObserver(function (entries) {
+                entries.forEach(function (entry) {
+                    if (!footerBox) {
+                        return;
+                    }
+                    if (entry.isIntersecting) {
+                        footerBox.classList.add('is-anchored');
+                        footerBox.classList.remove('footer-hidden');
+                    } else {
+                        footerBox.classList.remove('is-anchored');
+                    }
+                });
+            }, { threshold: 0.1 });
+            observer.observe(siteFooter);
+        } catch (errObserve) {}
     }
 
     function bindTrigger(trigger) {
@@ -748,27 +866,22 @@
             setPanelOpen(false, trigger, panel, overlay, layout, footerBox);
         }
 
-        function togglePanel() {
-            const open = !panel.classList.contains('is-active');
-            setPanelOpen(open, trigger, panel, overlay, layout, footerBox);
-        }
-
         ensurePanelCloseButton(panel, closePanel);
+        trigger.__xabiaCloseDesk = closePanel;
 
-        var lastLauncherToggle = 0;
-        function openFromLauncher(e) {
-            e.preventDefault();
-            e.stopPropagation();
-            var now = Date.now();
-            if (now - lastLauncherToggle < 450) {
+        function openDesk() {
+            if (panel.classList.contains('is-active')) {
                 return;
             }
-            lastLauncherToggle = now;
-            togglePanel();
+            setPanelOpen(true, trigger, panel, overlay, layout, footerBox);
         }
+        trigger.__xabiaOpenDesk = openDesk;
         trigger.setAttribute('data-xabia-fast-tap', '1');
-        trigger.addEventListener('pointerdown', openFromLauncher);
-        trigger.addEventListener('click', openFromLauncher);
+        trigger.addEventListener('click', function (e) {
+            e.preventDefault();
+            e.stopPropagation();
+            openDesk();
+        });
 
         if (overlay) {
             overlay.addEventListener('click', closePanel);
@@ -860,6 +973,8 @@
     }
 
     function init() {
+        retireGhostLaunchers(document);
+        bindLauncherScroll();
         bindAllTriggers(document);
         if (typeof MutationObserver === 'function') {
             const mo = new MutationObserver(function (mutations) {
@@ -871,8 +986,10 @@
                             continue;
                         }
                         if (node.matches && node.matches('.xabia-interface-trigger[data-project]')) {
+                            retireGhostLaunchers(document);
                             bindTrigger(node);
                         } else if (node.querySelectorAll) {
+                            retireGhostLaunchers(node);
                             bindAllTriggers(node);
                         }
                     }
@@ -899,10 +1016,7 @@
         if (!trigger) {
             return false;
         }
-        if (!trigger.classList.contains('is-active')) {
-            trigger.click();
-        }
-        return true;
+        return openVirtualDesk(trigger);
     }
 
     function closeProject(projectId) {
@@ -910,11 +1024,65 @@
             return false;
         }
         const trigger = document.querySelector('.xabia-interface-trigger[data-project="' + projectId + '"].is-active');
+        if (!trigger || typeof trigger.__xabiaCloseDesk !== 'function') {
+            return false;
+        }
+        trigger.__xabiaCloseDesk();
+        return true;
+    }
+
+    function openVirtualDesk(trigger) {
+        if (!trigger || typeof trigger.getAttribute !== 'function') {
+            trigger = document.querySelector('.xabia-smart-pill, button.xabia-launcher, #xabiaTrigger');
+        }
         if (!trigger) {
             return false;
         }
-        trigger.click();
-        return true;
+        var panelSel = trigger.getAttribute ? (trigger.getAttribute('data-panel-selector') || '') : '';
+        if (trigger.getAttribute && (trigger.getAttribute('data-xabia-ghost') === '1' || (panelSel && !document.querySelector(panelSel)))) {
+            var fallback = null;
+            document.querySelectorAll('button.xabia-launcher[data-panel-selector]').forEach(function (btn) {
+                if (fallback || btn.getAttribute('data-xabia-ghost') === '1') {
+                    return;
+                }
+                var sel = btn.getAttribute('data-panel-selector') || '';
+                if (sel && document.querySelector(sel)) {
+                    fallback = btn;
+                }
+            });
+            if (!fallback) {
+                return false;
+            }
+            trigger = fallback;
+        }
+        try {
+            bindTrigger(trigger);
+        } catch (errBind) {
+            return false;
+        }
+        if (typeof trigger.__xabiaOpenDesk === 'function') {
+            trigger.__xabiaOpenDesk();
+            return true;
+        }
+        return false;
+    }
+
+    window.openVirtualDesk = openVirtualDesk;
+
+    if (!window.__xabiaDeskClickBound) {
+        window.__xabiaDeskClickBound = true;
+        document.addEventListener('click', function (e) {
+            var node = e.target;
+            if (!node || typeof node.closest !== 'function') {
+                return;
+            }
+            var trigger = node.closest('.xabia-smart-pill, .xabia-launcher, #xabiaTrigger');
+            if (!trigger) {
+                return;
+            }
+            e.preventDefault();
+            openVirtualDesk(trigger);
+        });
     }
 
     window.XabiaInterfaceApi = {

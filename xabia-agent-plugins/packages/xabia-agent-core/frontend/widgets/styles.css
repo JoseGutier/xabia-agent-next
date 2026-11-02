@@ -90,6 +90,10 @@
 .xabia-shortcode-focus-overlay.is-active {
     opacity: 1;
     visibility: visible;
+    pointer-events: none;
+}
+
+body.xabia-scroll-lock .xabia-shortcode-focus-overlay.is-active {
     pointer-events: auto;
 }
 
@@ -1370,9 +1374,11 @@ body.xabia-box-page {
     flex-direction: row;
     flex-wrap: nowrap;
     align-items: center;
-    justify-content: center;
-    gap: 22px;
-    width: 100%;
+    justify-content: flex-end;
+    gap: 8px;
+    width: auto;
+    flex: 0 0 auto;
+    margin-left: auto;
     padding: 0;
     border-radius: 0;
     background: transparent;
@@ -1669,11 +1675,13 @@ body.xabia-mic-listening .xabia-chatbox.xabia-immersive-mode .xabia-mic-listenin
     }
 
     .xabia-ui-modern .xabia-input-pill {
-        justify-content: center;
+        justify-content: flex-end;
         align-items: center;
-        gap: 22px;
+        gap: 8px;
         padding: 0;
-        width: 100%;
+        width: auto;
+        flex: 0 0 auto;
+        margin-left: auto;
         flex-wrap: nowrap;
     }
 
@@ -1978,9 +1986,11 @@ body.xabia-avatar-thinking .x-avatar-thinking-dots,
     }
 
     .xabia-immersive-mode .xabia-input-pill {
-        justify-content: center;
+        justify-content: flex-end;
         align-items: center;
-        gap: 22px;
+        gap: 8px;
+        width: auto;
+        margin-left: auto;
     }
 
     .xabia-immersive-mode .xabia-input-pill .xabia-mic {
@@ -2134,8 +2144,10 @@ body.xabia-avatar-thinking .x-avatar-thinking-dots,
 
     /* Botones acción: un poco más grandes y separados en móvil */
     .xabia-ui-modern .xabia-input-pill {
-        gap: 28px !important;
-        justify-content: center;
+        gap: 8px !important;
+        justify-content: flex-end !important;
+        width: auto !important;
+        margin-left: auto !important;
     }
 
     .xabia-ui-modern .xabia-input-pill .xabia-btn-icon {
@@ -2396,9 +2408,11 @@ body.xabia-kiosk-open .xabia-kiosk-embed {
 /* Botonera unificada: mismo estilo que escritorio en todos los modos */
 .xabia-ui-modern .xabia-input-pill,
 .xabia-immersive-mode .xabia-input-pill {
-    justify-content: center !important;
+    justify-content: flex-end !important;
     align-items: center !important;
-    gap: 22px !important;
+    gap: 8px !important;
+    width: auto !important;
+    margin-left: auto !important;
 }
 
 .xabia-ui-modern .xabia-input-pill .xabia-btn-icon,
@@ -2533,8 +2547,11 @@ body.xabia-kiosk-open .xabia-kiosk-embed {
 }
 
 .xabia-chatbox.xabia-ui-modern .xabia-input-pill {
-    justify-content: center !important;
-    gap: 22px !important;
+    justify-content: flex-end !important;
+    gap: 8px !important;
+    width: auto !important;
+    flex: 0 0 auto !important;
+    margin-left: auto !important;
 }
 
 /* ============================================================
@@ -2616,8 +2633,7 @@ body.xabia-kiosk-open .xabia-kiosk-embed {
     pointer-events: auto !important;
 }
 
-body.xabia-voice-open,
-body.xabia-conversation-open {
+body.xabia-scroll-lock {
     overflow: hidden;
 }
 
@@ -4480,15 +4496,18 @@ button.xabia-launcher .xabia-launcher__mic {
     transform: none;
     z-index: 2;
 }
-button.xabia-launcher.footer-hidden {
+button.xabia-launcher.footer-hidden,
+button.xabia-launcher.footer-hidden:hover,
+button.xabia-launcher.footer-hidden:focus,
+button.xabia-launcher.footer-hidden:active {
     opacity: 0 !important;
-    visibility: hidden;
     pointer-events: none !important;
-    transform: translateY(18px);
+    visibility: hidden !important;
+    transform: translateY(calc(100% + 40px)) !important;
 }
 button.xabia-launcher.xabia-launcher--bottom-center.footer-hidden,
 button.xabia-launcher.xabia-launcher--bottom-center.footer-hidden:hover {
-    transform: translateX(-50%) translateY(18px);
+    transform: translateX(-50%) translateY(calc(100% + 40px));
 }
 body.xabia-open .xabia-launcher--bottom-right,
 body.xabia-open .xabia-launcher--bottom-left,
@@ -4613,7 +4632,9 @@ body.xabia-open .xabia-launcher--bottom-center {
     .xabia-chatbox .xabia-dock__input-box .xabia-input-pill {
         flex: 0 0 auto;
         width: auto !important;
-        gap: 0 !important;
+        margin-left: auto !important;
+        justify-content: flex-end !important;
+        gap: 8px !important;
     }
     .xabia-chatbox .xabia-dock__input-box .xabia-input-pill .xabia-mute,
     .xabia-chatbox .xabia-dock__input-box .xabia-input-pill .xabia-send {
@@ -4668,7 +4689,7 @@ body.xabia-open .xabia-launcher--bottom-center {
     border-radius: 0 !important;
     transform: none !important;
     box-shadow: none !important;
-    z-index: 999991 !important;
+    z-index: 2147483000 !important;
 }
 .xabia-chatbox.xabia-ui-modern.xabia-panel-shell.is-active:not(.xabia-present-kiosk) .xabia-voice-hero {
     display: none !important;
@@ -4677,7 +4698,7 @@ body.xabia-open .xabia-launcher--bottom-center {
 @media (max-width: 768px) {
     body.xabia-open.xabia-mobile-chat-stack .xabia-chatbox.xabia-ui-modern.xabia-panel-shell.is-active.layout-full-screen:not(.xabia-present-kiosk),
     body.xabia-open.xabia-mobile-chat-stack .xabia-chatbox.xabia-ui-modern.xabia-panel-shell.is-active.xabia-chatbox--fullscreen:not(.xabia-present-kiosk) {
-        z-index: 999991 !important;
+        z-index: 2147483000 !important;
     }
 }
 
