@@ -1588,16 +1588,23 @@ if (!class_exists('Xabia_API')) {
             return $merged;
         }
 
-        private static function is_photo_request(string $msg): bool {
+        /**
+         * @param list<array{role?: string, content?: string}> $history
+         */
+        private static function is_photo_request(string $msg, array $history = []): bool {
             $t = mb_strtolower(trim(wp_strip_all_tags($msg)), 'UTF-8');
             if ($t === '') {
                 return false;
             }
 
-            return preg_match(
+            if (preg_match(
                 '/\b(foto|fotos|imagen|imagenes|imágenes|picture|pictures|logo|logotipo|logotipos|ver\s+(la\s+)?(casa|alojamiento|habitaci[oó]n)|ens[eé]ñar|mu[eé]strar|enseñar|mostrar)\b/u',
                 $t
-            ) === 1;
+            ) === 1) {
+                return true;
+            }
+
+            return self::query_implies_assent_followup($msg) && self::assistant_last_turn_invited_photos($history);
         }
 
         /**
@@ -1698,14 +1705,18 @@ if (!class_exists('Xabia_API')) {
             string $context,
             string $user_msg,
             string $last_search,
-            string $project_id = ''
+            string $project_id = '',
+            array $history = []
         ): string {
             if (strpos($response, '[ACTION:IMG:') !== false) {
                 return $response;
             }
-            $hint = trim($user_msg . ' ' . $last_search);
-            if (!self::is_photo_request($user_msg) && !self::is_photo_request($last_search)) {
+            if (!self::is_photo_request($user_msg, $history) && !self::is_photo_request($last_search, $history)) {
                 return $response;
+            }
+            $hint = self::resolve_entity_hint_for_utility_turn($user_msg, $last_search, $history, $project_id);
+            if ($hint === '') {
+                $hint = trim($user_msg . ' ' . $last_search);
             }
             $entries = self::extract_imagen_entries_from_context($context);
             if ($entries === []) {
@@ -1730,6 +1741,126 @@ if (!class_exists('Xabia_API')) {
             }
 
             return rtrim($response) . "\n\n" . trim($resolved);
+        }
+
+        /**
+         * Tarjeta visual de la ficha RAG cuando piden fotos y el modelo no emitió [ACTION:CARD].
+         *
+         * @param list<array{role?: string, content?: string}> $history
+         */
+        private static function maybe_append_entity_card_from_context(
+            string $response,
+            string $context,
+            string $user_msg,
+            string $search_term,
+            array $history,
+            string $project_id
+        ): string {
+            if (!class_exists('Xabia_Action_Card', false) || $context === '') {
+                return $response;
+            }
+            if (strpos($response, '[ACTION:CARD:') !== false) {
+                return $response;
+            }
+            if (!self::is_photo_request($user_msg, $history) && !self::is_photo_request($search_term, $history)) {
+                return $response;
+            }
+            $hint = self::resolve_entity_hint_for_utility_turn($user_msg, $search_term, $history, $project_id);
+            if ($hint === '') {
+                return $response;
+            }
+            $parts = preg_split('/(?=\[Entidad:)/u', $context) ?: [];
+            foreach ($parts as $part) {
+                if (!is_string($part) || !preg_match('/\[Entidad:\s*([^\]]+)\]/u', $part, $titleMatch)) {
+                    continue;
+                }
+                $title = trim((string) ($titleMatch[1] ?? ''));
+                if ($title === '' || !self::entity_hint_matches_contract_title($hint, $title)) {
+                    continue;
+                }
+                $image = '';
+                if (preg_match('/\[Imagen disponible:\s*(https?:\/\/[^\s\]]+)\s*\]/iu', $part, $im)) {
+                    $image = trim((string) ($im[1] ?? ''));
+                }
+                $highlight = '';
+                if (preg_match('/\[Dato clave:\s*([^\]]+)\]/u', $part, $hm)) {
+                    $highlight = trim((string) ($hm[1] ?? ''));
+                }
+                $meta = '';
+                if (preg_match('/\[Capacidad máxima:\s*([^\]]+)\]/u', $part, $cm)) {
+                    $meta = trim((string) ($cm[1] ?? ''));
+                }
+                $description = '';
+                if (preg_match('/\[Resumen:\s*([^\]]+)\]/u', $part, $sm)) {
+                    $description = trim((string) ($sm[1] ?? ''));
+                }
+                $url = '';
+                if (preg_match('/\[Enlace:\s*(https?:\/\/[^\s\]]+)\s*\]/iu', $part, $um)) {
+                    $url = trim((string) ($um[1] ?? ''));
+                }
+                if ($image === '' && $highlight === '' && $url === '') {
+                    continue;
+                }
+                $tag = Xabia_Action_Card::encode([
+                    'title'       => $title,
+                    'image'       => $image,
+                    'highlight'   => $highlight,
+                    'meta'        => $meta,
+                    'description' => $description,
+                    'action_type' => $url !== '' ? 'link' : '',
+                    'url'         => $url,
+                    'label'       => $url !== '' ? 'Ver ficha' : '',
+                ], ['source' => 'rag_photo', 'project_id' => $project_id]);
+                if ($tag === '') {
+                    continue;
+                }
+
+                return rtrim($response) . "\n\n" . $tag;
+            }
+
+            return $response;
+        }
+
+        /**
+         * @param list<array{role?: string, content?: string}> $history
+         */
+        private static function resolve_entity_hint_for_utility_turn(
+            string $user_msg,
+            string $search_term,
+            array $history,
+            string $project_id
+        ): string {
+            $named = self::resolve_named_entity_from_user_message($user_msg);
+            if ($named !== '') {
+                return $named;
+            }
+            if (self::query_implies_assent_followup($user_msg)) {
+                $from_hist = self::resolve_entity_from_conversation_history($history, $project_id);
+                if ($from_hist !== '') {
+                    return $from_hist;
+                }
+            }
+            $search_term = trim(wp_strip_all_tags($search_term));
+            if ($search_term !== '' && !self::query_implies_assent_followup($search_term)) {
+                return $search_term;
+            }
+
+            return '';
+        }
+
+        private static function entity_hint_matches_contract_title(string $hint, string $title): bool {
+            $hint = mb_strtolower(trim(wp_strip_all_tags($hint)), 'UTF-8');
+            $title = mb_strtolower(trim(wp_strip_all_tags($title)), 'UTF-8');
+            if ($hint === '' || $title === '') {
+                return false;
+            }
+            if ($hint === $title || str_contains($title, $hint) || str_contains($hint, $title)) {
+                return true;
+            }
+            $hint = preg_replace('/^casa\s+/u', '', $hint) ?? $hint;
+            $title = preg_replace('/^casa\s+/u', '', $title) ?? $title;
+
+            return $hint !== '' && $title !== '' && ($hint === $title || str_contains($title, $hint) || str_contains($hint, $title));
         }
 
         /**
@@ -2259,7 +2390,8 @@ if (!class_exists('Xabia_API')) {
                     $named_entity = $ordinal;
                 }
             }
-            $utility_request = self::query_implies_entity_utility_request($user_msg_clean);
+            $utility_request = self::query_implies_entity_utility_request($user_msg_clean)
+                || self::query_implies_assent_to_assistant_offer($user_msg_clean, is_array($history) ? $history : []);
             if ($named_entity === '' && $utility_request) {
                 if ($last_entity !== '') {
                     $named_entity = $last_entity;
@@ -3197,7 +3329,22 @@ if (!class_exists('Xabia_API')) {
             $response = self::scrub_action_urls_absent_from_context($response, $context);
             $response = self::resolve_action_url_tags_in_response($response, $project_id);
             $response = self::rewrite_mec_remote_hosts_in_response($response, $project_id);
-            $response = self::maybe_append_photo_from_context($response, $context, $user_msg, $search_term, $project_id);
+            $response = self::maybe_append_photo_from_context(
+                $response,
+                $context,
+                $user_msg,
+                $search_term,
+                $project_id,
+                is_array($history) ? $history : []
+            );
+            $response = self::maybe_append_entity_card_from_context(
+                $response,
+                $context,
+                $user_msg,
+                $search_term,
+                is_array($history) ? $history : [],
+                $project_id
+            );
             $response = self::maybe_append_contact_actions_from_context($response, $context, $user_msg, $search_term);
             /**
              * Post-proceso de respuesta (addons): p. ej. Woo añade [ACTION:CART:ID] cuando se ofrecen productos.
@@ -5566,6 +5713,81 @@ if (!class_exists('Xabia_API')) {
         }
 
         /**
+         * Respuesta mínima de acuerdo («Sí», «Bai», «Vale»…) tras una oferta del asistente.
+         */
+        public static function query_implies_assent_followup(string $text): bool
+        {
+            $t = mb_strtolower(trim(wp_strip_all_tags((string) $text)), 'UTF-8');
+            if ($t === '') {
+                return false;
+            }
+
+            return (bool) preg_match(
+                '/^(si|sí|yes|bai|ba|au|vale|ok|okay|claro|perfecto|por\s+favor|please|hop|hala|nola)\.?!?$/u',
+                $t
+            );
+        }
+
+        /**
+         * @param list<array{role?: string, content?: string}> $history
+         */
+        public static function query_implies_assent_to_assistant_offer(string $text, array $history): bool
+        {
+            if (!self::query_implies_assent_followup($text)) {
+                return false;
+            }
+
+            return self::assistant_last_turn_invited_photos($history)
+                || self::assistant_last_turn_offered_availability($history);
+        }
+
+        /**
+         * @param list<array{role?: string, content?: string}> $history
+         */
+        private static function assistant_last_turn_invited_photos(array $history): bool
+        {
+            for ($i = count($history) - 1; $i >= 0; --$i) {
+                if (!is_array($history[$i]) || ($history[$i]['role'] ?? '') !== 'assistant') {
+                    continue;
+                }
+                $plain = mb_strtolower(trim(wp_strip_all_tags((string) ($history[$i]['content'] ?? ''))), 'UTF-8');
+                if ($plain === '') {
+                    return false;
+                }
+
+                return (bool) preg_match(
+                    '/\b(ver\s+(fotos?|im[aá]genes?)|fotos?\s+(de|de esta|de este)|te\s+gustar[ií]a\s+(ver\s+)?(fotos?|im[aá]genes?)|mostrar(te)?\s+fotos|ense[nñ]ar(te)?\s+fotos)\b/u',
+                    $plain
+                );
+            }
+
+            return false;
+        }
+
+        /**
+         * @param list<array{role?: string, content?: string}> $history
+         */
+        private static function assistant_last_turn_offered_availability(array $history): bool
+        {
+            for ($i = count($history) - 1; $i >= 0; --$i) {
+                if (!is_array($history[$i]) || ($history[$i]['role'] ?? '') !== 'assistant') {
+                    continue;
+                }
+                $plain = mb_strtolower(trim(wp_strip_all_tags((string) ($history[$i]['content'] ?? ''))), 'UTF-8');
+                if ($plain === '') {
+                    return false;
+                }
+
+                return (bool) preg_match(
+                    '/\b(mir(ar|e)\s+(si\s+)?(est[aá]|est[aá]n)\s+(libre|disponible)|comprobar\s+(disponibilidad|fechas)|fechas\s+(libres|disponibles))\b/u',
+                    $plain
+                );
+            }
+
+            return false;
+        }
+
+        /**
          * El usuario se refiere a una entidad ya mencionada (ellos, esa empresa, más de ellos…).
          */
         public static function query_references_prior_entity(string $text): bool
@@ -6060,6 +6282,15 @@ if (!class_exists('Xabia_API')) {
             if (self::resolve_named_entity_from_user_message($user_msg) !== '') {
                 return '';
             }
+            if (self::query_implies_assent_followup($user_msg)) {
+                $from_hist = self::resolve_entity_from_conversation_history($history, $project_id);
+                if ($from_hist !== '') {
+                    return $from_hist;
+                }
+                if ($last_entity !== '') {
+                    return $last_entity;
+                }
+            }
             if (self::query_implies_entity_utility_request($user_msg) || self::query_references_prior_entity($user_msg)) {
                 if ($last_entity !== '') {
                     return $last_entity;
@@ -6096,6 +6327,24 @@ if (!class_exists('Xabia_API')) {
             $plain = trim(wp_strip_all_tags((string) $text));
             if ($plain === '') {
                 return '';
+            }
+            if (preg_match('/\[Entidad:\s*([^\]]+)\]/iu', $plain, $em)) {
+                $title = trim((string) ($em[1] ?? ''));
+                if ($title !== '' && !self::entity_name_extract_candidate_rejected($title)) {
+                    return $title;
+                }
+            }
+            if (preg_match('/(?:^|\n)\s*(Casa\s+[A-Za-zÀ-ÿ][A-Za-zÀ-ÿ0-9\s\-]{1,35})\s*:/imu', $plain, $cm)) {
+                $name = trim((string) preg_replace('/\s+/u', ' ', (string) ($cm[1] ?? '')));
+                if ($name !== '' && !self::entity_name_extract_candidate_rejected($name)) {
+                    return $name;
+                }
+            }
+            if (preg_match('/\brecomendar(?:\s+|:)[^\n]*\n?\s*(?:Casa\s+)?([A-Za-zÀ-ÿ][A-Za-zÀ-ÿ0-9\s\-]{2,35})\s*:/iu', $plain, $rm)) {
+                $name = trim((string) preg_replace('/\s+/u', ' ', (string) ($rm[1] ?? '')));
+                if ($name !== '' && !self::entity_name_extract_candidate_rejected($name)) {
+                    return str_starts_with(mb_strtolower($name, 'UTF-8'), 'casa ') ? $name : ('Casa ' . $name);
+                }
             }
             if (preg_match('/\bempresa\s*:\s*([^|\n]+)/iu', $plain, $m)) {
                 $name = trim($m[1]);
