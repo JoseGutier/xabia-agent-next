@@ -1759,9 +1759,6 @@ if (!class_exists('Xabia_API')) {
             if (!class_exists('Xabia_Action_Card', false) || $context === '') {
                 return $response;
             }
-            if (strpos($response, '[ACTION:CARD:') !== false) {
-                return $response;
-            }
             if (!self::is_photo_request($user_msg, $history) && !self::is_photo_request($search_term, $history)) {
                 return $response;
             }
@@ -1769,56 +1766,345 @@ if (!class_exists('Xabia_API')) {
             if ($hint === '') {
                 return $response;
             }
+            if (self::response_already_has_card_for_entity($response, $hint)) {
+                return $response;
+            }
+            $part = self::find_rag_entity_contract_part($context, $hint);
+            if ($part === '') {
+                return $response;
+            }
+            if (!preg_match('/\[Entidad:\s*([^\]]+)\]/u', $part, $titleMatch)) {
+                return $response;
+            }
+            $title = trim((string) ($titleMatch[1] ?? ''));
+            $tag = self::encode_rag_entity_card_from_part($part, $title, $project_id, 'rag_photo');
+            if ($tag === '') {
+                return $response;
+            }
+
+            return rtrim($response) . "\n\n" . $tag;
+        }
+
+        /**
+         * Si el asistente lista «Casa X: …» pero el modelo no emitió [ACTION:CARD], las añade desde el RAG.
+         */
+        private static function maybe_append_lodging_recommendation_cards_from_context(
+            string $response,
+            string $context,
+            string $project_id
+        ): string {
+            if (!class_exists('Xabia_Action_Card', false)) {
+                return $response;
+            }
+            $lodging_titles = self::collect_lodging_entity_hints_from_response($response, $project_id);
+            if ($lodging_titles === []) {
+                return $response;
+            }
+            $append = [];
+            foreach ($lodging_titles as $lodging_title) {
+                if (count($append) >= 4) {
+                    break;
+                }
+                if (self::response_already_has_card_for_entity($response, $lodging_title)) {
+                    continue;
+                }
+                $part = $context !== '' ? self::find_rag_entity_contract_part($context, $lodging_title) : '';
+                if ($part === '') {
+                    $rescued = self::local_knowledge_rescue_like_search($project_id, $lodging_title, '', false, 6);
+                    if ($rescued !== '') {
+                        $part = self::find_rag_entity_contract_part($rescued, $lodging_title);
+                        if ($part === '') {
+                            $part = $rescued;
+                        }
+                    }
+                }
+                $line_blurb = self::extract_lodging_line_blurb_from_response($response, $lodging_title);
+                $title = '';
+                if ($part !== '' && preg_match('/\[Entidad:\s*([^\]]+)\]/u', $part, $titleMatch)) {
+                    $title = trim((string) ($titleMatch[1] ?? ''));
+                }
+                if ($title === '') {
+                    $title = self::lodging_hint_to_card_title($lodging_title, $project_id);
+                }
+                if ($title === '') {
+                    continue;
+                }
+                if ($line_blurb === '' && $part === '') {
+                    $line_blurb = self::extract_canonical_name_blurb_from_response($response, $lodging_title);
+                }
+                $tag = self::encode_rag_entity_card_from_part(
+                    $part !== '' ? $part : ($line_blurb !== '' ? $line_blurb : $lodging_title),
+                    $title,
+                    $project_id,
+                    'rag_lodging',
+                    $line_blurb
+                );
+                if ($tag === '' || strpos($response, $tag) !== false) {
+                    continue;
+                }
+                foreach ($append as $existing) {
+                    if ($existing === $tag) {
+                        continue 2;
+                    }
+                }
+                $append[] = $tag;
+            }
+            if ($append === []) {
+                return $response;
+            }
+            self::$last_rag_debug['lodging_cards_appended'] = count($append);
+
+            return rtrim($response) . "\n\n" . implode("\n", $append);
+        }
+
+        /**
+         * @return list<string> hints (p. ej. «Casa Garaixe» o «Garaixe») mencionados en la respuesta.
+         */
+        private static function collect_lodging_entity_hints_from_response(string $response, string $project_id): array {
+            $hints = self::extract_recommended_lodging_titles_from_response($response);
+            $plain = self::plain_text_for_lodging_extract($response);
+            $plain_norm = self::lodging_match_normalize($plain);
+            if ($plain_norm !== '' && $project_id !== '' && class_exists('Xabia_DB', false)) {
+                $entities = Xabia_DB::get_project_canonical_entities($project_id);
+                foreach ($entities as $row) {
+                    if (!is_array($row)) {
+                        continue;
+                    }
+                    $display = trim((string) ($row['display'] ?? ''));
+                    $ente_id = trim((string) ($row['ente_id'] ?? ''));
+                    foreach ([$display, $ente_id] as $label) {
+                        $label = trim($label);
+                        if ($label === '' || $label === 'global') {
+                            continue;
+                        }
+                        if (!self::lodging_plain_mentions_label($plain, $plain_norm, $label)) {
+                            continue;
+                        }
+                        $hint = $display !== '' ? $display : $label;
+                        $hints[] = $hint;
+                    }
+                }
+            }
+            $filtered = apply_filters('xabia_lodging_card_entity_hints', $hints, $response, $project_id, $plain);
+            if (!is_array($filtered)) {
+                $filtered = $hints;
+            }
+            $out = [];
+            foreach ($filtered as $h) {
+                $h = trim((string) $h);
+                if ($h !== '' && !self::entity_name_extract_candidate_rejected($h)) {
+                    $out[] = $h;
+                }
+            }
+
+            return array_values(array_unique($out));
+        }
+
+        private static function lodging_match_normalize(string $text): string {
+            $t = trim(wp_strip_all_tags($text));
+            if ($t === '') {
+                return '';
+            }
+            if (function_exists('remove_accents')) {
+                $t = remove_accents($t);
+            }
+
+            return mb_strtolower($t, 'UTF-8');
+        }
+
+        private static function lodging_plain_mentions_label(string $plain, string $plain_norm, string $label): bool {
+            $label = trim($label);
+            if ($label === '') {
+                return false;
+            }
+            $norm_label = self::lodging_match_normalize($label);
+            if ($norm_label === '' || (function_exists('mb_strlen') ? mb_strlen($norm_label) : strlen($norm_label)) < 4) {
+                return false;
+            }
+            if ($plain_norm !== '' && str_contains($plain_norm, $norm_label)) {
+                return true;
+            }
+            $quoted = preg_quote($label, '/');
+
+            return (bool) preg_match('/(?:^|[\s,.:;(\-–—])' . $quoted . '(?:$|[\s,.:;)\-–—!?])/iu', $plain);
+        }
+
+        private static function lodging_hint_to_card_title(string $hint, string $project_id): string {
+            $hint = trim($hint);
+            if ($hint === '') {
+                return '';
+            }
+            if (class_exists('Xabia_DB', false) && $project_id !== '') {
+                $entities = Xabia_DB::get_project_canonical_entities($project_id);
+                foreach ($entities as $row) {
+                    if (!is_array($row)) {
+                        continue;
+                    }
+                    $display = trim((string) ($row['display'] ?? ''));
+                    if ($display !== '' && self::entity_hint_matches_contract_title($hint, $display)) {
+                        return $display;
+                    }
+                }
+            }
+            if (preg_match('/^Casa\s+(.+)$/iu', $hint, $m)) {
+                return trim((string) ($m[1] ?? ''));
+            }
+
+            return $hint;
+        }
+
+        private static function extract_canonical_name_blurb_from_response(string $response, string $hint): string {
+            $plain = self::plain_text_for_lodging_extract($response);
+            if ($plain === '') {
+                return '';
+            }
+            $short = preg_replace('/^casa\s+/iu', '', trim($hint));
+            $candidates = array_values(array_unique(array_filter([$hint, $short])));
+            foreach ($candidates as $name) {
+                $quoted = preg_quote((string) $name, '/');
+                if (preg_match('/(?:^|\n)\s*(?:[-*•]\s*)?(?:Casa\s+)?' . $quoted . '\s*(?::|[-–—])\s*([^\n]+)/iu', $plain, $match)) {
+                    return trim((string) preg_replace('/\s+/u', ' ', (string) ($match[1] ?? '')));
+                }
+                if (preg_match('/\b' . $quoted . '\b[^.\n]{0,220}/iu', $plain, $match)) {
+                    $snippet = trim((string) ($match[0] ?? ''));
+                    if ($snippet !== '' && (function_exists('mb_strlen') ? mb_strlen($snippet) : strlen($snippet)) > (function_exists('mb_strlen') ? mb_strlen($name) : strlen($name)) + 8) {
+                        return trim((string) preg_replace('/\s+/u', ' ', $snippet));
+                    }
+                }
+            }
+
+            return '';
+        }
+
+        /**
+         * @return list<string>
+         */
+        public static function extract_recommended_lodging_titles_from_response(string $response): array {
+            $plain = self::plain_text_for_lodging_extract($response);
+            if ($plain === '') {
+                return [];
+            }
+            $names = [];
+            if (preg_match_all('/(?:^|\n)\s*(?:\d+[.)]\s*|[-*•]\s*)?(Casa\s+[A-Za-zÀ-ÿ][A-Za-zÀ-ÿ0-9\s\-]{1,35})\s*:?/imu', $plain, $matches)) {
+                foreach ($matches[1] as $name) {
+                    $name = trim((string) preg_replace('/\s+/u', ' ', (string) $name));
+                    if ($name !== '' && !self::entity_name_extract_candidate_rejected($name)) {
+                        $names[] = $name;
+                    }
+                }
+            }
+
+            return array_values(array_unique($names));
+        }
+
+        private static function plain_text_for_lodging_extract(string $response): string
+        {
+            $plain = trim(wp_strip_all_tags((string) $response));
+            if ($plain === '') {
+                return '';
+            }
+
+            return (string) preg_replace('/\*\*/u', '', $plain);
+        }
+
+        private static function extract_lodging_line_blurb_from_response(string $response, string $lodging_title): string
+        {
+            $plain = self::plain_text_for_lodging_extract($response);
+            if ($plain === '' || $lodging_title === '') {
+                return '';
+            }
+            $quoted = preg_quote($lodging_title, '/');
+            if (!preg_match('/(?:^|\n)\s*(?:\d+[.)]\s*|[-*•]\s*)?' . $quoted . '\s*:?\s*([^\n]+)/iu', $plain, $match)) {
+                return '';
+            }
+
+            return trim((string) preg_replace('/\s+/u', ' ', (string) ($match[1] ?? '')));
+        }
+
+        private static function find_rag_entity_contract_part(string $context, string $hint): string {
             $parts = preg_split('/(?=\[Entidad:)/u', $context) ?: [];
             foreach ($parts as $part) {
                 if (!is_string($part) || !preg_match('/\[Entidad:\s*([^\]]+)\]/u', $part, $titleMatch)) {
                     continue;
                 }
                 $title = trim((string) ($titleMatch[1] ?? ''));
-                if ($title === '' || !self::entity_hint_matches_contract_title($hint, $title)) {
-                    continue;
+                if ($title !== '' && self::entity_hint_matches_contract_title($hint, $title)) {
+                    return $part;
                 }
-                $image = '';
-                if (preg_match('/\[Imagen disponible:\s*(https?:\/\/[^\s\]]+)\s*\]/iu', $part, $im)) {
-                    $image = trim((string) ($im[1] ?? ''));
-                }
-                $highlight = '';
-                if (preg_match('/\[Dato clave:\s*([^\]]+)\]/u', $part, $hm)) {
-                    $highlight = trim((string) ($hm[1] ?? ''));
-                }
-                $meta = '';
-                if (preg_match('/\[Capacidad máxima:\s*([^\]]+)\]/u', $part, $cm)) {
-                    $meta = trim((string) ($cm[1] ?? ''));
-                }
-                $description = '';
-                if (preg_match('/\[Resumen:\s*([^\]]+)\]/u', $part, $sm)) {
-                    $description = trim((string) ($sm[1] ?? ''));
-                }
-                $url = '';
-                if (preg_match('/\[Enlace:\s*(https?:\/\/[^\s\]]+)\s*\]/iu', $part, $um)) {
-                    $url = trim((string) ($um[1] ?? ''));
-                }
-                if ($image === '' && $highlight === '' && $url === '') {
-                    continue;
-                }
-                $tag = Xabia_Action_Card::encode([
-                    'title'       => $title,
-                    'image'       => $image,
-                    'highlight'   => $highlight,
-                    'meta'        => $meta,
-                    'description' => $description,
-                    'action_type' => $url !== '' ? 'link' : '',
-                    'url'         => $url,
-                    'label'       => $url !== '' ? 'Ver ficha' : '',
-                ], ['source' => 'rag_photo', 'project_id' => $project_id]);
-                if ($tag === '') {
-                    continue;
-                }
-
-                return rtrim($response) . "\n\n" . $tag;
             }
 
-            return $response;
+            return '';
+        }
+
+        private static function encode_rag_entity_card_from_part(
+            string $part,
+            string $title,
+            string $project_id,
+            string $source,
+            string $response_blurb = ''
+        ): string {
+            if (!class_exists('Xabia_Action_Card', false) || trim($title) === '') {
+                return '';
+            }
+            $image = '';
+            if (preg_match('/\[Imagen disponible:\s*(https?:\/\/[^\s\]]+)\s*\]/iu', $part, $im)) {
+                $image = trim((string) ($im[1] ?? ''));
+            }
+            $highlight = '';
+            if (preg_match('/\[Dato clave:\s*([^\]]+)\]/u', $part, $hm)) {
+                $highlight = trim((string) ($hm[1] ?? ''));
+            }
+            $meta = '';
+            if (preg_match('/\[Capacidad máxima:\s*([^\]]+)\]/u', $part, $cm)) {
+                $meta = trim((string) ($cm[1] ?? ''));
+            }
+            $description = '';
+            if (preg_match('/\[Resumen:\s*([^\]]+)\]/u', $part, $sm)) {
+                $description = trim((string) ($sm[1] ?? ''));
+            }
+            $url = '';
+            if (preg_match('/\[Enlace:\s*(https?:\/\/[^\s\]]+)\s*\]/iu', $part, $um)) {
+                $url = trim((string) ($um[1] ?? ''));
+            }
+            if ($description === '' && $response_blurb !== '') {
+                $description = $response_blurb;
+            }
+            if ($image === '' && $highlight === '' && $url === '' && $description === '') {
+                if ($source !== 'rag_lodging' || trim($title) === '') {
+                    return '';
+                }
+            }
+
+            return Xabia_Action_Card::encode([
+                'title'       => $title,
+                'image'       => $image,
+                'highlight'   => $highlight,
+                'meta'        => $meta,
+                'description' => $description,
+                'action_type' => $url !== '' ? 'link' : '',
+                'url'         => $url,
+                'label'       => $url !== '' ? 'Ver ficha' : '',
+            ], ['source' => $source, 'project_id' => $project_id]);
+        }
+
+        private static function response_already_has_card_for_entity(string $response, string $entity_hint): bool {
+            if ($entity_hint === '' || strpos($response, '[ACTION:CARD:') === false || !class_exists('Xabia_Action_Card', false)) {
+                return false;
+            }
+            if (!preg_match_all('/\[ACTION:CARD:([^\]]+)\]/u', $response, $matches)) {
+                return false;
+            }
+            foreach ($matches[1] as $raw) {
+                $decoded = Xabia_Action_Card::decode((string) $raw);
+                if (!is_array($decoded) || empty($decoded['t'])) {
+                    continue;
+                }
+                if (self::entity_hint_matches_contract_title($entity_hint, (string) $decoded['t'])) {
+                    return true;
+                }
+            }
+
+            return false;
         }
 
         /**
@@ -3363,6 +3649,11 @@ if (!class_exists('Xabia_API')) {
                 'search_term'  => (string) $search_term,
                 'history'      => is_array($history) ? $history : [],
             ]);
+            $response = self::maybe_append_lodging_recommendation_cards_from_context(
+                (string) $response,
+                (string) $context,
+                (string) $project_id
+            );
             if (class_exists('Xabia_Action_Card', false)) {
                 $response = Xabia_Action_Card::enrich_response_cards((string) $response, (string) $context);
             }

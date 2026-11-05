@@ -72,4 +72,30 @@ assert(Xabia_API::query_implies_assent_to_assistant_offer('Sí', $history), 'Sí
 $anchor = Xabia_API::resolve_entity_anchor_from_history('Sí', $history, '', 'mirentxu');
 assert(stripos($anchor, 'Garaixe') !== false, 'Sí anchors to Garaixe, got: ' . $anchor);
 
+$multi = <<<'TXT'
+Claro que sí, tenemos varias opciones:
+Casa Garaixe: Un nido para parejas.
+Casa Lurra: Cristalera y luz.
+Casa Harria: Caserío del XVIII.
+TXT;
+$lodging = Xabia_API::extract_recommended_lodging_titles_from_response($multi);
+assert(count($lodging) === 3, 'three lodging titles, got ' . count($lodging));
+assert($lodging[0] === 'Casa Garaixe' && $lodging[1] === 'Casa Lurra', 'lodging order preserved');
+
+$bold = <<<'TXT'
+Opciones:
+**Casa Garaixe:** Un nido para parejas.
+**Casa Lurra:** Cristalera y luz.
+TXT;
+$bold_titles = Xabia_API::extract_recommended_lodging_titles_from_response($bold);
+assert(count($bold_titles) === 2, 'bold markdown lodging titles, got ' . count($bold_titles));
+
+$bullets = <<<'TXT'
+Para dos personas:
+- Casa Garaixe: nido para parejas.
+* Casa Lurra: cristalera y luz.
+TXT;
+$bullet_titles = Xabia_API::extract_recommended_lodging_titles_from_response($bullets);
+assert(count($bullet_titles) === 2, 'bullet lodging titles, got ' . count($bullet_titles));
+
 echo "OK test-xabia-entity-assent\n";

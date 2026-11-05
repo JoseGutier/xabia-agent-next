@@ -615,6 +615,7 @@
     function decodeActionCardPayload(raw) {
         var s = String(raw || '').trim();
         if (!s) return null;
+        s = s.replace(/&quot;/g, '"').replace(/&#039;/g, "'").replace(/&#39;/g, "'").replace(/&amp;/g, '&');
         try {
             var b64 = s.replace(/-/g, '+').replace(/_/g, '/');
             while (b64.length % 4) b64 += '=';
@@ -643,6 +644,9 @@
                 mx: String(data.mx || data.max_qty || '').trim()
             };
         } catch (e) {
+            if (window.console && console.warn) {
+                console.warn('[Xabia Card Error]', e, s);
+            }
             return null;
         }
     }
@@ -867,7 +871,12 @@
 
     function renderActionCardHtml(raw, imagesBase, escAttr, decodeHtmlEntities) {
         var card = decodeActionCardPayload(raw);
-        if (!card || !card.t) return '';
+        if (!card || !card.t) {
+            if (window.console && console.warn) {
+                console.warn('[Xabia Card Error] empty card after decode', String(raw || '').slice(0, 120));
+            }
+            return '';
+        }
         return renderUniversalCardHtml(card, escAttr, imagesBase, decodeHtmlEntities);
     }
 
@@ -1505,6 +1514,9 @@
                 text = text.split('%%XABIA_CARD_' + i + '%%').join(cardHolders[i]);
             }
             text = text.replace(/(?:<br>\s*)+(<div class="xabia-entity-card\b)/g, '$1');
+            if (window.console && console.log) {
+                console.log('[XABIA_CARDS] Tarjetas inyectadas:', cardHolders.length);
+            }
         }
         if (text.indexOf('xabia-entity-card') !== -1) {
             text = wrapEntityCardDecks(text);
@@ -3434,6 +3446,10 @@
                 return;
             }
             var raw = data.response;
+            if (window.console && console.log) {
+                var cardsInPayload = (String(raw || '').match(/\[ACTION:CARD:[^\]]+\]/g) || []).length;
+                console.log('[XABIA_CARDS] Tarjetas inyectadas:', cardsInPayload);
+            }
             if (isContinue) {
                 var $lastBot = $history.find('.xabia-msg.bot').not('.xabia-thinking-turn, .xabia-msg--error').last();
                 if ($lastBot.length) {
