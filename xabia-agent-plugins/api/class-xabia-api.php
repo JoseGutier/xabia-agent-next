@@ -1853,8 +1853,122 @@ if (!class_exists('Xabia_API')) {
                 return $response;
             }
             self::$last_rag_debug['lodging_cards_appended'] = count($append);
+            $response = self::condense_lodging_prose_when_cards_present($response, $lodging_titles, count($append));
 
             return rtrim($response) . "\n\n" . implode("\n", $append);
+        }
+
+        /**
+         * Acorta la prosa cuando las pastillas ya llevan título y descripción.
+         *
+         * @param list<string> $lodging_hints
+         */
+        private static function condense_lodging_prose_when_cards_present(string $response, array $lodging_hints, int $cards_count): string {
+            if ($cards_count < 1 || $lodging_hints === []) {
+                return $response;
+            }
+            $body = $response;
+            if (strpos($body, '[ACTION:CARD:') !== false) {
+                $body = (string) preg_replace('/\n\n\[ACTION:CARD:[^\]]+\].*$/su', '', $body);
+            }
+            foreach ($lodging_hints as $hint) {
+                $hint = trim((string) $hint);
+                if ($hint === '') {
+                    continue;
+                }
+                $quoted = preg_quote($hint, '/');
+                $short = trim((string) (preg_replace('/^casa\s+/iu', '', $hint) ?? $hint));
+                $variants = array_values(array_unique(array_filter([$hint, $short, 'Casa ' . $short])));
+                foreach ($variants as $name) {
+                    $qn = preg_quote($name, '/');
+                    $body = (string) preg_replace(
+                        '/(?:^|\n)\s*(?:[-*•]\s*)?(?:\*\*)?' . $qn . '(?:\*\*)?\s*:\s*[^\n]+/iu',
+                        "\n",
+                        $body
+                    );
+                }
+            }
+            $body = (string) preg_replace("/\n{3,}/u", "\n\n", trim($body));
+            if ($body === '') {
+                return __('Te dejo las opciones en las fichas:', 'xabia-intelligence');
+            }
+            if (!preg_match('/(?:opciones|recomend|casas?|alojamientos?|fichas?)/iu', $body)) {
+                $body = rtrim($body) . "\n\n" . __('Mira las fichas:', 'xabia-intelligence');
+            }
+
+            return $body;
+        }
+
+        private static function lodging_text_looks_like_price(string $value): bool {
+            $s = trim($value);
+            if ($s === '' || !preg_match('/\d/u', $s)) {
+                return false;
+            }
+            if (preg_match('/\d{4}-\d{2}-\d{2}|\d{1,2}:\d{2}\b/u', $s) && !preg_match('/[€$£]|eur|noche/iu', $s)) {
+                return false;
+            }
+            if (preg_match('/[€$£]|eur|usd|gbp|noche|\/\s*noche/iu', $s)) {
+                return true;
+            }
+
+            return (bool) preg_match('/^\d{1,6}(?:[.,]\d{1,2})?(?:\s*\/\s*\p{L}+)?$/u', $s);
+        }
+
+        private static function format_lodging_price_highlight(string $raw): string {
+            $s = trim(preg_replace('/\s+/u', ' ', wp_strip_all_tags($raw)) ?? '');
+            if ($s === '') {
+                return __('Consultar fechas', 'xabia-intelligence');
+            }
+            if (preg_match('/^desde\s+/iu', $s)) {
+                if (!preg_match('/noche|\/\s*noche/iu', $s) && preg_match('/€/u', $s)) {
+                    $s .= ' / noche';
+                }
+
+                return $s;
+            }
+            if (self::lodging_text_looks_like_price($s)) {
+                if (!preg_match('/noche|\/\s*noche/iu', $s) && preg_match('/€/u', $s)) {
+                    return 'Desde ' . $s . ' / noche';
+                }
+                if (!preg_match('/€/u', $s) && preg_match('/^\d/', $s)) {
+                    return 'Desde ' . $s . ' € / noche';
+                }
+
+                return 'Desde ' . $s;
+            }
+
+            return $s;
+        }
+
+        private static function extract_lodging_price_highlight_from_part(string $part, string $source): string {
+            if (trim($part) === '') {
+                return $source === 'rag_lodging' ? __('Consultar fechas', 'xabia-intelligence') : '';
+            }
+            foreach (['Tarifa base', 'Tarifa', 'Precio base', 'Precio orientativo', 'Precio'] as $label) {
+                if (preg_match('/\[' . preg_quote($label, '/') . ':\s*([^\]]+)\]/u', $part, $m)) {
+                    $v = trim((string) ($m[1] ?? ''));
+                    if ($v !== '') {
+                        return self::format_lodging_price_highlight($v);
+                    }
+                }
+            }
+            if (preg_match('/\[Dato clave:\s*([^\]]+)\]/u', $part, $hm)) {
+                $v = trim((string) ($hm[1] ?? ''));
+                if ($v !== '' && self::lodging_text_looks_like_price($v)) {
+                    return self::format_lodging_price_highlight($v);
+                }
+            }
+            if (preg_match('/(?:desde|from)\s*(\d{1,4}(?:[.,]\d{1,2})?)\s*€(?:\s*(?:\/\s*noche|por noche))?/iu', $part, $pm)) {
+                return self::format_lodging_price_highlight(trim((string) ($pm[0] ?? '')));
+            }
+            if (preg_match('/(\d{1,4}(?:[.,]\d{1,2})?)\s*€\s*(?:\/\s*noche|por noche)/iu', $part, $pm2)) {
+                return self::format_lodging_price_highlight(trim((string) ($pm2[0] ?? '')));
+            }
+            if ($source === 'rag_lodging') {
+                return __('Consultar fechas', 'xabia-intelligence');
+            }
+
+            return '';
         }
 
         /**
@@ -2054,6 +2168,16 @@ if (!class_exists('Xabia_API')) {
             if (preg_match('/\[Dato clave:\s*([^\]]+)\]/u', $part, $hm)) {
                 $highlight = trim((string) ($hm[1] ?? ''));
             }
+            if ($source === 'rag_lodging') {
+                $price_highlight = self::extract_lodging_price_highlight_from_part($part, $source);
+                if ($price_highlight !== '') {
+                    $highlight = $price_highlight;
+                } elseif ($highlight !== '' && !self::lodging_text_looks_like_price($highlight)) {
+                    $highlight = self::extract_lodging_price_highlight_from_part($part, $source);
+                }
+            } elseif ($highlight !== '' && !self::lodging_text_looks_like_price($highlight)) {
+                $highlight = '';
+            }
             $meta = '';
             if (preg_match('/\[Capacidad máxima:\s*([^\]]+)\]/u', $part, $cm)) {
                 $meta = trim((string) ($cm[1] ?? ''));
@@ -2068,6 +2192,9 @@ if (!class_exists('Xabia_API')) {
             }
             if ($description === '' && $response_blurb !== '') {
                 $description = $response_blurb;
+            }
+            if ($source === 'rag_lodging' && $description !== '' && (function_exists('mb_strlen') ? mb_strlen($description, 'UTF-8') : strlen($description)) > 220) {
+                $description = trim((string) (function_exists('mb_substr') ? mb_substr($description, 0, 217, 'UTF-8') : substr($description, 0, 217))) . '…';
             }
             if ($image === '' && $highlight === '' && $url === '' && $description === '') {
                 if ($source !== 'rag_lodging' || trim($title) === '') {

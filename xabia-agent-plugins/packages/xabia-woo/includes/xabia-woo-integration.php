@@ -1353,6 +1353,20 @@ function xabia_woo_encode_product_action_card(array $fields, string $cta_label, 
     if ($price !== '' && !preg_match('/€|eur|\$/i', $price)) {
         $price .= ' €';
     }
+    $purchasable = array_key_exists('purchasable', $fields)
+        ? !empty($fields['purchasable'])
+        : ($id > 0);
+    $description = trim((string) ($fields['description'] ?? $fields['excerpt'] ?? ''));
+    if ($description === '' && !empty($fields['resumen'])) {
+        $description = trim((string) $fields['resumen']);
+    }
+    if ($description !== '' && (function_exists('mb_strlen') ? mb_strlen($description, 'UTF-8') : strlen($description)) > 180) {
+        $description = trim((function_exists('mb_substr') ? mb_substr($description, 0, 177, 'UTF-8') : substr($description, 0, 177))) . '…';
+    }
+    $meta = trim((string) ($fields['meta'] ?? ''));
+    if ($meta === '' && $purchasable) {
+        $meta = __('En stock', 'xabia-intelligence');
+    }
     $image = xabia_woo_card_image_from_fields($fields);
     if ($image === '') {
         $image_id = (int) ($fields['display_id'] ?? 0);
@@ -1361,12 +1375,10 @@ function xabia_woo_encode_product_action_card(array $fields, string $cta_label, 
         }
         $image = xabia_woo_lookup_product_image_url($image_id, $config);
     }
-    $purchasable = array_key_exists('purchasable', $fields)
-        ? !empty($fields['purchasable'])
-        : ($id > 0);
     $payload = [
         't'     => (string) ($fields['title'] ?? ''),
-        'm'     => (string) ($fields['meta'] ?? ''),
+        'm'     => $meta,
+        'd'     => $description,
         'p'     => $price,
         'i'     => $image,
         'image' => $image,
@@ -1380,6 +1392,7 @@ function xabia_woo_encode_product_action_card(array $fields, string $cta_label, 
     ];
     if ($purchasable && $id > 0) {
         $payload['a'] = 'CART:' . $id;
+        $payload['at'] = 'cart';
     }
 
     return Xabia_Action_Card::encode($payload);
