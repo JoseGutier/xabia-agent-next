@@ -3,7 +3,7 @@
  * Plugin Name: Xabia Avirato
  * Plugin URI: https://xabia.ai
  * Description: Addon de reservas y disponibilidad Avirato para Xabia Agent Core.
- * Version: 1.0.27
+ * Version: 1.0.28
  * Author: Digixop
  * Author URI: https://digixop.com
  */
@@ -275,8 +275,25 @@ function xabia_avirato_normalize_subtype_record(array $subtype): ?array
     if ($name === '') {
         $name = 'Habitación ' . $id;
     }
+    $row = ['id' => $id, 'name' => $name];
+    foreach ([
+        'image' => ['image', 'imageUrl', 'photo', 'foto', 'mainImage', 'imagen', 'picture'],
+        'description' => ['description', 'descripcion', 'excerpt', 'resumen'],
+        'bedrooms' => ['bedrooms', 'dormitorios', 'numBedrooms'],
+    ] as $dest => $keys) {
+        foreach ($keys as $key) {
+            if (!empty($subtype[$key]) && is_scalar($subtype[$key])) {
+                $row[$dest] = trim((string) $subtype[$key]);
+                break;
+            }
+        }
+    }
+    $cap = xabia_avirato_room_capacity($subtype);
+    if ($cap !== null) {
+        $row['capacity'] = $cap;
+    }
 
-    return ['id' => $id, 'name' => $name];
+    return $row;
 }
 
 /**
@@ -1785,7 +1802,7 @@ function xabia_avirato_scrape_rooms_bookingapi(string $checkin, string $checkout
             }
         }
         $name = trim((string) ($subtype['name'] ?? ('Habitación ' . $sid)));
-        $rooms[] = [
+        $roomRow = [
             'idSubtipoEspacio'  => (string) $sid,
             'spaceSubtypeId'    => (string) $sid,
             'subtipoEspacio'    => $name,
@@ -1796,6 +1813,12 @@ function xabia_avirato_scrape_rooms_bookingapi(string $checkin, string $checkout
             'freeRooms'         => 1,
             'available'         => true,
         ];
+        foreach (['image', 'description', 'bedrooms', 'capacity'] as $extraKey) {
+            if (!empty($subtype[$extraKey])) {
+                $roomRow[$extraKey] = $subtype[$extraKey];
+            }
+        }
+        $rooms[] = $roomRow;
     }
 
     if ($rooms === [] && $rateAttempts > 0 && $rateFailures === $rateAttempts) {
@@ -2704,6 +2727,9 @@ function xabia_avirato_pack_rooms_for_tool(array $rooms, int $nights, string $bo
             'currency'        => $prices['currency'],
             'capacity'        => xabia_avirato_room_capacity($room),
             'booking_url'     => $bookingUrl,
+            'image'           => trim((string) ($room['image'] ?? '')),
+            'description'     => trim((string) ($room['description'] ?? '')),
+            'bedrooms'        => trim((string) ($room['bedrooms'] ?? '')),
         ];
         $out[] = $row;
         if (count($out) >= $limit) {
@@ -2823,16 +2849,130 @@ function xabia_avirato_match_canonical_entity_from_text(string $projectId, strin
 /**
  * Directiva comercial + respuesta en un solo turno (sin function calling / sin «Un momento»).
  */
+/**
+ * @return array{image:string,capacity:?int,bedrooms:string,description:string}
+ */
+function xabia_avirato_profile_from_rag(string $context, string $roomName): array
+{
+    $empty = ['image' => '', 'capacity' => null, 'bedrooms' => '', 'description' => ''];
+    $wanted = xabia_avirato_normalize_text($roomName);
+    if ($wanted === '' || trim($context) === '') {
+        return $empty;
+    }
+    $parts = preg_split('/(?=\[Entidad:)/u', $context) ?: [];
+    foreach ($parts as $part) {
+        if (!is_string($part) || !preg_match('/\[Entidad:\s*([^\]]+)\]/u', $part, $titleMatch)) {
+            continue;
+        }
+        $title = xabia_avirato_normalize_text((string) $titleMatch[1]);
+        if ($title === '' || ($title !== $wanted && !str_contains($title, $wanted) && !str_contains($wanted, $title))) {
+            continue;
+        }
+        $image = '';
+        if (preg_match('/\[Imagen disponible:\s*(https?:\/\/[^\s\]]+)/u', $part, $imageMatch)) {
+            $image = trim((string) $imageMatch[1]);
+        }
+        $capacity = null;
+        if (preg_match('/\[Capacidad máxima:\s*(\d{1,2})/u', $part, $capMatch) || preg_match('/capacidad(?:\s+m[aá]xima)?\s*[:=]\s*(\d{1,2})/iu', $part, $capMatch)) {
+            $capacity = (int) $capMatch[1];
+        }
+        $bedrooms = '';
+        if (preg_match('/(\d{1,2})\s+dormitorios/iu', $part, $bedMatch)) {
+            $bedrooms = (int) $bedMatch[1] . ' dormitorios';
+        }
+        $description = '';
+        if (preg_match('/\[Resumen:\s*([^\]]+)\]/u', $part, $descMatch)) {
+            $description = trim((string) $descMatch[1]);
+        }
+
+        return [
+            'image'       => $image,
+            'capacity'    => $capacity,
+            'bedrooms'    => $bedrooms,
+            'description' => $description,
+        ];
+    }
+
+    return $empty;
+}
+
+function xabia_avirato_room_card_tag(array $room): string
+{
+    if (!class_exists('Xabia_Action_Card', false)) {
+        return '';
+    }
+    $name = trim((string) ($room['name'] ?? ''));
+    if ($name === '') {
+        return '';
+    }
+    $highlight = '';
+    if (isset($room['price_per_night']) && is_numeric($room['price_per_night'])) {
+        $highlight = (string) (int) round((float) $room['price_per_night']) . ' € / noche';
+    } elseif (isset($room['total_price']) && is_numeric($room['total_price'])) {
+        $highlight = (string) (int) round((float) $room['total_price']) . ' €';
+    }
+    $meta = [];
+    if (isset($room['capacity']) && is_numeric($room['capacity']) && (int) $room['capacity'] > 0) {
+        $meta[] = 'Hasta ' . (int) $room['capacity'] . ' plazas';
+    }
+    $bedrooms = trim((string) ($room['bedrooms'] ?? ''));
+    if ($bedrooms !== '') {
+        $meta[] = $bedrooms;
+    }
+    $url = trim((string) ($room['booking_url'] ?? ''));
+
+    return Xabia_Action_Card::encode([
+        'title'       => $name,
+        'image'       => trim((string) ($room['image'] ?? '')),
+        'highlight'   => $highlight,
+        'meta'        => implode(' · ', $meta),
+        'description' => trim((string) ($room['description'] ?? '')),
+        'action_type' => 'link',
+        'url'         => $url,
+        'label'       => 'Reservar',
+    ], ['source' => 'avirato']);
+}
+
+/**
+ * @param list<array<string, mixed>> $rooms
+ */
+function xabia_avirato_stash_turn_cards(string $projectId, array $rooms): string
+{
+    $tags = [];
+    foreach ($rooms as $room) {
+        if (count($tags) >= 8) {
+            break;
+        }
+        if (!is_array($room)) {
+            continue;
+        }
+        $tag = xabia_avirato_room_card_tag($room);
+        if ($tag !== '') {
+            $tags[] = $tag;
+        }
+    }
+    $block = implode("\n", $tags);
+    if (!isset($GLOBALS['xabia_avirato_turn_cards']) || !is_array($GLOBALS['xabia_avirato_turn_cards'])) {
+        $GLOBALS['xabia_avirato_turn_cards'] = [];
+    }
+    $GLOBALS['xabia_avirato_turn_cards'][$projectId] = $block;
+
+    return $block;
+}
+
 function xabia_avirato_response_directive_block(bool $guestsAssumed, string $checkIn, string $checkOut): string
 {
     $lines = [
         'DIRECTIVA ESTRICTA DE RESPUESTA (1 TURNO — AVIRATO / MODO COMERCIAL):',
         '— Respuesta inmediata: prohibido «Un momento», «Voy a comprobarlo», «Dejadme mirar». Los datos YA están en [DISPONIBILIDAD EN TIEMPO REAL - AVIRATO].',
-        '— OCULTACIÓN DE PRECIOS EN DESCUBRIMIENTO: si la consulta es inspiracional o abierta («busco casita romántica», «qué tenéis disponible», «cuéntame de Garay se / GARAIXE», «opciones para el finde»), NO muestres importes en euros ni totales ni €/noche. Destaca 2 o 3 casas libres por atmósfera, estilo y rasgos del conocimiento/catálogo (intimidad para parejas, vistas, silencio, luz, madera…). Los precios del bloque son SOLO referencia interna.',
-        '— PRECIOS SOLO BAJO DEMANDA: incluye importes (€, total o por noche) únicamente si el usuario pregunta expresamente por precio («cuánto cuesta», «qué precio», «tarifas», «presupuesto», «cuánto sale», «por noche»).',
+        '— TARJETAS: si este bloque incluye [ACTION:CARD:…], cópialas TAL CUAL, una por casa que ofrezcas. No las sustituyas por viñetas de texto. Una frase y después las tarjetas.',
+        '— Comprueba siempre el número de huéspedes solicitados. Si el usuario solicita para N personas, NUNCA ofrezcas ni aceptes alojamientos cuya capacidad máxima sea inferior a N (ejemplo: Garaixe es solo para 2 personas; si piden para 4, indícalo claramente y ofrece únicamente casas de 4 o más plazas como Harria o Lurra).',
+        '— OCULTACIÓN DE PRECIOS EN DESCUBRIMIENTO: si la consulta es inspiracional o abierta («busco casita romántica», «qué tenéis disponible», «cuéntame de Garay se / GARAIXE», «opciones para el finde»), NO muestres importes en euros ni totales ni €/noche en el texto. El precio puede ir dentro de la tarjeta. Destaca 2 o 3 casas libres por atmósfera, estilo y rasgos del conocimiento/catálogo (intimidad para parejas, vistas, silencio, luz, madera…).',
+        '— PRECIOS SOLO BAJO DEMANDA: incluye importes (€, total o por noche) en el texto únicamente si el usuario pregunta expresamente por precio («cuánto cuesta», «qué precio», «tarifas», «presupuesto», «cuánto sale», «por noche»).',
         '— FASE DE RESERVA: si pide reservar («ayúdame a reservarla», «quiero reservar», «me quedo con esta», «reservarla»), da de inmediato y con cordialidad el enlace de reserva (URL del bloque) de la casa elegida. No repreguntes datos ya conocidos.',
         '— Discriminación: casa concreta («Garay se» → GARAIXE vía catálogo canónico) → responde solo sobre esa (libre/ocupada + eslogan; precio solo si lo piden). Consulta abierta → 2–3 opciones atmosféricas, no el tarifario completo.',
-        '— Alojamientos no listados en el bloque = OCUPADOS esas fechas; dilo y ofrece 1–2 alternativas del listado (sin precios salvo que los pidan).',
+        '— Alojamientos no listados en el bloque = OCUPADOS esas fechas; dilo y ofrece 1–2 alternativas del listado (sin precios en el texto salvo que los pidan).',
+        '— Las casas listadas como «descartadas por aforo» no se ofrecen ni se aceptan.',
     ];
     if ($guestsAssumed && $checkIn !== '' && $checkOut !== '') {
         $lines[] = '— Huéspedes asumidos: puedes indicar con naturalidad que miras para 2 personas del ' . $checkIn . ' al ' . $checkOut . ' (sin listar precios).';
@@ -2844,7 +2984,7 @@ function xabia_avirato_response_directive_block(bool $guestsAssumed, string $che
 /**
  * Auto-scrape síncrono + bloque de datos crudos para el LLM (sin tools / function calling).
  */
-function xabia_avirato_build_live_availability_block(string $projectId, string $userText, string $dateContext = ''): string
+function xabia_avirato_build_live_availability_block(string $projectId, string $userText, string $dateContext = '', string $ragContext = ''): string
 {
     $combined = trim($dateContext . ' ' . $userText);
     if (!xabia_avirato_should_attempt_injection($combined)) {
@@ -2913,6 +3053,32 @@ function xabia_avirato_build_live_availability_block(string $projectId, string $
         $bookingParts['adults'] = $guests;
     }
     $packed = xabia_avirato_pack_rooms_for_tool($rooms, $nights, $bookingBase, $bookingParts, 40);
+    foreach ($packed as $idx => $room) {
+        $profile = xabia_avirato_profile_from_rag($ragContext, (string) ($room['name'] ?? ''));
+        if (($room['image'] ?? '') === '' && $profile['image'] !== '') {
+            $packed[$idx]['image'] = $profile['image'];
+        }
+        if (($room['description'] ?? '') === '' && $profile['description'] !== '') {
+            $packed[$idx]['description'] = $profile['description'];
+        }
+        if (($room['bedrooms'] ?? '') === '' && $profile['bedrooms'] !== '') {
+            $packed[$idx]['bedrooms'] = $profile['bedrooms'];
+        }
+        if (($room['capacity'] ?? null) === null && $profile['capacity'] !== null) {
+            $packed[$idx]['capacity'] = $profile['capacity'];
+        }
+    }
+    $offered = [];
+    $tooSmall = [];
+    foreach ($packed as $room) {
+        $cap = isset($room['capacity']) && is_numeric($room['capacity']) ? (int) $room['capacity'] : 0;
+        if ($cap > 0 && $cap < $guests) {
+            $tooSmall[] = $room;
+            continue;
+        }
+        $offered[] = $room;
+    }
+    $cardBlock = xabia_avirato_stash_turn_cards($projectId, $offered);
 
     $lines = [
         '[DISPONIBILIDAD EN TIEMPO REAL - AVIRATO]',
@@ -2926,11 +3092,13 @@ function xabia_avirato_build_live_availability_block(string $projectId, string $
     if (empty($result['ok'])) {
         $lines[] = 'error: ' . trim((string) ($result['message'] ?? 'availability_error'));
     }
-    if ($packed === []) {
+    if ($offered === [] && $tooSmall === []) {
         $lines[] = 'Alojamientos disponibles: (ninguno — rooms[] vacío; considera ocupado / sin disponibilidad para estas fechas).';
+    } elseif ($offered === []) {
+        $lines[] = 'Alojamientos disponibles: (ninguno con capacidad para ' . $guests . ' personas).';
     } else {
         $lines[] = 'Alojamientos disponibles:';
-        foreach ($packed as $room) {
+        foreach ($offered as $room) {
             $name = (string) ($room['name'] ?? 'Casa');
             $total = $room['total_price'] ?? null;
             $per = $room['price_per_night'] ?? null;
@@ -2943,10 +3111,23 @@ function xabia_avirato_build_live_availability_block(string $projectId, string $
             if ($per !== null && is_numeric($per)) {
                 $priceBits[] = $per . '€/noche';
             }
-            $capBit = ($cap !== null && is_numeric($cap)) ? (' Capacidad: ' . (int) $cap . '.') : '';
+            $capBit = ($cap !== null && is_numeric($cap)) ? (' Capacidad máxima: ' . (int) $cap . ' personas.') : '';
             $urlBit = $url !== '' ? (' URL reserva: ' . $url) : '';
             $lines[] = '- ' . $name . ': ' . ($priceBits !== [] ? implode(' ', $priceBits) . '.' : 'precio no informado.') . $capBit . $urlBit;
         }
+    }
+    if ($tooSmall !== []) {
+        $names = [];
+        foreach ($tooSmall as $room) {
+            $label = (string) ($room['name'] ?? 'Casa');
+            $cap = isset($room['capacity']) && is_numeric($room['capacity']) ? (int) $room['capacity'] : 0;
+            $names[] = $cap > 0 ? ($label . ' (máximo ' . $cap . ')') : $label;
+        }
+        $lines[] = 'Descartadas por aforo (NO ofrecer ni aceptar para ' . $guests . ' personas): ' . implode(', ', $names) . '.';
+    }
+    if ($cardBlock !== '') {
+        $lines[] = 'Tarjetas visuales obligatorias (copiar tal cual, sin convertirlas en viñetas):';
+        $lines[] = $cardBlock;
     }
     $lines[] = '(Cualquier alojamiento no listado aquí se considera OCUPADO para estas fechas).';
     $lines[] = '(Los importes € son referencia interna: no los cites en descubrimiento; solo si el usuario pregunta precio o al cerrar la reserva.)';
@@ -2965,6 +3146,7 @@ function xabia_avirato_append_stay_memory(string $context, string $projectId): s
     $lines[] = $stay['check_in'] !== '' ? ('check_in: ' . $stay['check_in']) : 'check_in: (aún no indicado)';
     $lines[] = $stay['check_out'] !== '' ? ('check_out: ' . $stay['check_out']) : 'check_out: (aún no indicado)';
     $lines[] = $stay['guests'] > 0 ? ('guests: ' . $stay['guests']) : 'guests: (aún no indicado)';
+    $lines[] = 'Comprueba siempre el número de huéspedes solicitados. Si el usuario solicita para N personas, NUNCA ofrezcas ni aceptes alojamientos cuya capacidad máxima sea inferior a N (ejemplo: Garaixe es solo para 2 personas; si piden para 4, indícalo claramente y ofrece únicamente casas de 4 o más plazas como Harria o Lurra).';
     $block = implode("\n", $lines);
     $context = trim($context);
 
@@ -3257,7 +3439,7 @@ add_filter('xabia_agent_context_injection', static function ($context, $project_
     if ($dateContext === '') {
         $dateContext = $userText;
     }
-    $live = xabia_avirato_build_live_availability_block($projectId, $userText, $dateContext);
+    $live = xabia_avirato_build_live_availability_block($projectId, $userText, $dateContext, $context);
     $withMemory = xabia_avirato_append_stay_memory($context, $projectId);
     if ($live === '') {
         return $withMemory;
@@ -3282,3 +3464,16 @@ add_filter('xabia_digixop_proxy_payload', static function ($payload, $project_id
 
     return $payload;
 }, 20, 4);
+
+add_filter('xabia_chat_response_postprocess', static function ($response, $args) {
+    $response = is_string($response) ? $response : '';
+    $projectId = is_array($args) ? (string) ($args['project_id'] ?? '') : '';
+    $stash = (isset($GLOBALS['xabia_avirato_turn_cards']) && is_array($GLOBALS['xabia_avirato_turn_cards']))
+        ? (string) ($GLOBALS['xabia_avirato_turn_cards'][$projectId] ?? '')
+        : '';
+    if ($stash === '' || strpos($response, '[ACTION:CARD:') !== false) {
+        return $response;
+    }
+
+    return rtrim($response) . "\n\n" . $stash;
+}, 20, 2);

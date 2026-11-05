@@ -50,4 +50,13 @@ assert(strpos($from_index, '[Dato clave: 18.90]') !== false, 'Precio actual with
 assert(strpos($from_index, '[Enlace: https://saludavida.com/producto/citrobiotic/]') !== false, 'link with mapping instruction stays');
 assert(strpos($from_index, '[ID: 55]') !== false, 'mapped product id stays on the contract');
 
+$house = Xabia_Brain::format_generic_entity_contract(
+    "ENTIDAD: Garaixe | Capacidad máxima: 2 | Precio: 161 €/noche | Resumen: Refugio para dos"
+);
+assert(strpos($house, '[Entidad: Garaixe]') !== false, 'lodging name stays the entity title');
+assert(strpos($house, '[Capacidad máxima: 2 personas]') !== false, 'guest capacity is normalized on the contract');
+assert(strpos($house, '[Dato clave: 161 €/noche]') !== false, 'nightly price stays the highlight');
+assert(strpos($house, '[Entidad: Garaixe]') < strpos($house, '[Capacidad máxima: 2 personas]'), 'capacity follows the entity name');
+assert(strpos($priced, 'Capacidad') === false, 'a product without capacity does not gain an occupancy line');
+
 echo "OK test-xabia-truncate-urls\n";

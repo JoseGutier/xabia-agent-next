@@ -1277,7 +1277,7 @@ class Xabia_Brain {
             return '';
         }
         if (preg_match('/^\[Entidad:\s*[^\]]+\]/u', $chunk)
-            && !preg_match('/\b(?:EMPRESA|PRODUCTO|EVENTO|HOTEL|SERVICIO|CATEGOR[IÍ]A|PRECIO|STOCK)\s*:/iu', $chunk)) {
+            && !preg_match('/\b(?:EMPRESA|PRODUCTO|EVENTO|HOTEL|SERVICIO|CATEGOR[IÍ]A|PRECIO|STOCK|CAPACIDAD|PLAZAS|AFORO|DORMITORIOS?)\s*:/iu', $chunk)) {
             return $chunk;
         }
 
@@ -1338,7 +1338,13 @@ class Xabia_Brain {
             $id_num = (string) $idm[0];
         }
 
+        $capacity = self::normalize_guest_capacity(self::first_entity_pair($pairs, [
+            'capacidad maxima', 'capacidad', 'aforo maximo', 'aforo', 'ocupacion maxima', 'max occupancy', 'max persons',
+        ]));
         $parts = ['[Entidad: ' . $title . ']'];
+        if ($capacity !== '') {
+            $parts[] = '[Capacidad máxima: ' . $capacity . ']';
+        }
         if ($id_num !== '') {
             $parts[] = '[ID: ' . $id_num . ']';
         }
@@ -1405,10 +1411,19 @@ class Xabia_Brain {
         return $pairs;
     }
 
-    /**
-     * @param array<string, string> $pairs
-     * @param list<string>          $keys
-     */
+    private static function normalize_guest_capacity(string $raw): string {
+        $raw = trim($raw);
+        if ($raw === '' || !preg_match('/(\d{1,2})/u', $raw, $m)) {
+            return '';
+        }
+        $n = (int) $m[1];
+        if ($n < 1 || $n > 40) {
+            return '';
+        }
+
+        return $n === 1 ? '1 persona' : ($n . ' personas');
+    }
+
     private static function first_entity_pair(array $pairs, array $keys): string {
         foreach ($keys as $key) {
             $folded = self::fold_entity_label($key);

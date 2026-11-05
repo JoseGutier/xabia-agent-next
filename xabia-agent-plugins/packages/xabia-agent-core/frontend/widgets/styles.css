@@ -3310,12 +3310,29 @@ body.xabia-scroll-lock {
     position: relative;
     flex: 1 1 auto;
     min-width: 0;
+    overflow: hidden;
+}
+
+.hero-search-box .search-input-fake,
+.xabia-search-bar__ghost {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    overflow-x: hidden;
+    overflow-y: hidden;
+    text-overflow: clip;
+    white-space: nowrap;
+    pointer-events: none;
+    z-index: 0;
 }
 
 .xabia-search-bar input.xabia-search-bar__input,
 .xabia-search-bar input.xabia-search-bar__input:focus,
 .xabia-search-bar input.xabia-search-bar__input:hover {
     display: block;
+    position: relative;
+    z-index: 1;
     width: 100% !important;
     min-width: 0;
     height: auto;
@@ -3331,21 +3348,38 @@ body.xabia-scroll-lock {
     font: inherit;
     font-size: 1.05rem !important;
     line-height: 1.4;
+    text-overflow: clip;
+    overflow-x: hidden;
+    white-space: nowrap;
     -webkit-appearance: none;
     appearance: none;
 }
 
+.hero-search-box .search-input-fake,
 .xabia-search-bar__ghost {
-    position: absolute;
-    inset: 0;
-    display: flex;
-    align-items: center;
-    overflow: hidden;
     color: #5c6370;
     font-size: 1.05rem;
     line-height: 1.4;
-    white-space: nowrap;
-    pointer-events: none;
+}
+
+.xabia-search-bar:not(.is-typing):not(.xabia-search-bar--focused) input.xabia-search-bar__input {
+    color: transparent !important;
+    -webkit-text-fill-color: transparent !important;
+    caret-color: transparent;
+}
+
+.xabia-search-bar.is-typing input.xabia-search-bar__input,
+.xabia-search-bar.xabia-search-bar--focused input.xabia-search-bar__input {
+    color: #111111 !important;
+    -webkit-text-fill-color: #111111 !important;
+    caret-color: #111111;
+}
+
+.xabia-search-bar__field:focus-within .xabia-search-bar__ghost,
+.xabia-search-bar.is-typing .xabia-search-bar__ghost,
+.hero-search-box.is-typing .search-input-fake {
+    visibility: hidden;
+    opacity: 0;
 }
 
 .xabia-search-bar__cursor {
@@ -4367,15 +4401,29 @@ body.xabia-scroll-lock {
     caret-color: #1a1a1a;
 }
 
+.xabia-search-bar:not(.is-typing):not(.xabia-search-bar--focused) input.xabia-search-bar__input {
+    color: transparent !important;
+    -webkit-text-fill-color: transparent !important;
+    caret-color: transparent;
+}
+
 .xabia-chatbox .xabia-input::placeholder,
 .xabia-chatbox .xabia-input-field::placeholder,
 .xabia-chatbox.xabia-ui-modern .xabia-compose-area .xabia-input-field::placeholder,
 .xabia-chatbox.xabia-ui-modern .xabia-input-pill .xabia-input-field::placeholder,
 .xabia-chatbox .xabia-voice-overlay__input::placeholder,
 .xabia-search-bar input.xabia-search-bar__input::placeholder {
-    color: #8c8c8c !important;
-    -webkit-text-fill-color: #8c8c8c !important;
-    opacity: 1 !important;
+    color: transparent !important;
+    -webkit-text-fill-color: transparent !important;
+    opacity: 0 !important;
+}
+
+@media (max-width: 600px) {
+    .xabia-search-bar:not(.is-typing) button.xabia-search-bar__send,
+    .hero-search-box:not(.is-typing) .send-button,
+    .hero-search-box:not(.is-typing) button.xabia-search-bar__send {
+        display: none !important;
+    }
 }
 
 .xabia-chatbox.xabia-ui-modern[data-voice="1"]:not([data-voice-optional="1"]) .xabia-input-pill .xabia-mute,

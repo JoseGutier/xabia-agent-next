@@ -257,17 +257,20 @@ function xabia_search_bar_shortcode($atts): string {
 
     ob_start();
     ?>
-    <div class="xabia-search-bar" data-project="<?php echo esc_attr($project_id); ?>" data-placeholders="<?php echo esc_attr($placeholders_json); ?>"<?php echo $scheme_attrs; ?>>
-        <form class="xabia-search-bar__box" action="#" method="post">
+    <div class="xabia-search-bar hero-search-box" data-project="<?php echo esc_attr($project_id); ?>" data-placeholders="<?php echo esc_attr($placeholders_json); ?>"<?php echo $scheme_attrs; ?>>
+        <form class="xabia-search-bar__box hero-search-dock" action="#" method="post">
             <span class="material-symbols-outlined xabia-search-bar__spark" aria-hidden="true">auto_awesome</span>
             <span class="xabia-search-bar__field">
-                <input type="text" class="xabia-search-bar__input" autocomplete="off" aria-label="<?php echo esc_attr($send_label); ?>">
+                <span class="xabia-search-bar__ghost search-input-fake" aria-hidden="true">
+                    <span class="xabia-search-bar__ghost-text"></span><span class="xabia-search-bar__cursor typing-cursor"></span>
+                </span>
+                <input type="text" class="xabia-search-bar__input" autocomplete="off" aria-label="<?php echo esc_attr($send_label); ?>" placeholder="">
             </span>
             <span class="xabia-search-bar__actions">
                 <button type="button" class="xabia-search-bar__mic" title="<?php echo esc_attr($mic_label); ?>" aria-label="<?php echo esc_attr($mic_label); ?>">
                     <span class="material-symbols-outlined" aria-hidden="true">mic</span>
                 </button>
-                <button type="submit" class="xabia-search-bar__send" title="<?php echo esc_attr($send_label); ?>" aria-label="<?php echo esc_attr($send_label); ?>">
+                <button type="submit" class="xabia-search-bar__send send-button" title="<?php echo esc_attr($send_label); ?>" aria-label="<?php echo esc_attr($send_label); ?>">
                     <span class="material-symbols-outlined" aria-hidden="true">send</span>
                 </button>
             </span>

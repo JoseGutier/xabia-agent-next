@@ -1263,7 +1263,7 @@ if (!class_exists('Xabia_API')) {
                 }
                 $deduped[] = $msg;
             }
-            return array_slice($deduped, -12);
+            return array_slice($deduped, -24);
         }
 
         private static function is_protocol_continuation(string $user_msg, bool $is_continue_request): bool {
@@ -2141,7 +2141,7 @@ if (!class_exists('Xabia_API')) {
                     if (!session_id() && !headers_sent()) session_start();
                     $_SESSION['xabia_chat_history'][$project_id][] = ['role' => 'user', 'content' => $user_msg];
                     $_SESSION['xabia_chat_history'][$project_id][] = ['role' => 'assistant', 'content' => $fixed_response];
-                    $_SESSION['xabia_chat_history'][$project_id] = array_slice($_SESSION['xabia_chat_history'][$project_id], -6);
+                    $_SESSION['xabia_chat_history'][$project_id] = array_slice($_SESSION['xabia_chat_history'][$project_id], -24);
                     $_SESSION['xabia_last_response_meta'][$project_id] = [
                         'truncated' => false,
                         'finish_reason' => 'php_intercept',
@@ -2226,7 +2226,7 @@ if (!class_exists('Xabia_API')) {
                     if (!session_id() && !headers_sent()) session_start();
                     $_SESSION['xabia_chat_history'][$project_id][] = ['role' => 'user', 'content' => $user_msg];
                     $_SESSION['xabia_chat_history'][$project_id][] = ['role' => 'assistant', 'content' => $actionResponse];
-                    $_SESSION['xabia_chat_history'][$project_id] = array_slice($_SESSION['xabia_chat_history'][$project_id], -6);
+                    $_SESSION['xabia_chat_history'][$project_id] = array_slice($_SESSION['xabia_chat_history'][$project_id], -24);
                     $_SESSION['xabia_last_response_meta'][$project_id] = [
                         'truncated' => false,
                         'finish_reason' => 'php_action',
@@ -2519,7 +2519,8 @@ if (!class_exists('Xabia_API')) {
             $rag_total_found = null;
             $rag_vector_chunk_count = null;
             $knowledge_query = $user_msg_clean !== '' ? $user_msg_clean : $search_term;
-            $knowledge_free = self::is_knowledge_free_utterance($knowledge_query);
+            $history_count = self::conversation_turn_count(is_array($history) ? $history : []);
+            $knowledge_free = self::is_knowledge_free_utterance($knowledge_query, $history_count);
             if ($knowledge_free) {
                 self::$last_rag_debug['knowledge_free'] = 'yes';
                 self::$last_rag_debug['chunk_count'] = 0;
@@ -2948,7 +2949,7 @@ if (!class_exists('Xabia_API')) {
                 if (is_array($raw_hist)) {
                     $histForDates = array_slice(array_filter($raw_hist, static function ($m) {
                         return isset($m['role'], $m['content']) && in_array($m['role'], ['user', 'assistant'], true);
-                    }), -12);
+                    }), -24);
                 }
             }
             if ($histForDates === []) {
@@ -3082,7 +3083,8 @@ if (!class_exists('Xabia_API')) {
                 $rag_total_found,
                 $rag_vector_chunk_count,
                 $user_msg_clean,
-                is_array($rag_keyword_needles) ? $rag_keyword_needles : []
+                is_array($rag_keyword_needles) ? $rag_keyword_needles : [],
+                self::conversation_turn_count(is_array($history) ? $history : [])
             );
             if (self::history_has_assistant_turn(is_array($history) ? $history : [])) {
                 $system_prompt .= "\n\nCONVERSACIÓN YA ABIERTA: No saludes, no digas hola, no te presentes y no repitas tu nombre. Empieza por la respuesta.";
@@ -3124,7 +3126,7 @@ if (!class_exists('Xabia_API')) {
                 }
             }
             $messages = [['role' => 'system', 'content' => $system_prompt_final]];
-            foreach (self::asymmetric_history_slice_for_llm(is_array($history) ? $history : [], 6) as $msg) {
+            foreach (self::asymmetric_history_slice_for_llm(is_array($history) ? $history : [], 24) as $msg) {
                 $messages[] = $msg;
             }
             $messages[] = ['role' => 'user', 'content' => $user_msg];
@@ -3266,7 +3268,7 @@ if (!class_exists('Xabia_API')) {
                 }
                 $response = $merged_response;
             }
-            $_SESSION['xabia_chat_history'][$project_id] = array_slice($_SESSION['xabia_chat_history'][$project_id], -6);
+            $_SESSION['xabia_chat_history'][$project_id] = array_slice($_SESSION['xabia_chat_history'][$project_id], -24);
             $_SESSION['xabia_last_response_meta'][$project_id] = [
                 'truncated' => $truncated,
                 'finish_reason' => $finish_reason,
@@ -4069,8 +4071,9 @@ if (!class_exists('Xabia_API')) {
          * @param string $ente_scope     Scope de búsqueda (slug del ente); fallback para nombre en modo túnel.
          * @param string     $user_query           Mensaje del usuario (criterios dinámicos de consistencia).
          * @param list<string> $criteria_needles   Agujas léxicas del turno (ya expandidas si aplica).
+         * @param int          $history_count      Turnos previos. El atajo de saludo solo vale en el primero.
          */
-        private static function build_system_prompt($project_id, $config, $context, $current_date, $ente_display = '', $strict_ente = false, $response_mode = 'list', $lang_code = 'es', $tunnel_ente_active = false, $ente_scope = 'global', $has_catalog_rows = true, $rag_total_found = null, $rag_chunks_returned = null, string $user_query = '', array $criteria_needles = []) {
+        private static function build_system_prompt($project_id, $config, $context, $current_date, $ente_display = '', $strict_ente = false, $response_mode = 'list', $lang_code = 'es', $tunnel_ente_active = false, $ente_scope = 'global', $has_catalog_rows = true, $rag_total_found = null, $rag_chunks_returned = null, string $user_query = '', array $criteria_needles = [], int $history_count = 0) {
             $instructions = $config['rules']['instructions'] ?? 'Eres un asistente inteligente.';
             $assistant_name = trim((string) ($config['design']['avatar_name'] ?? ''));
             $identity_rule = $assistant_name !== ''
@@ -4078,7 +4081,7 @@ if (!class_exists('Xabia_API')) {
                 : '';
             $origin_lang = isset($config['_xabia_proxy_user_lang']) ? (string) $config['_xabia_proxy_user_lang'] : $lang_code;
             $language_rule = self::xabia_polyglot_language_rule($origin_lang);
-            if (self::is_knowledge_free_utterance($user_query)) {
+            if (self::is_knowledge_free_utterance($user_query, $history_count)) {
                 $greeting_rule = 'El mensaje es un saludo o una cortesía, sin consulta de catálogo. Responde en una frase, en el idioma del usuario. No cites productos, precios, stock ni entidades.';
                 $prompt = trim((string) $instructions) . "\n\n" . trim($identity_rule . "\n\n" . $language_rule . "\n\n" . $greeting_rule);
                 self::$last_prompt_parts = [
@@ -7270,10 +7273,38 @@ if (!class_exists('Xabia_API')) {
         }
 
         /**
+         * Turnos ya intercambiados (usuario o asistente). El saludo inicial de la UI no cuenta.
+         *
+         * @param list<array<string, mixed>> $history
+         */
+        private static function conversation_turn_count(array $history): int {
+            $count = 0;
+            foreach ($history as $msg) {
+                if (!is_array($msg)) {
+                    continue;
+                }
+                $role = (string) ($msg['role'] ?? '');
+                if ($role !== 'user' && $role !== 'assistant') {
+                    continue;
+                }
+                if (trim((string) ($msg['content'] ?? '')) === '') {
+                    continue;
+                }
+                $count++;
+            }
+
+            return $count;
+        }
+
+        /**
          * Saludo, agradecimiento o acuse sin ningún término de búsqueda.
          * «hola» no debe arrastrar chunks ni el catálogo de descubrimiento.
+         * Con historial, «Sí», «Ok», «Vale», «Fotos» o «Quiero» siguen la conversación.
          */
-        private static function is_knowledge_free_utterance(string $msg): bool {
+        private static function is_knowledge_free_utterance(string $msg, int $history_count = 0): bool {
+            if ($history_count > 0) {
+                return false;
+            }
             $t = mb_strtolower(trim(wp_strip_all_tags($msg)), 'UTF-8');
             $t = preg_replace('/[!?¿¡.,;:]+/u', ' ', $t) ?? $t;
             $t = trim((string) preg_replace('/\s+/u', ' ', $t));
@@ -7714,7 +7745,7 @@ if (!class_exists('Xabia_API')) {
             }
             $_SESSION['xabia_chat_history'][$project_id][] = ['role' => 'user', 'content' => $user_msg];
             $_SESSION['xabia_chat_history'][$project_id][] = ['role' => 'assistant', 'content' => $response];
-            $_SESSION['xabia_chat_history'][$project_id] = array_slice($_SESSION['xabia_chat_history'][$project_id], -6);
+            $_SESSION['xabia_chat_history'][$project_id] = array_slice($_SESSION['xabia_chat_history'][$project_id], -24);
             $_SESSION['xabia_last_response_meta'][$project_id] = [
                 'truncated'     => false,
                 'finish_reason' => 'native_catalog',

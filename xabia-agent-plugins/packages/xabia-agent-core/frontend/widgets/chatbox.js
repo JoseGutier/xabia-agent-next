@@ -3784,7 +3784,7 @@
             var historyArr = [];
             $history.find('.xabia-msg').each(function() {
                 var $msg = $(this);
-                if ($msg.hasClass('xabia-thinking-turn')) {
+                if ($msg.hasClass('xabia-thinking-turn') || $msg.hasClass('xabia-msg-greeting')) {
                     return;
                 }
                 var role = $msg.hasClass('user') ? 'user' : 'assistant';
@@ -3797,7 +3797,7 @@
                 }
                 if (content) historyArr.push({ role: role, content: content });
             });
-            if (historyArr.length) payload.history = JSON.stringify(historyArr.slice(-6));
+            if (historyArr.length) payload.history = JSON.stringify(historyArr);
             if (!isContinue) {
                 hideStarterSuggestions($box);
                 var usedPending = false;
@@ -3906,6 +3906,7 @@
             }
             window.xabiaSubmitText($bar.attr('data-project'), text);
             $bar.find('.xabia-search-bar__input').val('');
+            xabiaSyncSearchBarTyping($bar.find('.xabia-search-bar__input').get(0));
         });
 
         $(document).on('click', '.xabia-chip', function(e) {
@@ -3957,14 +3958,45 @@
             if (!input) {
                 return;
             }
+            var scrollContainer = $bar.find('.xabia-search-bar__ghost, .search-input-fake').get(0) || input;
+            var ghostTextEl = $bar.find('.xabia-search-bar__ghost-text').get(0)
+                || $bar.find('.search-input-fake').get(0);
             $bar.data('xabiaTypeOn', 1);
             var phraseIndex = 0;
             var charIndex = 0;
             var isDeleting = false;
             var paused = false;
+            var holdPhase = 0;
             var timer = 0;
             function userIsTyping() {
                 return document.activeElement === input || $.trim(String(input.value || '')) !== '';
+            }
+            function resetTypeScroll() {
+                holdPhase = 0;
+                if (scrollContainer) {
+                    scrollContainer.scrollLeft = 0;
+                }
+            }
+            function typewriterOverflows() {
+                if (!scrollContainer) {
+                    return false;
+                }
+                return scrollContainer.scrollWidth > scrollContainer.clientWidth + 1;
+            }
+            function scrollTypewriterEnd() {
+                if (!scrollContainer) {
+                    return;
+                }
+                scrollContainer.scrollLeft = scrollContainer.scrollWidth;
+            }
+            function setTypewriterText(text) {
+                if (ghostTextEl && ghostTextEl !== input) {
+                    ghostTextEl.textContent = text;
+                    input.placeholder = '';
+                } else {
+                    input.placeholder = text;
+                }
+                scrollTypewriterEnd();
             }
             function stopTypewriter() {
                 paused = true;
@@ -3985,22 +4017,44 @@
                 var speed = isDeleting ? 30 : 60;
                 if (isDeleting) {
                     charIndex = Math.max(0, charIndex - 1);
-                    input.placeholder = currentPhrase.substring(0, charIndex);
+                    setTypewriterText(currentPhrase.substring(0, charIndex));
                     if (charIndex === 0) {
                         isDeleting = false;
                         phraseIndex = (phraseIndex + 1) % phrases.length;
+                        resetTypeScroll();
                         speed = 400;
                     }
-                } else {
-                    charIndex = Math.min(currentPhrase.length, charIndex + 1);
-                    input.placeholder = currentPhrase.substring(0, charIndex);
-                    if (currentPhrase.length && charIndex === currentPhrase.length) {
+                } else if (charIndex < currentPhrase.length) {
+                    holdPhase = 0;
+                    charIndex += 1;
+                    setTypewriterText(currentPhrase.substring(0, charIndex));
+                } else if (holdPhase === 0) {
+                    if (typewriterOverflows()) {
+                        holdPhase = 1;
+                        speed = 1000;
+                    } else {
+                        holdPhase = 2;
                         speed = 2000;
-                        isDeleting = true;
                     }
+                } else if (holdPhase === 1) {
+                    if (scrollContainer && scrollContainer.scrollTo) {
+                        scrollContainer.scrollTo({ left: 0, behavior: 'smooth' });
+                    } else if (scrollContainer) {
+                        scrollContainer.scrollLeft = 0;
+                    }
+                    holdPhase = 2;
+                    speed = 2000;
+                } else {
+                    isDeleting = true;
+                    holdPhase = 0;
+                    if (scrollContainer) {
+                        scrollContainer.scrollLeft = 0;
+                    }
+                    speed = 30;
                 }
                 timer = window.setTimeout(typeLoop, speed);
             }
+            resetTypeScroll();
             $bar.on('focusin', 'input.xabia-search-bar__input', stopTypewriter);
             $bar.on('input', 'input.xabia-search-bar__input', function() {
                 if ($.trim(String(input.value || '')) !== '') {
@@ -4669,8 +4723,36 @@
             dock.classList.toggle('is-typing', String(field.value || '').length > 0);
         }
 
+        function xabiaSyncSearchBarTyping(field) {
+            if (!field || !field.closest) {
+                return;
+            }
+            var bar = field.closest('.xabia-search-bar, .hero-search-box');
+            if (!bar) {
+                return;
+            }
+            var hasText = String(field.value || '').trim().length > 0;
+            bar.classList.toggle('is-typing', hasText);
+            bar.classList.toggle('xabia-search-bar--focused', document.activeElement === field);
+        }
+
         $(document).on('input', '.xabia-input-field', function() {
             xabiaSyncDockAction(this);
+        });
+
+        $(document).on('input', '.xabia-search-bar__input', function() {
+            xabiaSyncSearchBarTyping(this);
+        });
+
+        $(document).on('focusin', '.xabia-search-bar__input', function() {
+            xabiaSyncSearchBarTyping(this);
+        });
+
+        $(document).on('focusout', '.xabia-search-bar__input', function() {
+            var field = this;
+            window.setTimeout(function() {
+                xabiaSyncSearchBarTyping(field);
+            }, 0);
         });
 
         function xabiaShowLaunchers() {
