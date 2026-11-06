@@ -4813,6 +4813,7 @@
                 btn.classList.remove('footer-hidden');
                 btn.classList.remove('is-behind-hero');
                 btn.classList.remove('is-collapsed');
+                btn.classList.remove('is-label-expanded');
             });
         }
 
@@ -4821,64 +4822,209 @@
                 return;
             }
             window.__xabiaSmartPill = true;
-            var mq = window.matchMedia ? window.matchMedia('(max-width: 600px)') : null;
-            var scrollTimer = 0;
-            var lastY = window.scrollY || 0;
+            var st = {
+                heroVisible: false,
+                hasHeroBar: false,
+                scrollCollapseTimer: 0,
+                idleCycleTimer: 0,
+                idlePeekTimer: 0,
+                lastScrollY: window.scrollY || window.pageYOffset || 0,
+                heroObserver: null,
+                bodyObserver: null
+            };
+            var heroSelector = '.xabia-search-box, .hero-search-dock, .hero-search-box, .xabia-search-bar';
+
             function launchers() {
                 return document.querySelectorAll('button.xabia-launcher:not(.xabia-launcher--inline)');
             }
-            function syncHero() {
-                var heroBar = document.querySelector('.xabia-search-box, .hero-search-dock, .xabia-search-bar');
-                if (!heroBar || !mq || !mq.matches) {
-                    xabiaShowLaunchers();
-                    return;
+
+            function clearSmartPillTimers() {
+                if (st.scrollCollapseTimer) {
+                    window.clearTimeout(st.scrollCollapseTimer);
+                    st.scrollCollapseTimer = 0;
                 }
-                var visible = false;
-                try {
-                    var rect = heroBar.getBoundingClientRect();
-                    visible = rect.width > 0 && rect.bottom > 0 && rect.top < window.innerHeight;
-                } catch (errRect) {
-                    visible = false;
+                if (st.idleCycleTimer) {
+                    window.clearTimeout(st.idleCycleTimer);
+                    st.idleCycleTimer = 0;
                 }
-                launchers().forEach(function(btn) {
-                    btn.classList.toggle('is-behind-hero', visible);
-                });
+                if (st.idlePeekTimer) {
+                    window.clearTimeout(st.idlePeekTimer);
+                    st.idlePeekTimer = 0;
+                }
             }
-            window.addEventListener('scroll', function() {
-                var y = window.scrollY || 0;
-                var scrollingDown = y > lastY + 2;
-                lastY = y;
-                if (!mq || !mq.matches || !scrollingDown || document.body.classList.contains('xabia-open')) {
+
+            function resetIdlePeekCycle() {
+                if (st.idleCycleTimer) {
+                    window.clearTimeout(st.idleCycleTimer);
+                    st.idleCycleTimer = 0;
+                }
+                if (st.idlePeekTimer) {
+                    window.clearTimeout(st.idlePeekTimer);
+                    st.idlePeekTimer = 0;
+                }
+                if (document.body && document.body.classList.contains('xabia-open')) {
                     return;
                 }
+                st.idleCycleTimer = window.setTimeout(function idleTick() {
+                    st.idleCycleTimer = 0;
+                    if (st.heroVisible || (document.body && document.body.classList.contains('xabia-open'))) {
+                        resetIdlePeekCycle();
+                        return;
+                    }
+                    expandAllLabels();
+                    st.idlePeekTimer = window.setTimeout(function() {
+                        st.idlePeekTimer = 0;
+                        collapseAllLabels();
+                        resetIdlePeekCycle();
+                    }, 4000);
+                }, 10000);
+            }
+
+            function launcherBlocked(btn) {
+                return btn.getAttribute('data-xabia-ghost') === '1' || btn.getAttribute('data-placement') === 'inline';
+            }
+
+            function collapseLauncherLabel(btn) {
+                if (launcherBlocked(btn)) return;
+                btn.classList.remove('is-label-expanded');
+                btn.classList.add('is-collapsed');
+            }
+
+            function expandLauncherLabel(btn) {
+                if (launcherBlocked(btn)) return;
+                if (st.heroVisible || (document.body && document.body.classList.contains('xabia-open'))) {
+                    return;
+                }
+                btn.classList.add('is-label-expanded');
+                btn.classList.remove('is-collapsed');
+            }
+
+            function collapseAllLabels() {
+                launchers().forEach(collapseLauncherLabel);
+            }
+
+            function expandAllLabels() {
+                launchers().forEach(expandLauncherLabel);
+            }
+
+            function scheduleScrollCollapse() {
+                if (st.scrollCollapseTimer) {
+                    window.clearTimeout(st.scrollCollapseTimer);
+                }
+                st.scrollCollapseTimer = window.setTimeout(function() {
+                    st.scrollCollapseTimer = 0;
+                    collapseAllLabels();
+                }, 3000);
+            }
+
+            function bumpActivity() {
+                resetIdlePeekCycle();
+            }
+
+            function setHeroIntersecting(intersecting) {
+                st.heroVisible = intersecting;
                 launchers().forEach(function(btn) {
-                    if (!btn.classList.contains('is-behind-hero')) {
+                    if (launcherBlocked(btn)) {
+                        return;
+                    }
+                    btn.classList.toggle('is-behind-hero', intersecting);
+                    if (intersecting) {
+                        btn.classList.remove('is-label-expanded');
                         btn.classList.add('is-collapsed');
                     }
                 });
-                window.clearTimeout(scrollTimer);
-                scrollTimer = window.setTimeout(function() {
-                    launchers().forEach(function(btn) {
-                        btn.classList.remove('is-collapsed');
-                    });
-                }, 700);
-            }, { passive: true });
-            var heroBar = document.querySelector('.xabia-search-box, .hero-search-dock, .xabia-search-bar');
-            if (heroBar && window.IntersectionObserver) {
-                try {
-                    var observer = new IntersectionObserver(function() {
-                        syncHero();
-                    }, { threshold: 0.1 });
-                    observer.observe(heroBar);
-                } catch (errHero) {
-                    xabiaShowLaunchers();
+                if (intersecting) {
+                    clearSmartPillTimers();
+                } else {
+                    bumpActivity();
                 }
-            } else {
-                xabiaShowLaunchers();
             }
-            if (mq && mq.addEventListener) {
-                mq.addEventListener('change', syncHero);
+
+            function bindHeroObserver() {
+                var heroBar = document.querySelector(heroSelector);
+                st.hasHeroBar = !!heroBar;
+                if (!heroBar || !window.IntersectionObserver) {
+                    st.heroVisible = false;
+                    launchers().forEach(function(btn) {
+                        if (!launcherBlocked(btn)) {
+                            btn.classList.remove('is-behind-hero');
+                        }
+                    });
+                    return;
+                }
+                if (st.heroObserver) {
+                    st.heroObserver.disconnect();
+                }
+                try {
+                    st.heroObserver = new IntersectionObserver(function(entries) {
+                        var vis = false;
+                        for (var i = 0; i < entries.length; i++) {
+                            if (entries[i] && entries[i].isIntersecting) {
+                                vis = true;
+                                break;
+                            }
+                        }
+                        setHeroIntersecting(vis);
+                    }, { threshold: 0, rootMargin: '-20px 0px 0px 0px' });
+                    st.heroObserver.observe(heroBar);
+                    var rect = heroBar.getBoundingClientRect();
+                    var initialVis = rect.width > 0 && rect.bottom > 0 && rect.top < (window.innerHeight || 0);
+                    setHeroIntersecting(initialVis);
+                } catch (errObs) {
+                    st.hasHeroBar = false;
+                }
             }
+
+            function onChatOpenState() {
+                var open = document.body && document.body.classList.contains('xabia-open');
+                if (open) {
+                    clearSmartPillTimers();
+                    collapseAllLabels();
+                } else {
+                    resetIdlePeekCycle();
+                }
+            }
+
+            if (document.body && typeof MutationObserver === 'function') {
+                st.bodyObserver = new MutationObserver(onChatOpenState);
+                st.bodyObserver.observe(document.body, { attributes: true, attributeFilter: ['class'] });
+            }
+
+            bindHeroObserver();
+            if (typeof MutationObserver === 'function') {
+                var domObserver = new MutationObserver(function() {
+                    var el = document.querySelector(heroSelector);
+                    var has = !!el;
+                    if (has !== st.hasHeroBar) {
+                        bindHeroObserver();
+                    }
+                });
+                domObserver.observe(document.documentElement, { childList: true, subtree: true });
+            }
+
+            window.addEventListener('scroll', function() {
+                var y = window.scrollY || window.pageYOffset || 0;
+                var down = y > st.lastScrollY + 4;
+                st.lastScrollY = y;
+                bumpActivity();
+                if (document.body && document.body.classList.contains('xabia-open')) {
+                    return;
+                }
+                if (st.heroVisible) {
+                    return;
+                }
+                if (down) {
+                    expandAllLabels();
+                    scheduleScrollCollapse();
+                }
+            }, { passive: true });
+
+            ['wheel', 'touchstart', 'pointerdown', 'mousemove', 'keydown'].forEach(function(ev) {
+                document.addEventListener(ev, bumpActivity, { passive: true, capture: true });
+            });
+
+            resetIdlePeekCycle();
+            onChatOpenState();
         }
 
         xabiaBindLauncherScroll();
