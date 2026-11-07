@@ -14,22 +14,29 @@ if (!function_exists('wp_strip_all_tags')) {
 }
 if (!function_exists('apply_filters')) {
     function apply_filters($tag, $value) {
+        if ($tag === 'xabia_catalog_activity_alias_map') {
+            return $GLOBALS['xabia_test_alias_map'] ?? $value;
+        }
         return $value;
     }
+}
+if (!class_exists('Xabia_Catalog_Token_Match', false)) {
+    require_once dirname(__DIR__) . '/core/class-xabia-catalog-token-match.php';
 }
 
 require_once dirname(__DIR__) . '/core/class-xabia-catalog-list.php';
 
-// Sin mapa de aliases: toma la palabra significativa más larga de la pregunta.
+// Sin alias de catálogo: no se destila actividad heurística (flujo RAG).
+assert(
+    Xabia_Catalog_List::distill_canonical_activity('que empresas hacen experiencias de vela?', '') === '',
+    'no heuristic distill without alias map'
+);
+$GLOBALS['xabia_test_alias_map'] = ['vela' => 'vela'];
 assert(
     Xabia_Catalog_List::distill_canonical_activity('que empresas hacen experiencias de vela?', '') === 'vela',
-    'agnostic distill picks content token vela'
+    'whole-word alias map distill'
 );
-assert(
-    Xabia_Catalog_List::distill_canonical_activity('which companies offer spa treatments?', '') === 'treatments'
-        || Xabia_Catalog_List::distill_canonical_activity('which companies offer spa treatments?', '') === 'spa',
-    'agnostic distill works outside tourism vertical'
-);
+unset($GLOBALS['xabia_test_alias_map']);
 assert(
     Xabia_Catalog_List::distill_canonical_activity('hola', '') === '',
     'greeting alone yields empty'

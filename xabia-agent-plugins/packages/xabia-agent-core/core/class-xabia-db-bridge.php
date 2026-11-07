@@ -403,12 +403,17 @@ class Xabia_DB_Bridge {
         }
 
         if (class_exists('Xabia_Knowledge_Relations', false)) {
-            $enriched = Xabia_Knowledge_Relations::enrich_text_blob($text_blob, $row, (string) $project_id, []);
+            $proj_cfg = [];
+            $projects_opt = get_option('xabia_projects_config', []);
+            if (is_array($projects_opt[$project_id] ?? null)) {
+                $proj_cfg = $projects_opt[$project_id];
+            }
+            $enriched = Xabia_Knowledge_Relations::enrich_text_blob($text_blob, $row, (string) $project_id, $proj_cfg);
             if (is_string($enriched) && $enriched !== '') {
                 $text_blob = $enriched;
                 $prepared['text_blob'] = $text_blob;
             }
-            unset($enriched);
+            unset($enriched, $proj_cfg, $projects_opt);
         }
 
         if (!class_exists('Xabia_DB', false)) {

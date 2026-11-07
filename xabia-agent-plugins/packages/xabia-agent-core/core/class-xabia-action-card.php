@@ -4,16 +4,22 @@
  *
  * Payload = base64url(JSON) con claves cortas. Los alias largos se aceptan
  * en normalize()/encode() y se guardan en forma corta:
+ * Contrato v2 (claves cortas):
+ * - e / id / entity_id / post_id: identificador de entidad
  * - t / title: título
- * - m / meta: badge, categoría o ubicación (· separados)
- * - d / description: extracto. Si falta, un payload antiguo puede traer el texto en m
- * - p / highlight / price: precio, precio/noche o fecha
  * - i / image / img: URL imagen
- * - a / action: CART:123 | CART_PACK:1,2 | URL:https://… | CALL:+34… | BOOK:… | MAP:…
- * - at / action_type: cart | link (derivado de a si no viene)
+ * - b / badge: categoría o estado (nunca precio)
+ * - p / price: precio monetario formateado (vacío si no aplica)
+ * - d / description: extracto (máx. 180)
+ * - u / permalink / url: URL interna WordPress
+ * - x / external_url: web externa opcional (contacto oficial)
+ * - m / meta: línea de tags secundarios (· separados)
+ * - a / action: CART:… | BOOK:… | CALL:… | MAP:…
+ * - at / action_type: view | cart | book | event | link (legacy)
  * - l / action_text / label: etiqueta del botón
- * - u / url / permalink: ficha o destino
  * - cu / cart_url, ck / checkout_url, rd / redirect_behavior, mx / max_qty
+ *
+ * Retrocompat v1: highlight en p que no sea divisa → b en decode().
  *
  * @package Xabia
  */
@@ -28,46 +34,90 @@ class Xabia_Action_Card {
      * Traduce alias largos a claves cortas y deriva action_type.
      *
      * @param array<string, mixed> $fields
-     * @return array{t:string,m:string,d:string,p:string,i:string,a:string,at:string,l:string,u:string,cu:string,ck:string,rd:string,mx:string}
+     * @return array{e:string,t:string,b:string,m:string,d:string,p:string,i:string,a:string,at:string,l:string,u:string,x:string,cu:string,ck:string,rd:string,mx:string}
      */
     public static function normalize(array $fields): array {
         $t = self::clean_field(self::first_value($fields, ['t', 'title']));
         $m = self::clean_field(self::first_value($fields, ['m', 'meta']));
-        $d = self::clean_field(self::first_value($fields, ['d', 'description']));
-        $p = self::clean_field(self::first_value($fields, ['p', 'highlight', 'price']));
+        $d = self::clean_description(self::first_value($fields, ['d', 'description']));
+        $b = self::clean_field(self::first_value($fields, ['b', 'badge']));
+        $p = self::clean_field(self::first_value($fields, ['p', 'price']));
+        $highlight = self::clean_field(self::first_value($fields, ['highlight']));
+        if ($p === '' && $highlight !== '') {
+            if (self::highlight_is_price($highlight)) {
+                $p = $highlight;
+            } elseif ($b === '') {
+                $b = $highlight;
+            }
+        }
         $i = self::clean_url(self::first_value($fields, ['i', 'image', 'img', 'imagen', 'imagen_url', 'Imagen_URL']));
         $l = self::clean_field(self::first_value($fields, ['l', 'action_text', 'label']));
         $u = self::clean_url(self::first_value($fields, ['u', 'url', 'permalink']));
+        $x = self::clean_url(self::first_value($fields, ['x', 'external_url']));
         $cu = self::clean_url(self::first_value($fields, ['cu', 'cart_url']));
         $ck = self::clean_url(self::first_value($fields, ['ck', 'checkout_url']));
         $rd = self::clean_flag(self::first_value($fields, ['rd', 'redirect_behavior']));
         $mx = self::clean_qty(self::first_value($fields, ['mx', 'max_qty']));
         $a = self::clean_action(self::first_value($fields, ['a', 'action']));
+        $e = trim(self::first_value($fields, ['e', 'id', 'entity_id', 'post_id']));
+        if ($e === '' && isset($fields['product_id'])) {
+            $e = trim((string) (int) $fields['product_id']);
+        }
+        if ($e === '' && preg_match('/^CART:(\d+)/i', $a, $cm)) {
+            $e = (string) (int) ($cm[1] ?? 0);
+        }
+        if ($e !== '' && (int) $e < 1) {
+            $e = '';
+        }
         $explicit = strtolower(trim(self::first_value($fields, ['at', 'action_type'])));
-        if ($explicit !== 'cart' && $explicit !== 'link') {
+        if ($explicit === 'link') {
+            $explicit = 'view';
+        }
+        $allowed_at = ['cart', 'book', 'event', 'view', 'link'];
+        if ($explicit !== '' && !in_array($explicit, $allowed_at, true)) {
             $explicit = '';
         }
         if ($a === '' && $explicit === 'cart') {
-            $id = (int) preg_replace('/\D+/', '', (string) ($fields['id'] ?? $fields['product_id'] ?? ''));
+            $id = (int) preg_replace('/\D+/', '', (string) ($fields['id'] ?? $fields['product_id'] ?? $e));
             if ($id > 0) {
                 $a = self::clean_action('CART:' . $id);
+                if ($e === '') {
+                    $e = (string) $id;
+                }
             }
         }
-        if ($a === '' && $explicit === 'link' && $u !== '') {
-            $a = self::clean_action('URL:' . $u);
+        if (preg_match('/^URL:(.+)$/i', $a, $um)) {
+            $url_action = self::clean_url($um[1]);
+            if ($url_action !== '') {
+                if ($x === '' && ($u === '' || !self::urls_same_host_path($u, $url_action))) {
+                    $x = $url_action;
+                } elseif ($x === '' && $u === '') {
+                    $x = $url_action;
+                }
+            }
+            if ($explicit !== 'cart' && $explicit !== 'book') {
+                $a = '';
+            }
         }
-        $at = self::derive_action_type($a, $explicit);
+        $at = self::derive_action_type($a, $explicit, $u);
         if ($at === 'cart' && !preg_match('/^CART:\d+/i', $a)) {
             $a = '';
             $at = '';
         }
-        if ($at === 'link' && !preg_match('/^BOOK:/i', $a) && self::link_href($a, $u) === '') {
-            $a = '';
+        if ($at === 'view' && $u === '' && $x === '') {
             $at = '';
+        }
+        if ($at === 'link' && !preg_match('/^(BOOK|CALL|MAP):/i', $a)) {
+            $at = '';
+            if ($a !== '' && preg_match('/^URL:/i', $a)) {
+                $a = '';
+            }
         }
 
         return [
+            'e'  => $e,
             't'  => $t,
+            'b'  => $b,
             'm'  => $m,
             'd'  => $d,
             'p'  => $p,
@@ -76,6 +126,7 @@ class Xabia_Action_Card {
             'at' => $at,
             'l'  => $l,
             'u'  => $u,
+            'x'  => $x,
             'cu' => $cu,
             'ck' => $ck,
             'rd' => $rd,
@@ -109,6 +160,21 @@ class Xabia_Action_Card {
         }
 
         return '[ACTION:CARD:' . self::b64url_encode($json) . ']';
+    }
+
+    /**
+     * Elimina marcadores [ACTION(-)CARD:…] inventados por el LLM (post-respuesta, pre-enrich).
+     */
+    public static function strip_llm_hallucinated_action_markers(string $content): string {
+        if ($content === '') {
+            return $content;
+        }
+        $content = preg_replace('/\[ACTION[-:\s]*CARD:[^\]]+\]/i', '', $content) ?? $content;
+        $content = preg_replace('/(?:^|\n)\s*[*•\-]\s*\[ACTION[-:\s]*CARD:[^\]]+\]\s*/iu', "\n", $content) ?? $content;
+        $content = preg_replace('/(?:^|\n)\s*•\s*[^*\n\[]+\]\s*(?=\n|$)/u', "\n", $content) ?? $content;
+        $content = preg_replace("/\n{3,}/", "\n\n", $content) ?? $content;
+
+        return trim($content);
     }
 
     /**
@@ -146,6 +212,14 @@ class Xabia_Action_Card {
                 }
                 if (($decoded['u'] ?? '') === '' && ($hit['url'] ?? '') !== '') {
                     $decoded['u'] = $hit['url'];
+                    $changed = true;
+                }
+                $hit_ext = trim((string) ($hit['url_ext'] ?? ''));
+                $decoded_u = trim((string) ($decoded['u'] ?? ''));
+                if ($hit_ext !== '' && ($decoded['x'] ?? '') === ''
+                    && ($decoded_u === '' || strcasecmp(rtrim($hit_ext, '/'), rtrim($decoded_u, '/')) !== 0)
+                ) {
+                    $decoded['x'] = $hit_ext;
                     $changed = true;
                 }
                 if (!$changed) {
@@ -189,7 +263,11 @@ class Xabia_Action_Card {
             if (preg_match('/\[Enlace:\s*(https?:\/\/[^\s\]]+)\s*\]/iu', (string) $part, $um)) {
                 $url = trim((string) ($um[1] ?? ''));
             }
-            if ($price === '' && $img === '' && $url === '') {
+            $url_ext = '';
+            if (preg_match('/\[Enlace web:\s*(https?:\/\/[^\s\]]+)\s*\]/iu', (string) $part, $wm)) {
+                $url_ext = trim((string) ($wm[1] ?? ''));
+            }
+            if ($price === '' && $img === '' && $url === '' && $url_ext === '') {
                 continue;
             }
             $out[] = [
@@ -198,6 +276,7 @@ class Xabia_Action_Card {
                 'price'   => $price,
                 'img'     => $img,
                 'url'     => $url,
+                'url_ext' => $url_ext,
             ];
         }
 
@@ -237,6 +316,10 @@ class Xabia_Action_Card {
         }
 
         return $best;
+    }
+
+    public static function highlight_is_price_public(string $value): bool {
+        return self::highlight_is_price($value);
     }
 
     private static function highlight_is_price(string $value): bool {
@@ -291,6 +374,7 @@ class Xabia_Action_Card {
             return null;
         }
         $out = self::normalize($data);
+        $out = self::apply_v1_payload_compat($out);
         if ($out['t'] === '') {
             return null;
         }
@@ -298,18 +382,61 @@ class Xabia_Action_Card {
         return $out;
     }
 
-    private static function derive_action_type(string $action, string $explicit): string {
+    /**
+     * Payload v1: p a veces llevaba badge/categoría en lugar de precio.
+     *
+     * @param array{e:string,t:string,b:string,m:string,d:string,p:string,i:string,a:string,at:string,l:string,u:string,x:string,cu:string,ck:string,rd:string,mx:string} $out
+     * @return array{e:string,t:string,b:string,m:string,d:string,p:string,i:string,a:string,at:string,l:string,u:string,x:string,cu:string,ck:string,rd:string,mx:string}
+     */
+    private static function apply_v1_payload_compat(array $out): array {
+        if (($out['b'] ?? '') === '' && ($out['p'] ?? '') !== '' && !self::highlight_is_price((string) $out['p'])) {
+            $out['b'] = (string) $out['p'];
+            $out['p'] = '';
+        }
+
+        return $out;
+    }
+
+    private static function derive_action_type(string $action, string $explicit, string $permalink = ''): string {
+        if ($explicit === 'view' || $explicit === 'cart' || $explicit === 'book' || $explicit === 'event') {
+            return $explicit;
+        }
         if (preg_match('/^CART:\d+/i', $action)) {
             return 'cart';
         }
-        if (preg_match('/^(URL|BOOK):/i', $action)) {
+        if (preg_match('/^BOOK:/i', $action)) {
+            return 'book';
+        }
+        if (preg_match('/^EVENT:/i', $action)) {
+            return 'event';
+        }
+        if (preg_match('/^(CALL|MAP):/i', $action)) {
             return 'link';
         }
-        if ($explicit === 'cart' || $explicit === 'link') {
-            return $explicit;
+        if ($permalink !== '' && !preg_match('/^CART:/i', $action)) {
+            return 'view';
         }
 
         return '';
+    }
+
+    private static function urls_same_host_path(string $a, string $b): bool {
+        $a = trim($a);
+        $b = trim($b);
+        if ($a === '' || $b === '') {
+            return false;
+        }
+
+        return strcasecmp(rtrim($a, '/'), rtrim($b, '/')) === 0;
+    }
+
+    private static function clean_description(string $v): string {
+        $s = self::clean_field($v);
+        if ($s === '') {
+            return '';
+        }
+
+        return function_exists('mb_substr') ? mb_substr($s, 0, 180, 'UTF-8') : substr($s, 0, 180);
     }
 
     private static function link_href(string $action, string $permalink): string {

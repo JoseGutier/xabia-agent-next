@@ -73,8 +73,9 @@ assert($aliases['m'] === 'Vistas al mar', 'alias meta');
 assert($aliases['d'] === 'Cama king y terraza.', 'alias description');
 assert($aliases['l'] === 'Reservar', 'alias action_text');
 assert($aliases['u'] === 'https://example.com/book', 'alias url');
-assert($aliases['a'] === 'URL:https://example.com/book', 'link action built from url');
-assert($aliases['at'] === 'link', 'explicit link');
+assert($aliases['a'] === '', 'view does not embed URL action');
+assert($aliases['at'] === 'view', 'explicit link maps to view');
+assert($aliases['u'] === 'https://example.com/book', 'permalink on u');
 
 $aliasTag = Xabia_Action_Card::encode([
     'title' => 'Habitación marina',
@@ -89,7 +90,7 @@ $aliasRaw = substr($aliasTag, strlen('[ACTION:CARD:'), -1);
 $aliasDecoded = Xabia_Action_Card::decode($aliasRaw);
 assert(is_array($aliasDecoded), 'alias decode');
 assert($aliasDecoded['d'] === 'Cama king y terraza.', 'roundtrip description');
-assert($aliasDecoded['at'] === 'link', 'roundtrip action_type');
+assert($aliasDecoded['at'] === 'view', 'roundtrip action_type');
 assert($aliasDecoded['p'] === '89 €/noche', 'roundtrip highlight');
 
 $byId = Xabia_Action_Card::normalize([
@@ -113,14 +114,14 @@ $book = Xabia_Action_Card::normalize([
     'highlight' => '45 min',
 ]);
 assert($book['a'] === 'BOOK:amelia:15', 'book action preserved');
-assert($book['at'] === 'link', 'book is a link-shaped action');
+assert($book['at'] === 'book', 'book action type');
 
 $info = Xabia_Action_Card::normalize([
     't' => 'Solo ficha',
     'u' => 'https://example.com/product/solo/',
     'l' => 'Comprar',
 ]);
-assert($info['a'] === '' && $info['at'] === '', 'permalink alone does not invent a button');
+assert($info['a'] === '' && $info['at'] === 'view', 'permalink alone yields view card');
 
 $GLOBALS['xabia_test_card_filter'] = static function ($payload, $context) {
     assert(($context['source'] ?? '') === 'woo', 'filter receives context');
@@ -134,7 +135,7 @@ assert(is_array($filtered) && $filtered['d'] === 'Extracto suave', 'filter can a
 assert($filtered['at'] === 'cart', 'filter keeps cart type');
 
 $thin = Xabia_Action_Card::encode(['t' => 'Caléndula', 'a' => 'CART:7', 'd' => 'Extracto']);
-$context = "[Entidad: Caléndula] [Clasificación: Extractos] [Dato clave: 10,60 €] [Estado: agotado] [Resumen: Extracto de flor] [Enlace: https://saludavida.com/producto/calendula/]\n"
+$context = "[Entidad: Caléndula] [Clasificación: Extractos] [Dato clave: 10,60 €] [Estado: agotado] [Resumen: Extracto de flor] [Enlace: https://saludavida.com/producto/calendula/] [Enlace web: https://saludavida.com/contacto/]\n"
     . "[Imagen disponible: https://saludavida.com/cal.jpg]\n\n"
     . "[Entidad: Concierto de mayo] [Dato clave: 12 de mayo] [Enlace: https://example.com/mayo]\n"
     . "[Imagen disponible: https://example.com/mayo.jpg]";
@@ -145,6 +146,7 @@ assert(is_array($filled), 'enriched card decodes');
 assert($filled['p'] === '10,60 €', 'price from dato clave');
 assert($filled['i'] === 'https://saludavida.com/cal.jpg', 'image from imagen disponible');
 assert($filled['u'] === 'https://saludavida.com/producto/calendula/', 'permalink from enlace');
+assert($filled['x'] === 'https://saludavida.com/contacto/', 'external from enlace web');
 assert($filled['a'] === 'CART:7', 'cart action kept');
 
 $dated = Xabia_Action_Card::encode(['t' => 'Concierto de mayo', 'a' => 'URL:https://example.com/mayo']);
@@ -155,5 +157,35 @@ if (preg_match('/\[ACTION:CARD:([^\]]+)\]/', $datedOut, $dm)) {
 }
 assert(is_array($datedCard) && $datedCard['p'] === '', 'a date is not a price');
 assert($datedCard['i'] === 'https://example.com/mayo.jpg', 'event image still attaches');
+
+$v1Json = json_encode(['t' => 'Club', 'p' => 'Hípica'], JSON_UNESCAPED_UNICODE);
+$v1Raw = rtrim(strtr(base64_encode((string) $v1Json), '+/', '-_'), '=');
+$v1Badge = Xabia_Action_Card::decode($v1Raw);
+assert(is_array($v1Badge), 'v1 badge payload decodes');
+assert(($v1Badge['b'] ?? '') === 'Hípica', 'v1 non-price p maps to badge');
+assert(($v1Badge['p'] ?? '') === '', 'v1 badge clears p');
+
+$v2Dir = Xabia_Action_Card::normalize([
+    'id' => 42,
+    'title' => 'Empresa demo',
+    'badge' => 'Turismo activo',
+    'permalink' => 'https://aktiba.eus/empresa/demo/',
+    'external_url' => 'https://example.org/contacto',
+    'action_type' => 'view',
+    'image' => 'https://aktiba.eus/img.jpg',
+]);
+assert($v2Dir['e'] === '42', 'v2 entity id');
+assert($v2Dir['b'] === 'Turismo activo', 'v2 badge');
+assert($v2Dir['u'] === 'https://aktiba.eus/empresa/demo/', 'v2 internal permalink');
+assert($v2Dir['x'] === 'https://example.org/contacto', 'v2 external url');
+assert($v2Dir['at'] === 'view', 'v2 view type');
+assert($v2Dir['p'] === '', 'v2 directory no price');
+
+$dirty = "¡Claro que sí!\n\n* **Hontzaextrem:** rutas.\n* [ACTION-CARD: Hontzaextrem]\n\n• Abentura]";
+$clean = Xabia_Action_Card::strip_llm_hallucinated_action_markers($dirty);
+assert(!str_contains($clean, 'ACTION-CARD'), 'strip hyphen ACTION-CARD placeholder');
+assert(!str_contains($clean, '[ACTION:CARD: Hontza'), 'strip colon ACTION:CARD name placeholder');
+assert(!str_contains($clean, 'Abentura]'), 'strip orphan bullet bracket residue');
+assert(str_contains($clean, 'Hontzaextrem'), 'prose entity name preserved');
 
 echo "OK xabia action card\n";

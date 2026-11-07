@@ -640,25 +640,73 @@
         }
     }
 
+    function xabiaRawLooksLikeCurrencyPriceJs(raw) {
+        var s = String(raw || '').trim();
+        if (!s) return false;
+        if (/((?:€|\$)\s*\d{1,5}|\d{1,5}(?:[.,]\d{1,2})?\s*(?:€|eur)\b)/i.test(s)) return true;
+        return /^(\d{1,5})(?:[.,](\d{1,2}))?\s*(?:€|eur)?$/i.test(s);
+    }
+
     function normalizeActionCardPayloadObject(data) {
             var imageUrl = String(data.image || data.img || data.i || data.imagen || data.imagen_url || data.Imagen_URL || '').trim();
+            var price = String(data.p || data.price || '').trim();
+            var badge = String(data.b || data.badge || '').trim();
+            var highlight = String(data.highlight || '').trim();
+            if (!price && highlight) {
+                if (xabiaRawLooksLikeCurrencyPriceJs(highlight)) {
+                    price = highlight;
+                } else if (!badge) {
+                    badge = highlight;
+                }
+            }
+            if (!badge && price && !xabiaRawLooksLikeCurrencyPriceJs(price)) {
+                badge = price;
+                price = '';
+            }
+            var at = String(data.at || data.action_type || '').trim().toLowerCase();
+            if (at === 'link') {
+                at = 'view';
+            }
+            var a = String(data.a || data.action || '').trim();
+            var u = String(data.u || data.url || data.permalink || '').trim();
+            var x = String(data.x || data.external_url || '').trim();
+            if (/^URL:(.+)$/i.test(a)) {
+                var ext = a.replace(/^URL:\s*/i, '').trim();
+                if (!x) {
+                    x = ext;
+                }
+                if (at !== 'cart' && at !== 'book') {
+                    a = '';
+                }
+            }
             return {
+                e: String(data.e || data.id || data.entity_id || data.post_id || data.product_id || '').trim(),
                 t: String(data.t || data.title || '').trim(),
+                b: badge,
                 m: String(data.m || data.meta || '').trim(),
                 d: String(data.d || data.description || '').trim(),
-                p: String(data.p || data.highlight || data.price || '').trim(),
+                p: price,
                 i: imageUrl,
                 image: imageUrl,
                 img: imageUrl,
-                a: String(data.a || data.action || '').trim(),
-                at: String(data.at || data.action_type || '').trim(),
+                a: a,
+                at: at,
                 l: String(data.l || data.action_text || data.label || '').trim(),
-                u: String(data.u || data.url || data.permalink || '').trim(),
+                u: u,
+                x: x,
                 cu: String(data.cu || data.cart_url || '').trim(),
                 ck: String(data.ck || data.checkout_url || '').trim(),
                 rd: String(data.rd || data.redirect_behavior || '').trim(),
                 mx: String(data.mx || data.max_qty || '').trim()
             };
+    }
+
+    function xabiaCardDedupeKey(card) {
+        if (!card) return '';
+        var id = String(card.e || card.id || '').trim();
+        if (id) return 'id:' + id;
+        var title = String(card.t || '').toLowerCase().replace(/\s+/g, ' ').trim();
+        return title ? 't:' + title : '';
     }
 
     function xabiaReplaceActionCartTags(text, escAttr, imagesBase, decodeHtmlEntities) {
@@ -792,9 +840,12 @@
     function xabiaCardActionType(card) {
         var action = String((card && card.a) || '').trim();
         if (/^CART:\d+/i.test(action)) return 'cart';
-        if (/^(URL|BOOK|CALL|MAP):/i.test(action)) return 'link';
+        if (/^BOOK:/i.test(action)) return 'book';
         var explicit = String((card && (card.at || card.action_type)) || '').trim().toLowerCase();
-        if (explicit === 'cart' || explicit === 'link') return explicit;
+        if (explicit === 'link') explicit = 'view';
+        if (explicit === 'cart' || explicit === 'book' || explicit === 'event' || explicit === 'view') return explicit;
+        if (/^(CALL|MAP):/i.test(action)) return 'link';
+        if (String(card.u || '').trim()) return 'view';
         return '';
     }
 
@@ -820,6 +871,33 @@
         }).join('') + '</div>';
     }
 
+    function xabiaRawLooksLikeCurrencyPrice(raw) {
+        var s = String(raw || '').trim();
+        if (!s) return false;
+        if (/((?:€|\$)\s*\d{1,5}|\d{1,5}(?:[.,]\d{1,2})?\s*(?:€|eur)\b)/i.test(s)) return true;
+        return /^(\d{1,5})(?:[.,](\d{1,2}))?\s*(?:€|eur)?$/i.test(s);
+    }
+
+    function xabiaStripLeakedEmptyActionMarkers(text) {
+        if (!text) return '';
+        var t = String(text);
+        t = t.replace(/(?:\(|\{|\[)\s*ACTION:\s*(?!CARD|CART)[^\)\]\}]*?(?:\)|\]|\})/gi, '');
+        return t.trim();
+    }
+
+    function xabiaCardExternalUrl(card, decodeHtmlEntities) {
+        var decode = (typeof decodeHtmlEntities === 'function') ? decodeHtmlEntities : function(s) { return String(s || ''); };
+        var x = String((card && card.x) || '').trim();
+        if (/^https?:\/\//i.test(x)) return x;
+        return '';
+    }
+
+    function xabiaCardPermalink(card, decodeHtmlEntities) {
+        var u = String((card && card.u) || '').trim();
+        if (/^https?:\/\//i.test(u)) return u;
+        return '';
+    }
+
     function renderUniversalLinkHtml(card, escAttr, decodeHtmlEntities) {
         var action = String(card.a || '').trim();
         var decode = (typeof decodeHtmlEntities === 'function') ? decodeHtmlEntities : function(s) { return String(s || ''); };
@@ -842,27 +920,31 @@
         var title = String((card && card.t) || '').replace(/\s+/g, ' ').trim();
         if (!title) return '';
         var copy = xabiaUniversalCopy(card);
-        var desc = copy.desc;
-        var price = xabiaFormatShopPrice(card.p);
-        var metaLeft = copy.meta;
-        if (!price) {
-            var priceSource = desc + ' ' + String((card && card.m) || '');
-            var found = priceSource.match(/((?:€|\$)\s*\d{1,5}(?:[.,]\d{1,2})?|\d{1,5}(?:[.,]\d{1,2})?\s*(?:€|eur))/i);
-            if (found) {
-                price = xabiaFormatShopPrice(found[1]);
-                desc = desc.replace(found[0], '').replace(/^[\s,.;:-]+|[\s,.;:-]+$/g, '').trim();
-                metaLeft = String(metaLeft || '').replace(found[0], '').replace(/\s*[·|]\s*(?:[·|]\s*)+/g, ' · ').replace(/^\s*[·|]\s*|\s*[·|]\s*$/g, '').trim();
-            }
+        var desc = xabiaStripLeakedEmptyActionMarkers(copy.desc);
+        var categoryBadge = xabiaStripLeakedEmptyActionMarkers(String((card && card.b) || '').trim());
+        var price = '';
+        var rawPrice = String((card && card.p) || '').trim();
+        if (rawPrice && xabiaRawLooksLikeCurrencyPrice(rawPrice)) {
+            price = xabiaFormatShopPrice(rawPrice);
         }
+        var metaLeft = copy.meta;
         var imageUrl = String((card && (card.image || card.img || card.i || card.imagen)) || '').trim();
         var src = imageUrl ? (resolveActionImgSrc(imageUrl, imagesBase) || imageUrl) : '';
-        var media = src
-            ? '<div class="xabia-card__media xabia-product-card__media"><img src="' + escAttr(src) + '" alt="' + escAttr(title) + '" class="xabia-card__thumb xabia-card__img xabia-product-card__img" /></div>'
+        var permalink = xabiaCardPermalink(card, decodeHtmlEntities);
+        var externalUrl = xabiaCardExternalUrl(card, decodeHtmlEntities);
+        var hasPermalink = /^https?:\/\//i.test(permalink);
+        var mediaInner = src
+            ? ('<button type="button" class="xabia-action-img-wrap xabia-card__media-btn" data-full="' + escAttr(src) + '" aria-label="' + escAttr(xabiaI18n('imageEnlarge', 'Ampliar imagen')) + '">'
+                + '<div class="xabia-card__media xabia-product-card__media"><img src="' + escAttr(src) + '" alt="' + escAttr(title) + '" class="xabia-card__thumb xabia-card__img xabia-product-card__img" /></div>'
+                + '</button>')
+            : '';
+        var media = mediaInner || '';
+        var badgeHtml = categoryBadge
+            ? '<span class="xabia-card__badge xabia-product-card__badge">' + escAttr(categoryBadge) + '</span>'
             : '';
         var priceHtml = price ? '<span class="xabia-card__price xabia-product-card__price">' + escAttr(price) + '</span>' : '';
         var descHtml = desc ? '<p class="xabia-card__desc xabia-product-card__desc">' + escAttr(desc) + '</p>' : '';
-        var permalink = String(card.u || '').trim();
-        var titleHtml = /^https?:\/\//i.test(permalink)
+        var titleHtml = hasPermalink
             ? '<a class="xabia-card__title xabia-product-card__title" href="' + escAttr(permalink) + '" target="_blank" rel="noopener">' + escAttr(title) + '</a>'
             : '<span class="xabia-card__title xabia-product-card__title">' + escAttr(title) + '</span>';
         var actionType = xabiaCardActionType(card);
@@ -870,14 +952,30 @@
         if (actionType === 'cart') {
             var shop = renderShopPurchaseModuleHtml(card, escAttr, { compact: true });
             if (shop) footer = '<div class="xabia-card__buy xabia-product-card__buy">' + shop + '</div>';
-        } else if (actionType === 'link' || /^(CALL|MAP|CART_PACK):/i.test(String(card.a || ''))) {
+        } else if (actionType === 'book' || actionType === 'link' || /^(BOOK|CALL|MAP|CART_PACK):/i.test(String(card.a || ''))) {
             footer = renderUniversalLinkHtml(card, escAttr, decodeHtmlEntities);
+        }
+        if (!footer && (hasPermalink || externalUrl)) {
+            var fichaLbl = xabiaI18n('actionViewProfile', 'Ver ficha');
+            var links = '';
+            if (hasPermalink) {
+                links += '<a class="xabia-card__link xabia-entity-card__cta" href="' + escAttr(permalink) + '" target="_blank" rel="noopener">' + escAttr(fichaLbl) + '</a>';
+            }
+            if (externalUrl) {
+                var extLbl = xabiaI18n('actionExternalSite', 'Sitio web');
+                links += '<a class="xabia-card__link xabia-card__link--external xabia-entity-card__cta-secondary" href="' + escAttr(externalUrl) + '" target="_blank" rel="noopener">' + escAttr(extLbl) + '</a>';
+            }
+            if (links) {
+                footer = '<div class="xabia-card__buy xabia-product-card__buy xabia-card__buy--stacked">' + links + '</div>';
+            }
         }
         return '<div class="xabia-card xabia-product-card xabia-shop-module">'
             + '<div class="xabia-card__main xabia-product-card__main">'
             + media
             + '<div class="xabia-card__info xabia-product-card__info">'
-            + '<div class="xabia-card__headline xabia-product-card__headline">' + titleHtml + priceHtml + '</div>'
+            + badgeHtml
+            + '<div class="xabia-card__title-row xabia-product-card__title-row">' + titleHtml + '</div>'
+            + (priceHtml ? '<div class="xabia-card__price-row xabia-product-card__price-row">' + priceHtml + '</div>' : '')
             + xabiaUniversalMetaHtml(metaLeft, escAttr)
             + descHtml
             + '</div></div>'
@@ -885,8 +983,14 @@
             + '</div>';
     }
 
-    function renderProductCardHtml(card, escAttr, imagesBase) {
-        return renderUniversalCardHtml(card, escAttr, imagesBase);
+    function renderProductCardHtml(card, escAttr, imagesBase, decodeHtmlEntities) {
+        var decode = (typeof decodeHtmlEntities === 'function') ? decodeHtmlEntities : function(s) {
+            if (!s) return '';
+            var t = document.createElement('textarea');
+            t.innerHTML = String(s);
+            return t.value;
+        };
+        return renderUniversalCardHtml(card, escAttr, imagesBase, decode);
     }
 
     function renderCartPurchaseCardHtml(id, title, escAttr, imagesBase, extras) {
@@ -938,6 +1042,14 @@
     function renderActions(text, imagesBase) {
         if (!text) return '';
         text = String(text);
+        /* Residuos del modelo: llaves en lugar de corchetes, o ACTION vacío. */
+        text = text.replace(/\{ACTION:\s*\}/gi, '');
+        text = text.replace(/\{ACTION:\s*URL:\s*\}/gi, '');
+        text = text.replace(/\{ACTION:\s*BOOK:\s*\}/gi, '');
+        text = text.replace(/\{ACTION:\s*CALL:\s*\}/gi, '');
+        text = text.replace(/\{ACTION:\s*MAP:\s*\}/gi, '');
+        text = text.replace(/\{ACTION:\s*CARD:\s*\}/gi, '');
+        text = text.replace(/\{ACTION:\s*CART:\s*\}/gi, '');
         imagesBase = String(imagesBase || '').trim();
         function escAttr(s) {
             return String(s).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/'/g, '&#39;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
@@ -968,8 +1080,10 @@
             var tel = (num || '').replace(/\s+/g, '');
             return '<a href="tel:' + escAttr(tel) + '" class="xabia-action xabia-action-call">📞 ' + escAttr(xabiaI18n('actionCall', 'Llamar')) + '</a>';
         });
+        text = text.replace(/\[ACTION:URL:\s*\]/gi, '');
         text = text.replace(/\[ACTION:URL:([^\]]+)\]/g, function(_, url) {
             var href = decodeHtmlEntities((url || '').trim());
+            if (!href) return '';
             if (isLikelyImageUrl(href)) {
                 return renderActionImgHtml(href, imagesBase, escAttr);
             }
@@ -1464,6 +1578,7 @@
     function renderBotHtml(raw, imagesBase) {
         if (!raw) return '';
         var text = String(raw);
+        text = xabiaStripLeakedEmptyActionMarkers(text);
         /* El modelo a veces emite la secuencia literal \n. Si se pierde la barra queda "nn". */
         text = text.replace(/\\r\\n/g, '\n').replace(/\\n/g, '\n').replace(/\\r/g, '\n');
         imagesBase = String(imagesBase || '').trim();
@@ -1478,9 +1593,21 @@
         }
         var shopFold = xabiaCollapseShopLeads(text, imagesBase, escAttr, decodeHtmlEntities);
         text = shopFold.text;
+        text = xabiaStripLeakedEmptyActionMarkers(text);
+        text = text.replace(/\{ACTION:[^}]*\}/gi, '');
+        text = text.replace(/\{ACTION:[^}]*$/gi, '');
         /* Fichas CARD antes de listas/markdown para que no queden inline dentro de <li>. */
         var cardHolders = [];
-        text = text.replace(/\[ACTION:CARD:([^\]]+)\]/g, function(_, rawPayload) {
+        var cardSeenKeys = {};
+        text = text.replace(/(?:\[ACTION:CARD:|CARD:)([A-Za-z0-9+/=_-]+)\]?/g, function(_, rawPayload) {
+            var decoded = decodeActionCardPayload(rawPayload);
+            var dedupeKey = xabiaCardDedupeKey(decoded);
+            if (dedupeKey && cardSeenKeys[dedupeKey]) {
+                return '';
+            }
+            if (dedupeKey) {
+                cardSeenKeys[dedupeKey] = true;
+            }
             var html = renderActionCardHtml(rawPayload, imagesBase, escAttr, decodeHtmlEntities);
             if (!html) return '';
             var token = '%%XABIA_CARD_' + cardHolders.length + '%%';
@@ -1567,17 +1694,30 @@
     }
 
     function xabiaIsProductCard(card) {
-        if (!card || !String(card.t || '').trim()) return false;
+        if (!card) return false;
         var action = String(card.a || '').trim();
         if (/^CART:/i.test(action)) return true;
-        if (/^(BOOK|CALL|MAP|URL|CART_PACK):/i.test(action)) return false;
-        return !!(card.u || card.i || card.p);
+        var at = String(card.at || '').trim().toLowerCase();
+        if (at === 'view' || at === 'book' || at === 'event' || at === 'link') return false;
+        if (at === 'cart') return true;
+        if (card.type === 'product') return true;
+        var price = String(card.p || '').trim();
+        if (price !== '' && xabiaRawLooksLikeCurrencyPriceJs(price)) return true;
+        return false;
     }
 
     function xabiaCleanShopDesc(raw) {
         var desc = String(raw || '');
         desc = desc.replace(/(?:URL:\s*)?https?:\/\/[^\s)]+/gi, ' ');
         desc = desc.replace(/\s+/g, ' ').replace(/^[\s,.;:)\]|/-]+|[\s,.;:(\[|/-]+$/g, '').trim();
+        var dup = desc.match(/^(.{3,120}?)\s*[:\u2013\u2014\-]\s*\1(?:\s|$|[,:;.])/);
+        if (dup && dup[1]) {
+            var lead = String(dup[1]).trim();
+            if (lead.length >= 3) {
+                var esc = lead.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                desc = desc.replace(new RegExp('^' + esc + '\\s*[:\\u2013\\u2014\\-]\\s*', 'i'), '').trim();
+            }
+        }
         return desc;
     }
 
@@ -1742,7 +1882,7 @@
         if (!xabiaIsProductCard(card)) {
             return renderActionCardHtml(body.replace(/^CARD:/i, ''), imagesBase, escAttr, decodeHtmlEntities);
         }
-        return renderProductCardHtml(card, escAttr, imagesBase);
+        return renderProductCardHtml(card, escAttr, imagesBase, decodeHtmlEntities);
     }
 
     function xabiaCollapseShopLeads(text, imagesBase, escAttr, decodeHtmlEntities) {
@@ -1755,8 +1895,17 @@
         while ((match = re.exec(source))) {
             var kind = match[1];
             var isShop = /^CART:/i.test(kind);
-            if (!isShop && /^CARD:/i.test(kind)) {
-                isShop = xabiaIsProductCard(decodeActionCardPayload(kind.slice(5)));
+            if (/^CARD:/i.test(kind)) {
+                var decodedForShop = decodeActionCardPayload(kind.slice(5));
+                if (decodedForShop) {
+                    var cardAt = String(decodedForShop.at || '').trim().toLowerCase();
+                    if (cardAt === 'view') {
+                        continue;
+                    }
+                    if (!isShop) {
+                        isShop = xabiaIsProductCard(decodedForShop);
+                    }
+                }
             }
             if (!isShop) continue;
             var before = source.slice(last, match.index);
@@ -3547,6 +3696,7 @@
                 type: 'POST',
                 data: payload,
                 dataType: 'json',
+                timeout: 30000,
                 headers: xabiaWithRestNonce({})
             }).done(function(r) {
                 if (r && r.success && r.data) {
@@ -3669,6 +3819,7 @@
             return fetch(askUrl, {
                 method: 'POST',
                 credentials: 'same-origin',
+                signal: (typeof AbortSignal !== 'undefined' && AbortSignal.timeout) ? AbortSignal.timeout(30000) : undefined,
                 headers: xabiaWithRestNonce({
                     'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
                     'Accept': 'text/event-stream, application/json'

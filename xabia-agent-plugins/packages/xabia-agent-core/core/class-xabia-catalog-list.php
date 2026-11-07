@@ -55,8 +55,16 @@ class Xabia_Catalog_List {
         self::$last_debug['location_meta'] = (string) ($entity_meta['location_meta'] ?? '');
 
         $canonical = self::distill_canonical_activity($user_msg, $search_term);
-        $term_ids = self::resolve_matching_term_ids($taxonomy, $activity_profile, $canonical, $user_msg, $search_term);
+        $preresolved = $activity_profile['resolved_term_ids'] ?? null;
+        if (is_array($preresolved) && $preresolved !== []) {
+            $term_ids = array_values(array_unique(array_filter(array_map('intval', $preresolved), static function ($id) {
+                return $id > 0;
+            })));
+        } else {
+            $term_ids = self::resolve_matching_term_ids($taxonomy, $activity_profile, $canonical, $user_msg, $search_term);
+        }
         self::$last_debug['term_ids'] = count($term_ids);
+        self::$last_debug['matched_term'] = (string) ($activity_profile['matched_catalog_term'] ?? '');
 
         $rows = self::query_catalog_entity_rows(
             $project_id,
@@ -68,9 +76,11 @@ class Xabia_Catalog_List {
             $search_term,
             $activity_profile,
             $canonical,
-            $entity_meta
         );
         self::$last_debug['rows'] = count($rows);
+        $rows = self::dedupe_catalog_entity_rows($rows, $project_id, $config, $post_type);
+        self::$last_debug['rows_deduped'] = count($rows);
+        self::$last_debug['request_url'] = self::resolve_catalog_canonical_request_url($config);
 
         if ($rows === []) {
             return [
@@ -81,46 +91,552 @@ class Xabia_Catalog_List {
 
         $exclude_terms = self::normalize_term_labels($activity_profile['exclude_in_category'] ?? []);
         $manifest = [];
+        $entities = [];
         foreach ($rows as $row) {
             if ($exclude_terms !== [] && self::row_matches_excluded_terms($row, $exclude_terms)) {
                 continue;
             }
-            $name = trim((string) ($row['empresa'] ?? ''));
+            $name = self::resolve_native_catalog_entity_display_name($row);
             if ($name === '') {
                 continue;
             }
-            $loc = trim((string) ($row['localidad'] ?? ''));
+            $loc = trim((string) ($row['location'] ?? $row['localidad'] ?? ''));
             $cat = trim((string) ($row['categoria'] ?? ''));
-            if ($cat !== '' && class_exists('Xabia_Knowledge_Ingest', false)) {
-                $cat = Xabia_Knowledge_Ingest::localize_taxonomy_term_label($cat);
+            $cat_display = $cat;
+            if ($cat_display !== '' && class_exists('Xabia_Knowledge_Ingest', false)) {
+                $cat_display = Xabia_Knowledge_Ingest::localize_taxonomy_term_label($cat_display);
             }
             $line = '**' . $name . '**';
             if ($loc !== '') {
                 $line .= ' (' . $loc . ')';
-            } elseif ($cat !== '') {
-                $line .= ' — ' . $cat;
+            } elseif ($cat_display !== '') {
+                $line .= ' — ' . $cat_display;
             }
-            $key = mb_strtolower($name, 'UTF-8');
+            $key = self::catalog_entity_bucket_key($row, $post_type, $config);
+            if ($key === '' || isset($entities[$key])) {
+                continue;
+            }
             $manifest[$key] = $line;
+            $entities[$key] = $row;
         }
 
-        $sorted = array_values($manifest);
-        sort($sorted, SORT_NATURAL | SORT_FLAG_CASE);
-        self::$last_debug['matched'] = count($sorted);
+        $entity_list = array_values($entities);
+        usort($entity_list, static function (array $a, array $b): int {
+            return strnatcasecmp((string) ($a['empresa'] ?? ''), (string) ($b['empresa'] ?? ''));
+        });
+        $sorted = [];
+        foreach ($entity_list as $ent) {
+            $name = trim((string) ($ent['empresa'] ?? ''));
+            if ($name === '') {
+                continue;
+            }
+            $loc = trim((string) ($ent['localidad'] ?? ''));
+            $cat = trim((string) ($ent['categoria'] ?? ''));
+            $cat_display = $cat;
+            if ($cat_display !== '' && class_exists('Xabia_Knowledge_Ingest', false)) {
+                $cat_display = Xabia_Knowledge_Ingest::localize_taxonomy_term_label($cat_display);
+            }
+            $line = '**' . $name . '**';
+            if ($loc !== '') {
+                $line .= ' (' . $loc . ')';
+            } elseif ($cat_display !== '') {
+                $line .= ' — ' . $cat_display;
+            }
+            $sorted[] = $line;
+        }
+        self::$last_debug['matched'] = count($entity_list);
 
         return [
             'manifest' => $sorted,
+            'entities' => $entity_list,
             'debug'    => self::$last_debug,
         ];
+    }
+
+    /**
+     * Cuerpo textual del listado nativo (intro + viñetas), alineado con las tarjetas v2.
+     *
+     * @param list<array{ID?: int, empresa?: string, localidad?: string, categoria?: string}> $entities
+     */
+    /**
+     * Etiqueta legible para la intro (sin pipes ni agujas de sinónimos).
+     */
+    public static function format_native_catalog_intro_term(string $matched_term): string {
+        $matched_term = trim($matched_term);
+        if ($matched_term === '') {
+            return '';
+        }
+        if (strpos($matched_term, '|') === false) {
+            return $matched_term;
+        }
+        $parts = preg_split('/\s*\|\s*/u', $matched_term) ?: [];
+        $parts = array_values(array_filter(array_map(static function ($p) {
+            return trim((string) $p);
+        }, $parts)));
+        foreach ($parts as $part) {
+            if ($part !== '' && preg_match('/^\p{Lu}/u', $part)) {
+                return $part;
+            }
+        }
+
+        return $parts[0] ?? $matched_term;
+    }
+
+    public static function build_native_catalog_message_body(
+        array $entities,
+        string $matched_term,
+        string $destination_label = ''
+    ): string {
+        return self::compose_native_catalog_message_from_entities($entities, $matched_term, $destination_label);
+    }
+
+    /**
+     * Misma cadena de prioridad que encode_native_catalog_entity_card (viñetas ≡ tarjetas).
+     *
+     * @param array<string, mixed> $ent
+     */
+    public static function resolve_native_catalog_entity_display_name(array $ent): string {
+        if (!empty($ent['title'])) {
+            return trim((string) $ent['title']);
+        }
+        if (!empty($ent['name'])) {
+            return trim((string) $ent['name']);
+        }
+        if (!empty($ent['empresa'])) {
+            return trim((string) $ent['empresa']);
+        }
+        if (!empty($ent['post_title'])) {
+            return trim((string) $ent['post_title']);
+        }
+
+        return '';
+    }
+
+    /**
+     * Cuerpo del listado nativo a partir del array final que también alimenta las tarjetas v2.
+     *
+     * @param list<array<string, mixed>> $final_entities
+     */
+    public static function compose_native_catalog_message_from_entities(
+        array $final_entities,
+        string $matched_term_name,
+        string $destination = ''
+    ): string {
+        if ($final_entities === []) {
+            return '';
+        }
+
+        $display_term = self::format_native_catalog_intro_term(trim($matched_term_name));
+        if ($display_term === '') {
+            $display_term = 'actividades';
+        }
+        if ($display_term === '') {
+            $display_term = 'actividades';
+        }
+        if (class_exists('Xabia_Knowledge_Ingest', false)) {
+            $display_term = Xabia_Knowledge_Ingest::localize_taxonomy_term_label($display_term);
+        }
+
+        $destination = trim($destination);
+        $safe_term = function_exists('esc_html') ? esc_html($display_term) : $display_term;
+        $safe_dest = function_exists('esc_html') ? esc_html($destination) : $destination;
+        if ($destination !== '') {
+            $intro_text = sprintf(
+                'Aquí tienes las empresas de %s disponibles en %s:',
+                $safe_term,
+                $safe_dest
+            );
+        } else {
+            $intro_text = sprintf('Aquí tienes las empresas de %s:', $safe_term);
+        }
+
+        $bullet_lines = self::build_native_catalog_bullet_lines_from_entities($final_entities);
+
+        return $intro_text . "\n\n" . implode("\n", $bullet_lines);
+    }
+
+    /**
+     * Una viñeta Markdown por entidad (misma SSOT que las tarjetas codificables).
+     *
+     * @param list<array<string, mixed>|mixed> $final_entities
+     *
+     * @return list<string>
+     */
+    public static function build_native_catalog_bullet_lines_from_entities(array $final_entities): array {
+        $bullet_lines = [];
+        foreach ($final_entities as $ent) {
+            if (!is_array($ent)) {
+                $bullet_lines[] = '• **—**';
+                continue;
+            }
+            $name = self::resolve_native_catalog_entity_display_name($ent);
+            $loc = trim((string) ($ent['location'] ?? ''));
+            if ($loc === '') {
+                $loc = trim((string) ($ent['address'] ?? ''));
+            }
+            if ($loc === '') {
+                $loc = trim((string) ($ent['localidad'] ?? ''));
+            }
+            $loc_suffix = $loc !== '' ? ' (' . $loc . ')' : '';
+            if ($name !== '') {
+                $safe_name = function_exists('esc_html') ? esc_html($name) : $name;
+                $safe_loc = function_exists('esc_html') ? esc_html($loc_suffix) : $loc_suffix;
+                $bullet_lines[] = '• **' . $safe_name . '**' . $safe_loc;
+            } else {
+                $bullet_lines[] = '• **—**';
+            }
+        }
+
+        return $bullet_lines;
+    }
+
+    /**
+     * Clave de negocio agnóstica (dominio), p. ej. mismo título → una empresa.
+     *
+     * @param array<string, mixed> $row
+     */
+    public static function catalog_entity_canonical_key(array $row): string {
+        $title = trim((string) ($row['title'] ?? $row['post_title'] ?? $row['empresa'] ?? ''));
+        if ($title === '') {
+            return '';
+        }
+
+        return sanitize_title($title);
+    }
+
+    /**
+     * URL de referencia para desempatar traducciones (referer o petición actual).
+     *
+     * @param array<string, mixed> $config
+     */
+    public static function resolve_catalog_canonical_request_url(array $config): string {
+        $explicit = trim((string) ($config['_xabia_request_url'] ?? ''));
+        if ($explicit !== '' && filter_var($explicit, FILTER_VALIDATE_URL)) {
+            return $explicit;
+        }
+        if (!empty($_SERVER['HTTP_REFERER'])) {
+            $ref = trim((string) wp_unslash((string) $_SERVER['HTTP_REFERER']));
+            if ($ref !== '' && filter_var($ref, FILTER_VALIDATE_URL)) {
+                return $ref;
+            }
+        }
+        if (function_exists('home_url') && !empty($_SERVER['REQUEST_URI'])) {
+            $path = (string) wp_unslash((string) $_SERVER['REQUEST_URI']);
+
+            return (string) home_url($path);
+        }
+
+        return '';
+    }
+
+    /**
+     * Una fila por empresa canónica (sanitize_title del título).
+     *
+     * @param list<array<string, mixed>> $rows
+     * @param array<string, mixed>       $config
+     *
+     * @return list<array<string, mixed>>
+     */
+    public static function dedupe_catalog_entity_rows(
+        array $rows,
+        string $project_id,
+        array $config,
+        string $post_type
+    ): array {
+        unset($project_id, $post_type);
+        if ($rows === []) {
+            return [];
+        }
+        if (count($rows) < 2) {
+            return array_values($rows);
+        }
+
+        $request_url = self::resolve_catalog_canonical_request_url($config);
+        /** @var array<string, list<array<string, mixed>>> $groups */
+        $groups = [];
+        foreach ($rows as $row) {
+            if (!is_array($row) || $row === []) {
+                continue;
+            }
+            $key = self::catalog_entity_canonical_key($row);
+            if ($key === '') {
+                continue;
+            }
+            if (!isset($groups[$key])) {
+                $groups[$key] = [];
+            }
+            $groups[$key][] = $row;
+        }
+
+        $out = [];
+        foreach ($groups as $candidates) {
+            $picked = self::pick_canonical_catalog_row($candidates, $request_url);
+            if (is_array($picked) && $picked !== []) {
+                $out[] = $picked;
+            }
+        }
+
+        usort($out, static function (array $a, array $b): int {
+            return strnatcasecmp(
+                trim((string) ($a['empresa'] ?? '')),
+                trim((string) ($b['empresa'] ?? ''))
+            );
+        });
+
+        return $out;
+    }
+
+    /**
+     * @param list<array<string, mixed>> $candidates
+     *
+     * @return array<string, mixed>
+     */
+    private static function pick_canonical_catalog_row(array $candidates, string $request_url): array {
+        if ($candidates === []) {
+            return [];
+        }
+        if (count($candidates) === 1) {
+            return $candidates[0];
+        }
+
+        $best = $candidates[0];
+        $best_score = -1;
+        $best_id = PHP_INT_MAX;
+        foreach ($candidates as $row) {
+            $post_id = (int) ($row['ID'] ?? 0);
+            $permalink = trim((string) ($row['permalink'] ?? ''));
+            if ($permalink === '' && $post_id > 0 && function_exists('get_permalink')) {
+                $permalink = trim((string) get_permalink($post_id));
+            }
+            $score = self::permalink_alignment_score($permalink, $request_url);
+            if ($score > $best_score || ($score === $best_score && $post_id > 0 && $post_id < $best_id)) {
+                $best_score = $score;
+                $best_id = $post_id > 0 ? $post_id : $best_id;
+                $best = $row;
+            }
+        }
+
+        return $best;
+    }
+
+    private static function permalink_alignment_score(string $permalink, string $request_url): int {
+        if ($permalink === '' || $request_url === '') {
+            return 0;
+        }
+        if (strcasecmp($permalink, $request_url) === 0) {
+            return 100;
+        }
+        $p_path = wp_parse_url($permalink, PHP_URL_PATH);
+        $r_path = wp_parse_url($request_url, PHP_URL_PATH);
+        if (is_string($p_path) && is_string($r_path) && $p_path !== '' && $p_path === $r_path) {
+            return 90;
+        }
+        if (is_string($p_path) && is_string($r_path) && $p_path !== '' && $r_path !== '') {
+            if (str_ends_with($permalink, $r_path) || str_ends_with($request_url, $p_path)) {
+                return 50;
+            }
+        }
+
+        return 0;
+    }
+
+    /**
+     * @param array<string, mixed> $row
+     * @param array<string, mixed> $config
+     */
+    private static function catalog_entity_bucket_key(array $row, string $post_type, array $config): string {
+        unset($post_type, $config);
+        $key = self::catalog_entity_canonical_key($row);
+
+        return $key !== '' ? ('slug:' . $key) : '';
+    }
+
+    /**
+     * Coincidencia explícita con nombres/slugs de taxonomía de catálogo (palabra completa)
+     * y sinónimos de administración (`rules.keyword_expansions` en options del proyecto).
+     *
+     * @param array<string, mixed> $config
+     * @param array<string, string> $keyword_expansions Reservado (lee desde config/options).
+     *
+     * @return array{matched_term: string, term_ids: list<int>, labels: list<string>}
+     */
+    public static function resolve_native_catalog_term_match(
+        array $config,
+        string $user_msg,
+        string $search_term,
+        array $keyword_expansions = []
+    ): array {
+        if ($keyword_expansions === []) {
+            $keyword_expansions = self::admin_keyword_expansions_for_native($config);
+        }
+        $blob = trim($user_msg !== '' ? $user_msg : $search_term);
+        if ($blob === '' || !class_exists('Xabia_Catalog_Token_Match', false)) {
+            return ['matched_term' => '', 'term_ids' => [], 'labels' => []];
+        }
+        if (!class_exists('Xabia_Knowledge_Ingest', false)) {
+            return ['matched_term' => '', 'term_ids' => [], 'labels' => []];
+        }
+        $taxonomy = Xabia_Knowledge_Ingest::resolve_catalog_activity_taxonomy($config);
+        if ($taxonomy === '' || !function_exists('get_terms') || !taxonomy_exists($taxonomy)) {
+            return ['matched_term' => '', 'term_ids' => [], 'labels' => []];
+        }
+
+        $ids = [];
+        $labels = [];
+        $terms = get_terms([
+            'taxonomy'         => $taxonomy,
+            'hide_empty'       => false,
+            'suppress_filters' => false,
+        ]);
+        if (is_wp_error($terms) || !is_array($terms)) {
+            $terms = [];
+        }
+        foreach ($terms as $term) {
+            if (!$term instanceof WP_Term) {
+                continue;
+            }
+            $name = trim((string) $term->name);
+            $slug = trim((string) $term->slug);
+            $matched = false;
+            if ($name !== '' && Xabia_Catalog_Token_Match::message_contains_whole_term($blob, $name)) {
+                $matched = true;
+            } elseif ($slug !== '' && Xabia_Catalog_Token_Match::message_contains_whole_term($blob, $slug)) {
+                $matched = true;
+            }
+            if ($matched) {
+                $ids[] = (int) $term->term_id;
+                if ($name !== '') {
+                    $labels[] = $name;
+                } elseif ($slug !== '') {
+                    $labels[] = $slug;
+                }
+            }
+        }
+
+        foreach ($keyword_expansions as $canonical_key => $pattern) {
+            $canonical_key = trim(mb_strtolower((string) $canonical_key, 'UTF-8'));
+            $pattern = trim((string) $pattern);
+            if ($canonical_key === '' || mb_strlen($canonical_key, 'UTF-8') < 2) {
+                continue;
+            }
+            $needles = preg_split('/\|/u', $pattern) ?: [];
+            $needles[] = $canonical_key;
+            $hit = false;
+            foreach ($needles as $needle) {
+                $needle = trim((string) $needle);
+                if ($needle === '' || mb_strlen($needle, 'UTF-8') < 2) {
+                    continue;
+                }
+                if (self::message_contains_admin_synonym_token($blob, $needle)) {
+                    $hit = true;
+                    break;
+                }
+            }
+            if (!$hit) {
+                continue;
+            }
+            foreach (self::term_ids_for_label_exact($taxonomy, $canonical_key) as $tid) {
+                $ids[] = $tid;
+            }
+            $resolved = self::find_term($taxonomy, $canonical_key);
+            if ($resolved instanceof WP_Term) {
+                $labels[] = (string) $resolved->name;
+            } else {
+                $labels[] = $canonical_key;
+            }
+        }
+
+        $map = apply_filters('xabia_catalog_activity_alias_map', [], $user_msg, $search_term);
+        if (is_array($map)) {
+            foreach ($map as $needle => $canonical) {
+                $needle = trim((string) $needle);
+                $canonical = trim((string) $canonical);
+                if ($needle === '' || $canonical === '') {
+                    continue;
+                }
+                if (!Xabia_Catalog_Token_Match::message_contains_whole_term($blob, $needle)) {
+                    continue;
+                }
+                foreach (self::term_ids_for_label_exact($taxonomy, $canonical) as $tid) {
+                    $ids[] = $tid;
+                }
+                $labels[] = $canonical;
+            }
+        }
+
+        $ids = array_values(array_unique(array_filter(array_map('intval', $ids), static function ($id) {
+            return $id > 0;
+        })));
+        $labels = array_values(array_unique(array_filter(array_map('strval', $labels))));
+
+        $matched_display = $labels !== [] ? implode('|', $labels) : '';
+        $matched_display = self::format_native_catalog_intro_term($matched_display);
+
+        return [
+            'matched_term' => $matched_display,
+            'term_ids'     => $ids,
+            'labels'       => $labels,
+        ];
+    }
+
+    /**
+     * Sinónimos / expansiones léxicas del administrador (config en memoria o wp_options).
+     *
+     * @param array<string, mixed> $config
+     *
+     * @return array<string, string>
+     */
+    public static function admin_keyword_expansions_for_native(array $config): array {
+        $raw = $config['rules']['keyword_expansions'] ?? null;
+        if (is_array($raw) && $raw !== []) {
+            return $raw;
+        }
+        if (!function_exists('get_option')) {
+            return [];
+        }
+        $projects = get_option('xabia_projects_config', []);
+        if (!is_array($projects)) {
+            return [];
+        }
+        $pid = trim((string) ($config['project_id'] ?? ''));
+        if ($pid !== '' && is_array($projects[$pid] ?? null)) {
+            $from_opt = $projects[$pid]['rules']['keyword_expansions'] ?? null;
+
+            return is_array($from_opt) ? $from_opt : [];
+        }
+        foreach ($projects as $proj) {
+            if (!is_array($proj)) {
+                continue;
+            }
+            $from_opt = $proj['rules']['keyword_expansions'] ?? null;
+            if (is_array($from_opt) && $from_opt !== []) {
+                return $from_opt;
+            }
+        }
+
+        return [];
+    }
+
+    /**
+     * Palabra completa Unicode (misma regla que configuración de sinónimos en admin).
+     */
+    public static function message_contains_admin_synonym_token(string $message, string $keyword): bool {
+        $message = trim($message);
+        $keyword = trim($keyword);
+        if ($message === '' || $keyword === '' || mb_strlen($keyword, 'UTF-8') < 2) {
+            return false;
+        }
+        $pattern = '/(?:\b|^)' . preg_quote($keyword, '/') . '(?:\b|$)/iu';
+
+        return preg_match($pattern, $message) === 1;
     }
 
     /**
      * @param array<string, mixed> $config
      * @param list<int>            $term_ids
      * @param array<string, mixed> $activity_profile
-     * @param array{title_meta: string, location_meta: string, slug_column: string} $entity_meta
      *
-     * @return list<array{empresa: string, localidad: string, categoria: string, term_names: string}>
+     * @return list<array<string, mixed>>
      */
     private static function query_catalog_entity_rows(
         string $project_id,
@@ -131,14 +647,9 @@ class Xabia_Catalog_List {
         string $user_msg,
         string $search_term,
         array $activity_profile,
-        string $canonical = '',
-        array $entity_meta = []
+        string $canonical = ''
     ): array {
-        global $wpdb;
-
-        $title_meta = trim((string) ($entity_meta['title_meta'] ?? ''));
-        $location_meta = trim((string) ($entity_meta['location_meta'] ?? ''));
-
+        unset($project_id);
         $keywords = self::keyword_needles($user_msg, $search_term, $activity_profile);
         if ($keywords === [] && $canonical !== '') {
             $keywords = [$canonical];
@@ -146,114 +657,204 @@ class Xabia_Catalog_List {
         if ($term_ids === [] && $keywords === [] && $activity_profile !== []) {
             return [];
         }
+        if (!class_exists('WP_Query', false)) {
+            return [];
+        }
 
-        $lang_join = '';
-        if (class_exists('Xabia_Knowledge_Ingest', false)
-            && Xabia_Knowledge_Ingest::is_multilingual_site()) {
-            $lang_scope = class_exists('Xabia_Knowledge_Language_Driver', false)
-                ? Xabia_Knowledge_Language_Driver::lang_scope($project_id, $config)
-                : 'primary';
-            if ($lang_scope !== Xabia_Knowledge_Language_Driver::SCOPE_ALL
-                && $lang_scope !== Xabia_Knowledge_Language_Driver::SCOPE_PRIMARY_FALLBACK) {
-                $primary = esc_sql(Xabia_Knowledge_Ingest::primary_language_code());
-                if ($primary !== '') {
-                    $wpml = class_exists('Xabia_Knowledge_Ingest', false)
-                        && Xabia_Knowledge_Ingest::wpml_schema_ready('', $wpdb);
-                    $pll = function_exists('pll_default_language') || function_exists('pll_get_post_language');
-                    if ($wpml) {
-                        $icl = class_exists('Xabia_Knowledge_Ingest', false)
-                            ? Xabia_Knowledge_Ingest::resolve_wpml_translations_table('', $wpdb)
-                            : ($wpdb->prefix . 'icl_translations');
-                        if ($icl === '') {
-                            $icl = $wpdb->prefix . 'icl_translations';
-                        }
-                        $lang_join = " INNER JOIN `{$icl}` xabia_wpml_tr"
-                            . " ON xabia_wpml_tr.element_id = p.ID"
-                            . " AND xabia_wpml_tr.element_type = CONCAT('post_', p.post_type)"
-                            . " AND xabia_wpml_tr.language_code = '{$primary}'";
-                    } elseif ($pll) {
-                        $lang_join = " INNER JOIN {$wpdb->term_relationships} xabia_pll_tr ON xabia_pll_tr.object_id = p.ID"
-                            . " INNER JOIN {$wpdb->term_taxonomy} xabia_pll_tt ON xabia_pll_tt.term_taxonomy_id = xabia_pll_tr.term_taxonomy_id AND xabia_pll_tt.taxonomy = 'language'"
-                            . " INNER JOIN {$wpdb->terms} xabia_pll_lang ON xabia_pll_lang.term_id = xabia_pll_tt.term_id AND xabia_pll_lang.slug = '{$primary}'";
-                    }
-                }
+        $query_args = [
+            'post_type'           => $post_type,
+            'post_status'         => 'publish',
+            'posts_per_page'      => 250,
+            'orderby'             => 'title',
+            'order'               => 'ASC',
+            'suppress_filters'    => false,
+            'ignore_sticky_posts' => true,
+            'no_found_rows'       => true,
+        ];
+
+        if ($taxonomy !== '') {
+            $tax_clause = [
+                'taxonomy' => $taxonomy,
+            ];
+            if ($term_ids !== []) {
+                $tax_clause['field'] = 'term_id';
+                $tax_clause['terms'] = array_values(array_map('intval', $term_ids));
+            } else {
+                $tax_clause['operator'] = 'EXISTS';
+            }
+            $query_args['tax_query'] = [$tax_clause];
+        }
+
+        $keyword_only_broad = ($term_ids === [] && $keywords !== []);
+        if ($keyword_only_broad) {
+            $search = trim(implode(' ', array_slice(array_map('strval', $keywords), 0, 4)));
+            if ($search !== '') {
+                $query_args['s'] = $search;
             }
         }
 
-        $term_filter = '';
-        if ($term_ids !== []) {
-            $in = implode(',', array_map('intval', $term_ids));
-            $term_filter = " AND EXISTS (
-                SELECT 1 FROM {$wpdb->term_relationships} trf
-                INNER JOIN {$wpdb->term_taxonomy} ttf ON ttf.term_taxonomy_id = trf.term_taxonomy_id AND ttf.taxonomy = %s
-                WHERE trf.object_id = p.ID AND ttf.term_id IN ({$in})
-            )";
-            $term_filter = $wpdb->prepare($term_filter, $taxonomy);
-        }
-
-        $keyword_filter = '';
-        if ($keywords !== [] && $term_ids === []) {
-            $likes = [];
-            foreach ($keywords as $kw) {
-                if ($title_meta !== '') {
-                    $likes[] = $wpdb->prepare(
-                        '(p.post_title LIKE %s OR pm.meta_value LIKE %s OR t.name LIKE %s)',
-                        '%' . $wpdb->esc_like($kw) . '%',
-                        '%' . $wpdb->esc_like($kw) . '%',
-                        '%' . $wpdb->esc_like($kw) . '%'
-                    );
-                } else {
-                    $likes[] = $wpdb->prepare(
-                        '(p.post_title LIKE %s OR t.name LIKE %s)',
-                        '%' . $wpdb->esc_like($kw) . '%',
-                        '%' . $wpdb->esc_like($kw) . '%'
-                    );
-                }
+        $query = new WP_Query($query_args);
+        $results = [];
+        foreach ($query->posts as $post) {
+            $row = self::map_catalog_post_to_row($post, $config, $taxonomy);
+            if ($row !== []) {
+                $results[] = $row;
             }
-            $keyword_filter = ' AND (' . implode(' OR ', $likes) . ')';
+        }
+        if (function_exists('wp_reset_postdata')) {
+            wp_reset_postdata();
         }
 
-        $title_expr = 'p.post_title AS empresa';
-        if ($title_meta !== '') {
-            $title_key = esc_sql($title_meta);
-            $title_expr = "COALESCE(NULLIF(TRIM(MAX(CASE WHEN pm.meta_key = '{$title_key}' THEN pm.meta_value END)), ''), p.post_title) AS empresa";
-        }
-        $loc_expr = 'NULL AS localidad';
-        if ($location_meta !== '') {
-            $loc_key = esc_sql($location_meta);
-            $loc_expr = "MAX(CASE WHEN pm.meta_key = '{$loc_key}' THEN pm.meta_value END) AS localidad";
-        }
-
-        $meta_keys = array_values(array_unique(array_filter([$title_meta, $location_meta])));
-        $pm_join = '';
-        if ($meta_keys !== []) {
-            $quoted = array_map(static function (string $key): string {
-                return "'" . esc_sql($key) . "'";
-            }, $meta_keys);
-            $pm_join = "LEFT JOIN {$wpdb->postmeta} pm ON pm.post_id = p.ID AND pm.meta_key IN (" . implode(', ', $quoted) . ')';
+        if ($keyword_only_broad && $results !== []) {
+            $anchor_needles = self::collect_keyword_only_catalog_anchor_needles(
+                $activity_profile,
+                $canonical,
+                $keywords,
+                $user_msg,
+                $search_term
+            );
+            if ($anchor_needles === []) {
+                return [];
+            }
+            $filtered = self::filter_catalog_rows_by_anchor_needles($results, $anchor_needles);
+            if ($filtered === []) {
+                return [];
+            }
+            $results = $filtered;
         }
 
-        $sql = "SELECT DISTINCT p.ID,
-            {$title_expr},
-            {$loc_expr},
-            MAX(CASE WHEN tt.parent = 0 THEN t.name END) AS categoria,
-            GROUP_CONCAT(DISTINCT t.name ORDER BY t.name SEPARATOR ', ') AS term_names
-        FROM {$wpdb->posts} p
-        {$lang_join}
-        {$pm_join}
-        LEFT JOIN {$wpdb->term_relationships} tr ON tr.object_id = p.ID
-        LEFT JOIN {$wpdb->term_taxonomy} tt ON tt.term_taxonomy_id = tr.term_taxonomy_id AND tt.taxonomy = %s
-        LEFT JOIN {$wpdb->terms} t ON t.term_id = tt.term_id
-        WHERE p.post_type = %s AND p.post_status = 'publish'
-        {$term_filter}{$keyword_filter}
-        GROUP BY p.ID, p.post_title
-        ORDER BY empresa ASC
-        LIMIT 250";
+        return $results;
+    }
 
-        $prepared = $wpdb->prepare($sql, $taxonomy, $post_type);
-        $results = $wpdb->get_results($prepared, ARRAY_A);
+    /**
+     * @param WP_Post|object       $post
+     * @param array<string, mixed> $config
+     *
+     * @return array<string, mixed>
+     */
+    private static function map_catalog_post_to_row($post, array $config, string $taxonomy): array {
+        $post_id = is_object($post) && isset($post->ID) ? (int) $post->ID : 0;
+        if ($post_id < 1 || !class_exists('Xabia_Knowledge_Ingest', false)) {
+            return [];
+        }
 
-        return is_array($results) ? $results : [];
+        return Xabia_Knowledge_Ingest::map_catalog_native_entity_from_post($post_id, $config, $taxonomy);
+    }
+
+    /**
+     * @param list<string> $canonical_keywords Agujas SQL (keyword_needles + canonical).
+     *
+     * @return list<string> Cadenas en minúsculas para anclar filas (≥4 chars), sin stopwords genéricas.
+     */
+    private static function collect_keyword_only_catalog_anchor_needles(
+        array $activity_profile,
+        string $canonical,
+        array $canonical_keywords,
+        string $user_msg,
+        string $search_term
+    ): array {
+        $needles = [];
+        $canon = trim(mb_strtolower($canonical, 'UTF-8'));
+        if ($canon !== '' && mb_strlen($canon, 'UTF-8') >= 4) {
+            $needles[$canon] = true;
+        }
+        foreach ($activity_profile['match_subcategory'] ?? [] as $sub) {
+            $s = trim(mb_strtolower((string) $sub, 'UTF-8'));
+            if ($s !== '' && mb_strlen($s, 'UTF-8') >= 4) {
+                $needles[$s] = true;
+            }
+        }
+        foreach ($activity_profile['match_in_header'] ?? [] as $n) {
+            $n = trim(mb_strtolower((string) $n, 'UTF-8'));
+            if ($n !== '' && mb_strlen($n, 'UTF-8') >= 4 && strpos($n, ':') === false) {
+                $needles[$n] = true;
+            }
+        }
+        foreach ($canonical_keywords as $kw) {
+            $kw = trim(mb_strtolower((string) $kw, 'UTF-8'));
+            if ($kw !== '' && mb_strlen($kw, 'UTF-8') >= 4) {
+                $needles[$kw] = true;
+            }
+        }
+        foreach (self::significant_tokens_from_catalog_text($user_msg) as $tok) {
+            $needles[$tok] = true;
+        }
+        foreach (self::significant_tokens_from_catalog_text($search_term) as $tok) {
+            $needles[$tok] = true;
+        }
+
+        $out = [];
+        foreach (array_keys($needles) as $needle) {
+            if ($needle === '') {
+                continue;
+            }
+            $out[] = $needle;
+        }
+
+        return array_values(array_unique($out));
+    }
+
+    /**
+     * @return list<string>
+     */
+    private static function significant_tokens_from_catalog_text(string $text): array {
+        $blob = trim(wp_strip_all_tags($text));
+        if ($blob === '' || !class_exists('Xabia_Catalog_Token_Match', false)) {
+            return [];
+        }
+
+        return array_values(array_filter(
+            Xabia_Catalog_Token_Match::query_tokens($blob),
+            static function (string $tok): bool {
+                return mb_strlen($tok, 'UTF-8') >= 4;
+            }
+        ));
+    }
+
+    /**
+     * @param list<array<string, mixed>> $rows
+     * @param list<string>             $anchor_needles Minúsculas
+     *
+     * @return list<array<string, mixed>>
+     */
+    private static function filter_catalog_rows_by_anchor_needles(array $rows, array $anchor_needles): array {
+        $out = [];
+        foreach ($rows as $row) {
+            if (!is_array($row)) {
+                continue;
+            }
+            if (self::catalog_row_matches_anchor_needles($row, $anchor_needles)) {
+                $out[] = $row;
+            }
+        }
+
+        return $out;
+    }
+
+    /**
+     * El LIKE SQL puede acertar solo en `post_title`; exigir refuerzo en taxonomía (categoría / term_names).
+     *
+     * @param array<string, mixed> $row
+     * @param list<string>        $anchor_needles
+     */
+    private static function catalog_row_matches_anchor_needles(array $row, array $anchor_needles): bool {
+        $empresa = mb_strtolower(trim((string) ($row['empresa'] ?? '')), 'UTF-8');
+        $terms_blob = mb_strtolower(trim((string) ($row['term_names'] ?? '') . ' ' . (string) ($row['categoria'] ?? '')), 'UTF-8');
+
+        foreach ($anchor_needles as $needle) {
+            $needle = trim((string) $needle);
+            if ($needle === '' || !class_exists('Xabia_Catalog_Token_Match', false)) {
+                continue;
+            }
+            if ($terms_blob !== '' && Xabia_Catalog_Token_Match::message_contains_whole_term($terms_blob, $needle)) {
+                return true;
+            }
+            if ($empresa !== '' && Xabia_Catalog_Token_Match::message_contains_whole_term($empresa, $needle)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**
@@ -307,7 +908,11 @@ class Xabia_Catalog_List {
         // 3) Regexp opcional del perfil (vertical vía filtro).
         $regexp = trim((string) ($activity_profile['match_regexp'] ?? ''));
         if ($ids === [] && $regexp !== '') {
-            $terms = get_terms(['taxonomy' => $taxonomy, 'hide_empty' => false]);
+            $terms = get_terms([
+                'taxonomy'         => $taxonomy,
+                'hide_empty'       => false,
+                'suppress_filters' => false,
+            ]);
             if (!is_wp_error($terms) && is_array($terms)) {
                 foreach ($terms as $term) {
                     if (!$term instanceof WP_Term) {
@@ -353,6 +958,13 @@ class Xabia_Catalog_List {
      *
      * @return list<int>
      */
+    /**
+     * @return list<int>
+     */
+    public static function term_ids_for_label_exact(string $taxonomy, string $label): array {
+        return self::term_ids_for_label($taxonomy, $label, false);
+    }
+
     private static function term_ids_for_label(string $taxonomy, string $label, bool $include_parent = false): array {
         $term = self::find_term($taxonomy, $label);
         if ($term === null) {
@@ -386,16 +998,24 @@ class Xabia_Catalog_List {
         if ($term instanceof WP_Term && !is_wp_error($term)) {
             return $term;
         }
-        $terms = get_terms([
-            'taxonomy'   => $taxonomy,
-            'hide_empty' => false,
-            'name__like' => $label,
-            'number'     => 5,
-        ]);
-        if (!is_wp_error($terms) && is_array($terms)) {
-            foreach ($terms as $t) {
-                if ($t instanceof WP_Term) {
-                    return $t;
+        if (class_exists('Xabia_Catalog_Token_Match', false)) {
+            $needle = Xabia_Catalog_Token_Match::normalize_text($label);
+            if ($needle !== '' && function_exists('get_terms')) {
+                $terms = get_terms([
+                    'taxonomy'   => $taxonomy,
+                    'hide_empty' => false,
+                ]);
+                if (!is_wp_error($terms) && is_array($terms)) {
+                    foreach ($terms as $t) {
+                        if (!$t instanceof WP_Term) {
+                            continue;
+                        }
+                        $name = Xabia_Catalog_Token_Match::normalize_text((string) $t->name);
+                        $slug = Xabia_Catalog_Token_Match::normalize_text((string) $t->slug);
+                        if ($name === $needle || $slug === $needle) {
+                            return $t;
+                        }
+                    }
                 }
             }
         }
@@ -431,13 +1051,13 @@ class Xabia_Catalog_List {
      * si no hay alias, usa la primera palabra significativa de la pregunta.
      */
     public static function distill_canonical_activity(string $user_msg, string $search_term = ''): string {
-        $blob = mb_strtolower(trim(wp_strip_all_tags($user_msg !== '' ? $user_msg : $search_term)), 'UTF-8');
-        if ($blob === '') {
+        $blob = trim($user_msg !== '' ? $user_msg : $search_term);
+        if ($blob === '' || !class_exists('Xabia_Catalog_Token_Match', false)) {
             return '';
         }
         $map = apply_filters('xabia_catalog_activity_alias_map', [], $user_msg, $search_term);
         if (!is_array($map)) {
-            $map = [];
+            return '';
         }
         foreach ($map as $needle => $canonical) {
             $needle = trim((string) $needle);
@@ -445,47 +1065,12 @@ class Xabia_Catalog_List {
             if ($needle === '' || $canonical === '') {
                 continue;
             }
-            if (mb_strpos($blob, $needle) !== false) {
+            if (Xabia_Catalog_Token_Match::message_contains_whole_term($blob, $needle)) {
                 return $canonical;
             }
         }
 
-        $stop = [
-            'hola', 'hello', 'hi', 'hey', 'kaixo', 'aupa', 'buenas', 'gracias', 'thanks',
-            'empresas', 'empresa', 'compañía', 'compania', 'company', 'companies',
-            'qué', 'que', 'cuales', 'cuáles', 'which', 'what',
-            'hacen', 'hace', 'hacéis', 'haceis', 'do', 'does',
-            'ofrecen', 'ofrece', 'offer', 'offers',
-            'teneis', 'tenéis', 'hay', 'alguna', 'alguno', 'algunas', 'algunos', 'any',
-            'más', 'mas', 'otras', 'otros', 'todas', 'todos', 'listado', 'lista', 'list',
-            'opciones', 'option', 'options', 'actividades', 'actividad', 'activity', 'activities',
-            'experiencias', 'experiencia', 'experience', 'experiences',
-            'para', 'con', 'sin', 'del', 'las', 'los', 'the', 'tipo', 'categoria', 'categoría',
-            'category', 'en', 'de', 'por', 'una', 'uno', 'un',
-        ];
-        $stop = apply_filters('xabia_catalog_query_stop_words', $stop, $user_msg, $search_term);
-        if (!is_array($stop)) {
-            $stop = [];
-        }
-        $stop_flip = [];
-        foreach ($stop as $w) {
-            $w = trim((string) $w);
-            if ($w !== '') {
-                $stop_flip[$w] = true;
-            }
-        }
-        $best = '';
-        foreach (preg_split('/\s+/u', $blob, -1, PREG_SPLIT_NO_EMPTY) as $tok) {
-            $tok = trim((string) preg_replace('/^[\p{P}\p{Z}]+|[\p{P}\p{Z}]+$/u', '', $tok));
-            if ($tok === '' || mb_strlen($tok, 'UTF-8') < 4 || isset($stop_flip[$tok])) {
-                continue;
-            }
-            if ($best === '' || mb_strlen($tok, 'UTF-8') > mb_strlen($best, 'UTF-8')) {
-                $best = $tok;
-            }
-        }
-
-        return $best;
+        return '';
     }
 
     /**
@@ -541,8 +1126,11 @@ class Xabia_Catalog_List {
         if ($blob === '') {
             return false;
         }
+        if (!class_exists('Xabia_Catalog_Token_Match', false)) {
+            return false;
+        }
         foreach ($exclude_terms as $ex) {
-            if (mb_strpos($blob, $ex) !== false) {
+            if (Xabia_Catalog_Token_Match::message_contains_whole_term($blob, (string) $ex)) {
                 return true;
             }
         }

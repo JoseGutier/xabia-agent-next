@@ -1314,7 +1314,13 @@ class Xabia_Brain {
         $excerpt = self::first_entity_pair($pairs, [
             'resumen', 'summary', 'excerpt', 'descripcion', 'descripcion general', 'description',
         ]);
-        $url = self::first_entity_pair($pairs, [
+        $ficha_url = self::first_entity_pair($pairs, [
+            'enlace', 'permalink', 'enlace a la ficha', 'ficha', 'url de la ficha', 'url ficha',
+        ]);
+        $web_url = self::first_entity_pair($pairs, [
+            'web', 'sitio web', 'website', 'página web', 'pagina web', 'url web', 'web corporativa',
+        ]);
+        $url = $ficha_url !== '' ? $ficha_url : self::first_entity_pair($pairs, [
             'enlace', 'url', 'link', 'web', 'permalink', 'url de compra', 'enlace al producto',
         ]);
         if ($url === '' && preg_match('#https?://[^\s<>\[\]"\']+#u', $chunk, $um)) {
@@ -1322,6 +1328,9 @@ class Xabia_Brain {
             if ($image === '' || $candidate !== $image) {
                 $url = $candidate;
             }
+        }
+        if ($web_url === '' && $ficha_url === '' && $url !== '' && preg_match('#https?://#i', $url)) {
+            $web_url = '';
         }
         if ($excerpt !== '') {
             $excerpt = preg_replace('/\s+/u', ' ', $excerpt) ?? $excerpt;
@@ -1362,6 +1371,13 @@ class Xabia_Brain {
         }
         if ($url !== '') {
             $parts[] = '[Enlace: ' . $url . ']';
+        }
+        if ($web_url !== ''
+            && $url !== ''
+            && strcasecmp(rtrim($web_url, '/'), rtrim($url, '/')) !== 0) {
+            $parts[] = '[Enlace web: ' . $web_url . ']';
+        } elseif ($web_url !== '' && $url === '') {
+            $parts[] = '[Enlace: ' . $web_url . ']';
         }
         $line = implode(' ', $parts);
         if ($image !== '') {

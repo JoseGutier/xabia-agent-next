@@ -1,100 +1,10209 @@
 <?php
 /**
- * API - Xabia Agent NEXT (v8.8)
- * Gestión de peticiones con Registro de Scoring y Logs de Negocio.
+ * XABIA API — motor de chat, endpoints AJAX, OpenAI / Vertex / Digixop.
+ * FILOSOFÍA: Motor agnóstico con capacidades de Google Cloud Enterprise.
+ * SEGURIDAD: Nonces, Sanitización y Gestión de Sesiones.
  */
 
 if (!defined('ABSPATH')) exit;
 
-class Xabia_API {
+if (!class_exists('Xabia_API')) {
 
-    public function __construct() {
-        add_action('rest_api_init', [$this, 'register_routes']);
-    }
+    class Xabia_API {
 
-    public function register_routes() {
-        register_rest_route('xabia/v1', '/chat', [
-            'methods'  => 'POST',
-            'callback' => [$this, 'handle_chat'],
-            'permission_callback' => '__return_true'
-        ]);
-    }
+        /** @var array{prompt: int, completion: int, total: int} */
+        private static $digixop_session_usage = ['prompt' => 0, 'completion' => 0, 'total' => 0];
 
-    public function handle_chat($request) {
-        $params = $request->get_json_params();
-        
-        $project_id   = sanitize_text_field($params['project_id'] ?? '');
-        $user_message = sanitize_textarea_field($params['prompt'] ?? $params['message'] ?? '');
+        private static $digixop_session_proxy_used = false;
 
-        if (empty($project_id) || empty($user_message)) {
-            return new WP_REST_Response(['response' => 'Error: Faltan datos críticos.'], 400);
+        /** @var array{prompt_tokens:int, completion_tokens:int, model:string, estimated_cost:float}|null */
+        private static $last_generation_metrics = null;
+
+        /** @var string Último motivo de parada devuelto por el proveedor (p. ej. length / MAX_TOKENS). */
+        private static $last_generation_finish_reason = '';
+
+        /** @var array<string, mixed> Diagnóstico RAG del último turno (Playground / admin). */
+        private static $last_rag_debug = [];
+
+        /** @var array<string, int> */
+        private static $last_prompt_parts = [];
+
+        /** Bypass de caché RAG durante la petición actual (modo desarrollo). */
+        private static $rag_development_mode_active = false;
+
+        /** Visitante anónimo de la petición actual (cortafuegos de tokens). */
+        private static $request_visitor_key = '';
+
+        /** Vertex directo (JSON en WordPress): alineado con Hub / modelo económico. */
+        private const VERTEX_LOCAL_LOCATION = 'europe-west1';
+        private const VERTEX_LOCAL_CHAT_MODEL = 'gemini-2.5-flash';
+        /** Mismo espacio que Hub (`text-embedding-004`); evita drift vs gemini-embedding-001. */
+        private const VERTEX_EMBEDDING_MODEL = 'text-embedding-004';
+
+        /** Chat vía Hub / Vertex (cloud). */
+        private const DEFAULT_CLOUD_CHAT_MODEL = 'gemini-2.5-flash';
+
+        /** OpenAI BYOK chat. Override: config openai_chat_model / chat_model. */
+        private const DEFAULT_OPENAI_CHAT_MODEL = 'gpt-4o-mini';
+
+        /** Hub + Vertex embeddings (espacio unificado). */
+        private const HUB_EMBEDDING_MODEL = 'text-embedding-004';
+
+        /**
+         * Modelos de chat en modo Cloud (ejecución Hub → Vertex Gemini).
+         *
+         * @return list<string>
+         */
+        public static function cloud_chat_model_choices(): array {
+            $choices = [
+                'gemini-2.5-flash',
+                'gemini-2.5-pro',
+            ];
+
+            return (array) apply_filters('xabia_cloud_chat_model_choices', $choices);
         }
 
-        // 1. Obtener Configuración del Agente
-        $projects = get_option('xabia_projects_config', []);
-        if (!isset($projects[$project_id])) {
-            return new WP_REST_Response(['response' => 'Error: Agente no activo.'], 404);
+        /**
+         * Modelos OpenAI de chat (solo BYOK / infraestructura propia con clave OpenAI).
+         *
+         * @return list<string>
+         */
+        public static function openai_chat_model_choices(): array {
+            $choices = [
+                'gpt-4o-mini',
+                'gpt-4o',
+                'gpt-4.1-mini',
+                'gpt-4.1',
+            ];
+
+            return (array) apply_filters('xabia_openai_chat_model_choices', $choices);
         }
 
-        // 2. Obtener Contexto con Scoring Real
-        $contexto = "";
-        $max_score = 0; // Para el log
-        
-        if (function_exists('get_xabia_context')) {
-            // El core ahora necesita el mensaje del usuario para calcular relevancia
-            $contexto = get_xabia_context($project_id, $user_message);
-            
-            // Lógica simple para detectar si hubo relevancia (basada en el contenido devuelto)
-            $max_score = (strpos($contexto, 'No hay datos específicos') === false) ? 10 : 0;
+        /**
+         * Choices de UI según modo de conexión / driver.
+         *
+         * @param array<string, mixed> $config
+         * @return list<string>
+         */
+        public static function chat_model_choices_for_context(array $config = []): array {
+            if (class_exists('Xabia_Digixop_Client', false) && Xabia_Digixop_Client::is_xabia_cloud_mode()) {
+                return self::cloud_chat_model_choices();
+            }
+            if (($config['ai_driver'] ?? 'openai') === 'google_cloud') {
+                return self::cloud_chat_model_choices();
+            }
+
+            return self::openai_chat_model_choices();
         }
 
-        // 3. Preparar llamada a OpenAI
-        $api_key = get_option('xabia_openai_key');
-        $instrucciones = $projects[$project_id]['rules']['instructions'] ?? 'Eres un asistente de Xabia Intelligence Center.';
-
-        if (empty($api_key)) {
-            return new WP_REST_Response(['response' => 'Error: API Key no configurada.'], 500);
+        /**
+         * Modelo de chat efectivo (wire OpenAI-shaped hacia Hub; Hub ejecuta Gemini).
+         *
+         * @param array<string, mixed> $config
+         */
+        public static function resolve_openai_chat_model(array $config = []): string {
+            return self::resolve_chat_model($config);
         }
 
-        $response = wp_remote_post('https://api.openai.com/v1/chat/completions', [
-            'headers' => [
-                'Authorization' => 'Bearer ' . $api_key,
-                'Content-Type'  => 'application/json',
-            ],
-            'body' => json_encode([
-                'model' => 'gpt-4o-mini',
-                'messages' => [
-                    [
-                        'role' => 'system', 
-                        'content' => $instrucciones . "\n\nCONTEXTO DE BASE DE DATOS:\n" . $contexto
-                    ],
-                    ['role' => 'user', 'content' => $user_message]
+        /**
+         * @param array<string, mixed> $config
+         */
+        public static function resolve_chat_model(array $config = []): string {
+            $cloud = class_exists('Xabia_Digixop_Client', false) && Xabia_Digixop_Client::is_xabia_cloud_mode();
+            $vertex_local = class_exists('Xabia_Digixop_Client', false)
+                && Xabia_Digixop_Client::should_use_local_vertex($config);
+            $use_gemini_labels = $cloud || $vertex_local || (($config['ai_driver'] ?? '') === 'google_cloud');
+
+            $raw = '';
+            foreach (['openai_chat_model', 'chat_model', 'openai_model'] as $key) {
+                if (!empty($config[$key]) && is_string($config[$key])) {
+                    $raw = (string) $config[$key];
+                    break;
+                }
+            }
+            $normalized = strtolower(trim(preg_replace('/[^a-z0-9.\-]/', '', $raw) ?? ''));
+
+            // Legacy: agentes cloud guardados con gpt-* → Gemini Flash (ejecución real del Hub).
+            if ($use_gemini_labels && $normalized !== '' && strpos($normalized, 'gpt-') === 0) {
+                $normalized = self::DEFAULT_CLOUD_CHAT_MODEL;
+            }
+
+            $allowed = $use_gemini_labels
+                ? self::cloud_chat_model_choices()
+                : self::openai_chat_model_choices();
+            $default = $use_gemini_labels
+                ? self::DEFAULT_CLOUD_CHAT_MODEL
+                : self::DEFAULT_OPENAI_CHAT_MODEL;
+
+            if ($normalized === '' || !in_array($normalized, $allowed, true)) {
+                $normalized = $default;
+            }
+
+            return (string) apply_filters('xabia_chat_model', $normalized, $config, $use_gemini_labels);
+        }
+
+        /**
+         * Modelo de embeddings: Hub/proxy/Vertex → text-embedding-004; OpenAI BYOK → 3-small.
+         *
+         * @param array<string, mixed> $config
+         */
+        public static function resolve_embedding_model(array $config = [], string $project_id = ''): string {
+            $use_hub_space = false;
+            if (class_exists('Xabia_Digixop_Client', false)) {
+                if (Xabia_Digixop_Client::is_xabia_cloud_mode()) {
+                    $use_hub_space = true;
+                } elseif (Xabia_Digixop_Client::should_use_local_vertex($config)) {
+                    $use_hub_space = true;
+                } elseif (Xabia_Digixop_Client::should_use_openai_proxy($project_id, $config)) {
+                    $use_hub_space = true;
+                }
+            }
+            if (($config['ai_driver'] ?? '') === 'google_cloud' && !$use_hub_space
+                && class_exists('Xabia_Digixop_Client', false)
+                && Xabia_Digixop_Client::should_use_local_vertex($config)) {
+                $use_hub_space = true;
+            }
+
+            $model = $use_hub_space
+                ? self::HUB_EMBEDDING_MODEL
+                : (class_exists('Xabia_Brain', false)
+                    ? Xabia_Brain::OPENAI_BYOK_EMBEDDING_MODEL
+                    : 'text-embedding-3-small');
+
+            return (string) apply_filters('xabia_embedding_model', $model, $config, $project_id, $use_hub_space);
+        }
+
+        public static function init() {
+            if (!has_action('wp_ajax_xabia_ask_ai', [__CLASS__, 'handle_chat_request'])) {
+                add_action('wp_ajax_xabia_ask_ai', [__CLASS__, 'handle_chat_request']);
+                add_action('wp_ajax_nopriv_xabia_ask_ai', [__CLASS__, 'handle_chat_request']);
+            }
+            add_action('wp_ajax_xabia_clear_session', [__CLASS__, 'handle_clear_session']);
+            add_action('wp_ajax_nopriv_xabia_clear_session', [__CLASS__, 'handle_clear_session']);
+            add_action('wp_ajax_xabia_resolve_image', [__CLASS__, 'handle_resolve_image']);
+            add_action('wp_ajax_nopriv_xabia_resolve_image', [__CLASS__, 'handle_resolve_image']);
+            add_action('wp_ajax_xabia_tts', [__CLASS__, 'handle_tts_request']);
+            add_action('wp_ajax_nopriv_xabia_tts', [__CLASS__, 'handle_tts_request']);
+            add_action('wp_ajax_xabia_tts_prepare', [__CLASS__, 'handle_tts_prepare_request']);
+            add_action('wp_ajax_nopriv_xabia_tts_prepare', [__CLASS__, 'handle_tts_prepare_request']);
+        }
+
+        /**
+         * Bloquea endpoints PRO si el runtime es LITE (licencia ausente o build WP.org).
+         */
+        private static function assert_pro_runtime(string $feature = 'pro_only'): void {
+            if (class_exists('Xabia_Features', false) && Xabia_Features::is_lite()) {
+                Xabia_Features::reject_pro_json($feature);
+            }
+        }
+
+        /**
+         * Compatibilidad: delega en {@see xabia_trace()}.
+         *
+         * Desactivar fichero: define('XABIA_DISABLE_CHAT_TRACE', true) en wp-config.php.
+         */
+        public static function chat_trace(string $message, $data = null): void {
+            if (function_exists('xabia_trace')) {
+                xabia_trace($message, $data);
+            } else {
+                error_log($message);
+            }
+        }
+
+        /**
+         * Resuelve rutas de imagen (relativas o solo nombre) a URLs en wp-content/uploads.
+         * Acepta path (uno) o paths[] (lote). Devuelve { urls: { path: url } }.
+         * Rutas con '/' → baseurl + path. Solo nombre → búsqueda en biblioteca de medios (una query por lote).
+         */
+        public static function handle_resolve_image() {
+            self::assert_pro_runtime('vector_rag');
+            $paths = [];
+            if (isset($_REQUEST['paths']) && is_array($_REQUEST['paths'])) {
+                $paths = array_map(function ($p) {
+                    return self::sanitize_image_path($p);
+                }, wp_unslash($_REQUEST['paths']));
+            } elseif (isset($_REQUEST['path'])) {
+                $one = self::sanitize_image_path(wp_unslash($_REQUEST['path']));
+                if ($one !== '') {
+                    $paths = [$one];
+                }
+            }
+            $paths = array_unique(array_filter($paths, 'strlen'));
+            $paths = array_slice($paths, 0, 100); 
+            if (empty($paths)) {
+                wp_send_json_success(['urls' => (object) []]);
+                return;
+            }
+
+            $uploads = wp_upload_dir();
+            $baseurl = isset($uploads['baseurl']) ? rtrim($uploads['baseurl'], '/') . '/' : '';
+            $urls = self::resolve_image_paths_batch($paths, $baseurl);
+            wp_send_json_success(['urls' => $urls]);
+        }
+
+        /**
+         * TTS servidor → audio real (HTML5). Evita speechSynthesis mudo en Chrome/macOS.
+         * Orden: credenciales locales (Google/OpenAI) → Hub Xabia → say (Darwin local).
+         */
+        public static function handle_tts_request(): void {
+            $xabia_ver = defined('XABIA_VERSION') ? XABIA_VERSION : '';
+            error_log('[XABIA_TTS] handle_tts_request entry ver=' . $xabia_ver);
+            self::assert_pro_runtime('voice_tts');
+            $parsed = self::parse_tts_request_input();
+            $text = $parsed['text'];
+            $lang = $parsed['lang'];
+
+            if ($text !== '' && class_exists('Xabia_Voice', false)) {
+                $text = Xabia_Voice::insert_structural_tts_breaks($text);
+                $text = Xabia_Voice::localize_text_for_tts($text, $lang);
+                $text = Xabia_Voice::inject_speech_pauses($text, 'plain');
+            }
+            if ($text === '') {
+                wp_send_json_error(['message' => 'empty', 'plugin_version' => $xabia_ver], 400);
+                return;
+            }
+            if (function_exists('mb_strlen') ? mb_strlen($text) > 1200 : strlen($text) > 1200) {
+                $text = function_exists('mb_substr') ? mb_substr($text, 0, 1200) : substr($text, 0, 1200);
+            }
+
+            $project_id = $parsed['project_id'];
+            $voice_pref = $parsed['voice_pref'];
+            $rate = $parsed['rate'];
+
+            $projects = get_option('xabia_projects_config', []);
+            $config = (is_array($projects) && isset($projects[$project_id]) && is_array($projects[$project_id]))
+                ? $projects[$project_id]
+                : [];
+
+            error_log('[XABIA_TTS] start project=' . $project_id . ' lang=' . $lang . ' locale=' . $parsed['locale_bcp47'] . ' chars=' . strlen($text));
+            $audio = self::synthesize_tts_audio($text, $lang, $voice_pref, $rate, $project_id, $config, $parsed['locale_bcp47']);
+            if ($audio === null || empty($audio['base64']) || empty($audio['mime'])) {
+                $error = [
+                    'message'        => 'tts_unavailable',
+                    'plugin_version' => $xabia_ver,
+                ];
+                if (class_exists('Xabia_Hub_Client', false)) {
+                    $hub_error = Xabia_Hub_Client::get_last_error();
+                    if (is_array($hub_error) && $hub_error !== []) {
+                        $error['hub'] = $hub_error;
+                        error_log('[XABIA_TTS] unavailable hub=' . wp_json_encode($hub_error));
+                    } else {
+                        error_log('[XABIA_TTS] unavailable (no hub error detail; license/local engines failed) hub_client=' . (Xabia_Hub_Client::is_available() ? 'yes' : 'no'));
+                    }
+                } else {
+                    error_log('[XABIA_TTS] unavailable (Xabia_Hub_Client class missing)');
+                }
+                wp_send_json_error($error, 503);
+                return;
+            }
+
+            error_log('[XABIA_TTS] OK engine=' . ($audio['engine'] ?? 'unknown') . ' mime=' . $audio['mime'] . ' b64=' . strlen((string) $audio['base64']));
+            wp_send_json_success([
+                'mime'           => $audio['mime'],
+                'base64'         => $audio['base64'],
+                'engine'         => $audio['engine'] ?? 'unknown',
+                'text'           => $text,
+                'plugin_version' => $xabia_ver,
+            ]);
+        }
+
+        /**
+         * Solo preprocesa texto para TTS (p. ej. fallback speechSynthesis del navegador).
+         */
+        public static function handle_tts_prepare_request(): void {
+            self::assert_pro_runtime('voice_tts');
+            $parsed = self::parse_tts_request_input();
+            $text = $parsed['text'];
+            $lang = $parsed['lang'];
+            if ($text !== '' && class_exists('Xabia_Voice', false)) {
+                $text = Xabia_Voice::insert_structural_tts_breaks($text);
+                $text = Xabia_Voice::localize_text_for_tts($text, $lang);
+                $text = Xabia_Voice::inject_speech_pauses($text, 'plain');
+            }
+            if ($text === '') {
+                wp_send_json_error(['message' => 'empty'], 400);
+                return;
+            }
+            wp_send_json_success(['text' => $text, 'lang' => $lang]);
+        }
+
+        /**
+         * @return array{project_id: string, lang: string, locale_bcp47: string, voice_pref: string, rate: float, text: string}
+         */
+        private static function parse_tts_request_input(): array {
+            $text = isset($_POST['text']) ? wp_strip_all_tags(wp_unslash((string) $_POST['text'])) : '';
+            $text = str_replace(["\r\n", "\r"], "\n", $text);
+            $text = preg_replace('/[^\S\n]+/u', ' ', $text) ?? $text;
+            $text = preg_replace('/\n{3,}/u', "\n\n", $text) ?? $text;
+            $text = trim($text);
+
+            $project_id = isset($_POST['project_id']) ? sanitize_key(wp_unslash((string) $_POST['project_id'])) : '';
+            $lang_raw = isset($_POST['lang']) ? sanitize_text_field(wp_unslash((string) $_POST['lang'])) : 'es';
+            $user_lang_raw = isset($_POST['user_lang']) ? sanitize_text_field(wp_unslash((string) $_POST['user_lang'])) : '';
+            $lang = class_exists('Xabia_Voice', false)
+                ? Xabia_Voice::resolve_tts_lang_code($lang_raw, $user_lang_raw)
+                : strtolower(preg_replace('/[^a-z]/', '', $lang_raw) ?: 'es');
+            if ($lang === '') {
+                $lang = 'es';
+            }
+
+            $locale_bcp47 = trim(str_replace('_', '-', $user_lang_raw));
+            if ($locale_bcp47 === '' && class_exists('Xabia_Voice', false)) {
+                $locale_bcp47 = Xabia_Voice::lang_code_to_locale($lang);
+            }
+            if ($locale_bcp47 === '') {
+                $locale_bcp47 = 'es-ES';
+            }
+            $locale_bcp47 = preg_replace('/[^a-zA-Z0-9\-]/', '', $locale_bcp47) ?: 'es-ES';
+
+            $voice_pref = isset($_POST['voice']) ? sanitize_key(wp_unslash((string) $_POST['voice'])) : 'default';
+            $rate = isset($_POST['rate']) ? (float) $_POST['rate'] : 1.0;
+            $rate = max(0.5, min(2.0, $rate > 0 ? $rate : 1.0));
+
+            return [
+                'project_id'    => $project_id,
+                'lang'          => $lang,
+                'locale_bcp47'  => $locale_bcp47,
+                'voice_pref'    => $voice_pref,
+                'rate'          => $rate,
+                'text'          => $text,
+            ];
+        }
+
+        /**
+         * Credenciales TTS explícitas en el servidor del cliente (infraestructura propia).
+         *
+         * @param array<string, mixed> $config
+         */
+        private static function has_explicit_local_tts_credentials(string $project_id, array $config): bool {
+            $gpath = self::resolve_gcloud_json_path($config);
+            if ($gpath !== '' && is_readable($gpath)) {
+                return true;
+            }
+            if (class_exists('Xabia_Digixop_Client', false)) {
+                return Xabia_Digixop_Client::get_effective_openai_key($project_id, $config) !== '';
+            }
+
+            return false;
+        }
+
+        /**
+         * @param array<string, mixed> $config
+         * @return array{base64: string, mime: string, engine: string}|null
+         */
+        private static function synthesize_tts_audio(
+            string $text,
+            string $lang,
+            string $voice_pref,
+            float $rate,
+            string $project_id,
+            array $config,
+            string $locale_bcp47 = ''
+        ): ?array {
+            if (self::has_explicit_local_tts_credentials($project_id, $config)) {
+                $g = self::synthesize_tts_google_cloud($text, $lang, $voice_pref, $rate, $config);
+                if ($g !== null) {
+                    return $g;
+                }
+                $o = self::synthesize_tts_openai($text, $lang, $voice_pref, $rate, $project_id, $config);
+                if ($o !== null) {
+                    return $o;
+                }
+            }
+
+            if (class_exists('Xabia_Hub_Client', false) && Xabia_Hub_Client::is_available()) {
+                $locale_for_hub = $locale_bcp47 !== ''
+                    ? $locale_bcp47
+                    : (class_exists('Xabia_Voice', false) ? Xabia_Voice::lang_code_to_locale($lang) : 'es-ES');
+                error_log('Xabia TTS Hub request locale=' . $locale_for_hub . ' project=' . $project_id);
+                $hub = Xabia_Hub_Client::synthesize_speech(
+                    $text,
+                    $locale_for_hub,
+                    $project_id,
+                    $voice_pref,
+                    $rate
+                );
+                if ($hub !== null && !empty($hub['base64']) && !empty($hub['mime'])) {
+                    error_log('Xabia TTS Hub OK engine=' . ($hub['engine'] ?? 'xabia_hub') . ' bytes=' . strlen((string) $hub['base64']));
+                    return [
+                        'base64' => (string) $hub['base64'],
+                        'mime'   => (string) $hub['mime'],
+                        'engine' => (string) ($hub['engine'] ?? 'xabia_hub'),
+                    ];
+                }
+                $hub_err = Xabia_Hub_Client::get_last_error();
+                error_log('Xabia TTS Hub failed detail=' . wp_json_encode(is_array($hub_err) ? $hub_err : []));
+            } else {
+                error_log('Xabia TTS Hub skipped (client unavailable or no license)');
+            }
+
+            return self::synthesize_tts_macos_say($text, $lang, $voice_pref, $rate);
+        }
+
+        /**
+         * @param array<string, mixed> $config
+         * @return array{base64: string, mime: string, engine: string}|null
+         */
+        private static function synthesize_tts_google_cloud(string $text, string $lang, string $voice_pref, float $rate, array $config): ?array {
+            $auth = self::get_google_vertex_auth($config);
+            if ($auth === null) {
+                return null;
+            }
+            $lang_map = class_exists('Xabia_Voice', false)
+                ? Xabia_Voice::locale_map()
+                : [
+                    'es' => 'es-ES',
+                    'en' => 'en-US',
+                    'eu' => 'eu-ES',
+                    'fr' => 'fr-FR',
+                    'de' => 'de-DE',
+                    'it' => 'it-IT',
+                    'pt' => 'pt-PT',
+                ];
+            $language = $lang_map[$lang] ?? (class_exists('Xabia_Voice', false)
+                ? Xabia_Voice::lang_code_to_locale($lang)
+                : ($lang . '-' . strtoupper($lang)));
+            $voice_name = class_exists('Xabia_Voice', false)
+                ? Xabia_Voice::google_neural_voice_name($lang, $voice_pref)
+                : '';
+            if ($voice_name === '') {
+                if ($lang === 'es') {
+                    $voice_name = ($voice_pref === 'male') ? 'es-ES-Neural2-B' : 'es-ES-Neural2-A';
+                } elseif ($lang === 'en') {
+                    $voice_name = ($voice_pref === 'male') ? 'en-US-Neural2-D' : 'en-US-Neural2-C';
+                }
+            }
+            $body = [
+                'input'       => ['ssml' => class_exists('Xabia_Voice', false)
+                    ? Xabia_Voice::wrap_google_ssml($text, $lang)
+                    : '<speak>' . htmlspecialchars($text, ENT_XML1 | ENT_QUOTES, 'UTF-8') . '</speak>'],
+                'voice'       => array_filter([
+                    'languageCode' => $language,
+                    'name'         => $voice_name !== '' ? $voice_name : null,
+                ]),
+                'audioConfig' => [
+                    'audioEncoding' => 'MP3',
+                    'speakingRate'  => $rate,
                 ],
-                'temperature' => 0.4 // Reducimos temperatura para ser más precisos
-            ]),
-            'timeout' => 45
-        ]);
+            ];
+            $resp = self::google_tts_post($auth['access_token'], $body);
+            if ($resp === null && $voice_name !== '' && $lang === 'eu') {
+                $body['voice'] = ['languageCode' => $language];
+                $resp = self::google_tts_post($auth['access_token'], $body);
+            }
+            if ($resp === null && isset($body['input']['ssml'])) {
+                $body['input'] = ['text' => $text];
+                $resp = self::google_tts_post($auth['access_token'], $body);
+            }
+            if ($resp === null) {
+                return null;
+            }
 
-        if (is_wp_error($response)) {
-            return new WP_REST_Response(['response' => 'Error de conexión externa.'], 500);
+            return ['base64' => $resp, 'mime' => 'audio/mpeg', 'engine' => 'google_cloud'];
         }
 
-        $body = json_decode(wp_remote_retrieve_body($response), true);
-        $answer = $body['choices'][0]['message']['content'] ?? 'Lo siento, el motor está saturado.';
+        private static function google_tts_post(string $access_token, array $body): ?string {
+            $resp = wp_remote_post('https://texttospeech.googleapis.com/v1/text:synthesize', [
+                'timeout' => 30,
+                'headers' => [
+                    'Authorization' => 'Bearer ' . $access_token,
+                    'Content-Type'  => 'application/json',
+                ],
+                'body' => wp_json_encode($body),
+            ]);
+            if (is_wp_error($resp) || (int) wp_remote_retrieve_response_code($resp) !== 200) {
+                return null;
+            }
+            $json = json_decode((string) wp_remote_retrieve_body($resp), true);
+            $b64 = is_array($json) ? (string) ($json['audioContent'] ?? '') : '';
 
-        // --- 4. REGISTRO EN EL LOG DE INTELIGENCIA (CRÍTICO) ---
-        global $wpdb;
-        $wpdb->insert(
-            $wpdb->prefix . 'xabia_logs',
-            [
-                'project_id'  => $project_id,
-                'user_query'  => $user_message,
-                'ai_response' => $answer,
-                'max_score'   => $max_score
-            ],
-            ['%s', '%s', '%s', '%d']
-        );
+            return $b64 !== '' ? $b64 : null;
+        }
 
-        return new WP_REST_Response(['response' => $answer], 200);
+        /**
+         * @param array<string, mixed> $config
+         * @return array{base64: string, mime: string, engine: string}|null
+         */
+        private static function synthesize_tts_openai(string $text, string $lang, string $voice_pref, float $rate, string $project_id, array $config): ?array {
+            if (!class_exists('Xabia_Digixop_Client', false)) {
+                return null;
+            }
+            $key = Xabia_Digixop_Client::get_effective_openai_key($project_id, $config);
+            if ($key === '') {
+                return null;
+            }
+            $voice = 'nova';
+            if ($voice_pref === 'male') {
+                $voice = 'onyx';
+            } elseif ($voice_pref === 'female') {
+                $voice = 'nova';
+            }
+            $resp = wp_remote_post('https://api.openai.com/v1/audio/speech', [
+                'timeout' => 45,
+                'headers' => [
+                    'Authorization' => 'Bearer ' . $key,
+                    'Content-Type'  => 'application/json',
+                ],
+                'body' => wp_json_encode([
+                    'model'           => 'tts-1',
+                    'input'           => $text,
+                    'voice'           => $voice,
+                    'response_format' => 'mp3',
+                    'speed'           => $rate,
+                ]),
+            ]);
+            if (is_wp_error($resp) || (int) wp_remote_retrieve_response_code($resp) !== 200) {
+                return null;
+            }
+            $bin = (string) wp_remote_retrieve_body($resp);
+            if ($bin === '' || strncmp($bin, '{', 1) === 0) {
+                return null;
+            }
+
+            return ['base64' => base64_encode($bin), 'mime' => 'audio/mpeg', 'engine' => 'openai'];
+        }
+
+        /**
+         * Fallback local macOS (Local by Flywheel / Darwin): genera audio audible vía `say`.
+         *
+         * @return array{base64: string, mime: string, engine: string}|null
+         */
+        private static function synthesize_tts_macos_say(string $text, string $lang, string $voice_pref, float $rate): ?array {
+            if (PHP_OS_FAMILY !== 'Darwin') {
+                return null;
+            }
+            $host = '';
+            if (!empty($_SERVER['HTTP_HOST'])) {
+                $host = strtolower((string) $_SERVER['HTTP_HOST']);
+            }
+            $is_local = str_contains($host, '.local') || $host === 'localhost' || $host === '127.0.0.1';
+            if (!$is_local && !(defined('WP_DEBUG') && WP_DEBUG)) {
+                return null;
+            }
+            if (!function_exists('exec') || !is_executable('/usr/bin/say')) {
+                return null;
+            }
+
+            $voice = class_exists('Xabia_Voice', false)
+                ? Xabia_Voice::macos_say_voice($lang, $voice_pref)
+                : 'Monica';
+            if (!class_exists('Xabia_Voice', false)) {
+                if ($lang === 'es') {
+                    $voice = ($voice_pref === 'male') ? 'Jorge' : 'Monica';
+                } elseif ($lang === 'en') {
+                    $voice = ($voice_pref === 'male') ? 'Alex' : 'Samantha';
+                } elseif ($lang === 'eu') {
+                    $voice = 'Monica';
+                }
+            }
+
+            $rate_wpm = (int) round(175 * $rate);
+            $rate_wpm = max(90, min(350, $rate_wpm));
+
+            $dir = trailingslashit(get_temp_dir()) . 'xabia-tts';
+            if (!is_dir($dir) && !wp_mkdir_p($dir)) {
+                return null;
+            }
+            $id = uniqid('tts_', true);
+            $aiff = $dir . '/' . $id . '.aiff';
+            $m4a = $dir . '/' . $id . '.m4a';
+
+            $cmd = sprintf(
+                '/usr/bin/say -v %s -r %d -o %s %s 2>/dev/null',
+                escapeshellarg($voice),
+                $rate_wpm,
+                escapeshellarg($aiff),
+                escapeshellarg($text)
+            );
+            exec($cmd, $out, $code);
+            if ($code !== 0 || !is_readable($aiff) || filesize($aiff) < 32) {
+                @unlink($aiff);
+                return null;
+            }
+
+            $mime = 'audio/aiff';
+            $file = $aiff;
+            if (is_executable('/usr/bin/afconvert')) {
+                $conv = sprintf(
+                    '/usr/bin/afconvert -f m4af -d aac %s %s 2>/dev/null',
+                    escapeshellarg($aiff),
+                    escapeshellarg($m4a)
+                );
+                exec($conv, $out2, $code2);
+                if ($code2 === 0 && is_readable($m4a) && filesize($m4a) > 32) {
+                    $mime = 'audio/mp4';
+                    $file = $m4a;
+                    @unlink($aiff);
+                }
+            }
+
+            $bin = file_get_contents($file);
+            @unlink($file);
+            if (!is_string($bin) || $bin === '') {
+                return null;
+            }
+
+            return ['base64' => base64_encode($bin), 'mime' => $mime, 'engine' => 'macos_say'];
+        }
+
+        /**
+         * Sanitiza una ruta de imagen: sin '..', sin protocolo, solo caracteres seguros.
+         */
+        private static function sanitize_image_path($path) {
+            $path = sanitize_text_field(is_string($path) ? $path : '');
+            $path = trim($path, "/ \t\n\r");
+            if ($path === '' || strpos($path, '..') !== false || preg_match('#^https?://#i', $path)) {
+                return '';
+            }
+            return $path;
+        }
+
+        /**
+         * Resuelve un lote de paths a URLs. Una sola query para todos los "solo nombre de archivo".
+         */
+        private static function resolve_image_paths_batch(array $paths, $baseurl) {
+            $urls = [];
+            $filenames_only = [];
+
+            foreach ($paths as $path) {
+                if (strpos($path, '/') !== false) {
+                    $urls[$path] = $baseurl . $path;
+                } else {
+                    $filenames_only[] = $path;
+                    $urls[$path] = $baseurl . $path; 
+                }
+            }
+
+            if (empty($filenames_only)) {
+                return $urls;
+            }
+
+            global $wpdb;
+            $meta_table = $wpdb->postmeta;
+            $posts_table = $wpdb->posts;
+
+            
+            $placeholders = [];
+            $values = [];
+            foreach ($filenames_only as $name) {
+                $placeholders[] = '(m.meta_value = %s OR m.meta_value LIKE %s)';
+                $values[] = $name;
+                $values[] = '%/' . $wpdb->esc_like($name);
+            }
+            $where = implode(' OR ', $placeholders);
+            $sql = "SELECT m.meta_value AS file_path, p.ID
+                    FROM {$meta_table} m
+                    INNER JOIN {$posts_table} p ON p.ID = m.post_id AND p.post_type = 'attachment'
+                    WHERE m.meta_key = '_wp_attached_file' AND ({$where})
+                    ORDER BY p.ID DESC";
+
+            $rows = $wpdb->get_results($wpdb->prepare($sql, $values), ARRAY_A);
+            $seen = [];
+            foreach ($rows as $row) {
+                $file_path = $row['file_path'];
+                $basename = basename($file_path);
+                if (!isset($seen[$basename])) {
+                    $seen[$basename] = true;
+                    $url = wp_get_attachment_url((int) $row['ID']);
+                    if ($url && isset($urls[$basename])) {
+                        $urls[$basename] = $url;
+                    }
+                }
+            }
+            
+            foreach ($filenames_only as $name) {
+                if (isset($seen[$name])) {
+                    continue;
+                }
+                $id = $wpdb->get_var($wpdb->prepare(
+                    "SELECT post_id FROM {$meta_table} WHERE meta_key = '_wp_attached_file' AND meta_value = %s LIMIT 1",
+                    $name
+                ));
+                if ($id) {
+                    $url = wp_get_attachment_url((int) $id);
+                    if ($url) {
+                        $urls[$name] = $url;
+                    }
+                }
+            }
+
+            return $urls;
+        }
+
+        /**
+         * Resuelve una pista textual (p. ej. "Garaixe", nombre de casa) a URL de imagen.
+         * Orden: filtro xabia_resolve_img_hint → adjunto por título → miniatura de entrada publicada → nombre de archivo en uploads.
+         *
+         * @param string $hint Texto dentro de [ACTION:IMG:…] que no es ID ni URL.
+         */
+        private static function resolve_img_hint_to_url($hint) {
+            $hint = trim((string) $hint);
+            if ($hint === '' || strlen($hint) > 120) {
+                return '';
+            }
+            global $wpdb;
+            $like = '%' . $wpdb->esc_like($hint) . '%';
+
+            $aid = $wpdb->get_var($wpdb->prepare(
+                "SELECT ID FROM {$wpdb->posts} WHERE post_type = 'attachment' AND post_status = 'inherit'
+                 AND post_title LIKE %s ORDER BY ID DESC LIMIT 1",
+                $like
+            ));
+            if ($aid) {
+                $u = wp_get_attachment_url((int) $aid);
+                if (is_string($u) && $u !== '') {
+                    return $u;
+                }
+            }
+
+            $thumb = $wpdb->get_var($wpdb->prepare(
+                "SELECT pm.meta_value FROM {$wpdb->posts} p
+                 INNER JOIN {$wpdb->postmeta} pm ON pm.post_id = p.ID AND pm.meta_key = '_thumbnail_id'
+                 WHERE p.post_status = 'publish' AND p.post_title LIKE %s
+                 ORDER BY p.post_modified DESC LIMIT 1",
+                $like
+            ));
+            if ($thumb) {
+                $u = wp_get_attachment_url((int) $thumb);
+                if (is_string($u) && $u !== '') {
+                    return $u;
+                }
+            }
+
+            $uploads = wp_upload_dir();
+            $baseurl = isset($uploads['baseurl']) ? rtrim((string) $uploads['baseurl'], '/') . '/' : '';
+            if ($baseurl !== '') {
+                $slug = sanitize_file_name($hint);
+                if ($slug !== '') {
+                    foreach (['jpg', 'jpeg', 'png', 'webp', 'gif'] as $ext) {
+                        $try = $slug . '.' . $ext;
+                        $batch = self::resolve_image_paths_batch([$try], $baseurl);
+                        if (!empty($batch[$try]) && preg_match('#^https?://#i', (string) $batch[$try])) {
+                            return (string) $batch[$try];
+                        }
+                    }
+                }
+            }
+
+            return '';
+        }
+
+        /**
+         * Limpia la sesión de chat del cliente (historial y última búsqueda).
+         * Usado por Modo Tótem para reiniciar sin rastro del usuario anterior.
+         */
+        public static function handle_clear_session() {
+            $project_id = sanitize_text_field($_POST['project_id'] ?? '');
+            if (empty($project_id)) {
+                wp_send_json_success(['ok' => true]);
+                return;
+            }
+            if (!session_id() && !headers_sent()) {
+                session_start();
+            }
+            if (isset($_SESSION['xabia_chat_history'][$project_id])) {
+                unset($_SESSION['xabia_chat_history'][$project_id]);
+            }
+            if (isset($_SESSION['xabia_last_search'][$project_id])) {
+                unset($_SESSION['xabia_last_search'][$project_id]);
+            }
+            if (isset($_SESSION['xabia_last_entity'][$project_id])) {
+                unset($_SESSION['xabia_last_entity'][$project_id]);
+            }
+            wp_send_json_success(['ok' => true]);
+        }
+
+        /**
+         * Identificador anónimo del visitante (frontend visitor_key o md5(IP+UA)).
+         */
+        private static function resolve_request_visitor_key(string $project_id = ''): string {
+            unset($project_id);
+            $raw = isset($_POST['visitor_key']) ? sanitize_text_field(wp_unslash((string) $_POST['visitor_key'])) : '';
+            $raw = preg_replace('/[^a-zA-Z0-9_-]/', '', (string) $raw);
+            if (is_string($raw) && strlen($raw) >= 8 && strlen($raw) <= 64) {
+                return substr($raw, 0, 64);
+            }
+            $ip = isset($_SERVER['REMOTE_ADDR']) ? (string) $_SERVER['REMOTE_ADDR'] : '';
+            $ua = isset($_SERVER['HTTP_USER_AGENT']) ? (string) $_SERVER['HTTP_USER_AGENT'] : '';
+            return md5($ip . $ua);
+        }
+
+        /**
+         * Límite de tokens por visitante/sesión. Ausente → 45000 (~15–20 turnos); 0 → desactivado.
+         * El valor legado 15000 se migra a 45000 para no cortar conversaciones de reserva.
+         *
+         * @param array<string, mixed> $config
+         */
+        private static function max_tokens_per_session_for_project(array $config): int {
+            $legacy_default = 15000;
+            $new_default = 45000;
+            $rules = is_array($config['rules'] ?? null) ? $config['rules'] : [];
+            if (!array_key_exists('max_tokens_per_session', $rules)) {
+                return max(0, (int) apply_filters('xabia_max_tokens_per_session_default', $new_default, $config));
+            }
+            $limit = (int) $rules['max_tokens_per_session'];
+            if ($limit < 0) {
+                $limit = 0;
+            }
+            // Agentes guardados con el default antiguo: subir techo sin tocar límites custom bajos/altos.
+            if ($limit === $legacy_default) {
+                $limit = $new_default;
+            }
+
+            return $limit;
+        }
+
+        /**
+         * Límite diario global del proyecto. 0 = desactivado (sin techo rígido).
+         *
+         * @param array<string, mixed> $config
+         */
+        private static function daily_token_limit_for_project(array $config): int {
+            $limit = isset($config['rules']['daily_token_limit']) ? (int) $config['rules']['daily_token_limit'] : 0;
+            if ($limit < 0) {
+                $limit = 0;
+            }
+            return $limit;
+        }
+
+        /**
+         * Mensaje al visitante cuando agota su bolsa de sesión.
+         *
+         * @param array<string, mixed> $config
+         */
+        private static function session_token_limit_user_message(array $config): string {
+            $custom = '';
+            if (!empty($config['rules']['custom_user_limit_message']) && is_string($config['rules']['custom_user_limit_message'])) {
+                $custom = trim($config['rules']['custom_user_limit_message']);
+            }
+            if ($custom === '') {
+                $filtered = apply_filters('xabia_session_token_limit_message', '', $config);
+                if (is_string($filtered) && $filtered !== '') {
+                    $custom = $filtered;
+                }
+            }
+            if ($custom !== '') {
+                return $custom;
+            }
+
+            return __('Has alcanzado el límite de uso de este asistente por ahora. Puedes seguir navegando la web con normalidad.', 'xabia-intelligence');
+        }
+
+        /**
+         * Mensaje al visitante cuando se supera el límite diario de tokens del agente.
+         *
+         * @param array<string, mixed> $config
+         */
+        private static function daily_token_limit_user_message(array $config): string {
+            $custom = '';
+            if (!empty($config['rules']['custom_daily_limit_message']) && is_string($config['rules']['custom_daily_limit_message'])) {
+                $custom = trim($config['rules']['custom_daily_limit_message']);
+            }
+            if ($custom === '') {
+                $filtered = apply_filters('xabia_daily_token_limit_message', '', $config);
+                if (is_string($filtered) && $filtered !== '') {
+                    $custom = $filtered;
+                }
+            }
+            if ($custom !== '') {
+                return $custom;
+            }
+
+            return __('El asistente está en mantenimiento por hoy. Puedes seguir explorando y comprando en la web con normalidad; vuelve a escribirme mañana.', 'xabia-intelligence');
+        }
+
+        private static function consumed_tokens_today(string $project_id): int {
+            global $wpdb;
+            $table = Xabia_DB::table('usage_logs');
+            if ($wpdb->get_var("SHOW TABLES LIKE '$table'") !== $table) {
+                return 0;
+            }
+            $start = gmdate('Y-m-d 00:00:00');
+            $end = gmdate('Y-m-d 23:59:59');
+            $sum = $wpdb->get_var($wpdb->prepare(
+                "SELECT COALESCE(SUM(tokens_input + tokens_output),0) FROM $table WHERE project_id = %s AND created_at BETWEEN %s AND %s",
+                $project_id,
+                $start,
+                $end
+            ));
+            return (int) $sum;
+        }
+
+        /**
+         * Tokens acumulados por visitante en el proyecto (bolsa de sesión / anti-bot).
+         */
+        private static function consumed_tokens_for_visitor(string $project_id, string $visitor_key): int {
+            $visitor_key = substr(sanitize_text_field($visitor_key), 0, 64);
+            if ($visitor_key === '') {
+                return 0;
+            }
+            global $wpdb;
+            $table = Xabia_DB::table('usage_logs');
+            if ($wpdb->get_var("SHOW TABLES LIKE '$table'") !== $table) {
+                return 0;
+            }
+            if (class_exists('Xabia_DB', false)) {
+                Xabia_DB::ensure_usage_logs_visitor_key_column();
+            }
+            $sum = $wpdb->get_var($wpdb->prepare(
+                "SELECT COALESCE(SUM(tokens_input + tokens_output),0) FROM $table WHERE project_id = %s AND visitor_key = %s",
+                $project_id,
+                $visitor_key
+            ));
+            return (int) $sum;
+        }
+
+        /**
+         * Doble cortafuegos: bolsa por visitante + cupo diario del proyecto.
+         * Se ejecuta antes de Hub/Vertex; los addons heredan la protección.
+         *
+         * @param array<string, mixed> $config
+         */
+        private static function enforce_cost_firewalls(string $project_id, array $config, bool $bypass, string $user_query = ''): void {
+            if ($bypass) {
+                return;
+            }
+            $visitor_key = self::$request_visitor_key !== ''
+                ? self::$request_visitor_key
+                : self::resolve_request_visitor_key($project_id);
+            self::$request_visitor_key = $visitor_key;
+
+            $session_limit = self::max_tokens_per_session_for_project($config);
+            if ($session_limit > 0) {
+                $session_tokens = self::consumed_tokens_for_visitor($project_id, $visitor_key);
+                if ($session_tokens >= $session_limit) {
+                    $msg = self::session_token_limit_user_message($config);
+                    self::log_early_exit('cost_firewall_session_token_limit', null, $user_query, $msg);
+                    self::send_chat_json_success(['response' => $msg]);
+                    return;
+                }
+            }
+
+            $daily_limit = self::daily_token_limit_for_project($config);
+            if ($daily_limit > 0) {
+                $today_tokens = self::consumed_tokens_today($project_id);
+                if ($today_tokens >= $daily_limit) {
+                    $msg = self::daily_token_limit_user_message($config);
+                    self::log_early_exit('cost_firewall_daily_token_limit', null, $user_query, $msg);
+                    self::send_chat_json_success(['response' => $msg]);
+                    return;
+                }
+            }
+        }
+
+        private static function estimate_cost_usd(string $model, int $in, int $out): float {
+            $m = strtolower($model);
+            
+            $in_rate = 0.00015;
+            $out_rate = 0.00060;
+            if (str_contains($m, 'mini') || str_contains($m, 'flash')) {
+                $in_rate = 0.00005;
+                $out_rate = 0.00020;
+            }
+            $in_rate = (float) apply_filters('xabia_model_input_rate_per_1k', $in_rate, $model);
+            $out_rate = (float) apply_filters('xabia_model_output_rate_per_1k', $out_rate, $model);
+            return (($in / 1000) * $in_rate) + (($out / 1000) * $out_rate);
+        }
+
+        private static function log_usage_metrics(string $project_id, string $user_message = ''): void {
+            if (!is_array(self::$last_generation_metrics)) {
+                return;
+            }
+            global $wpdb;
+            $table = Xabia_DB::table('usage_logs');
+            if ($wpdb->get_var("SHOW TABLES LIKE '$table'") !== $table) {
+                return;
+            }
+            $sensitive = class_exists('Xabia_Router') ? Xabia_Router::detect_sensitive($user_message) : false;
+            $fingerprint = hash('sha256', strtolower(trim($user_message)));
+            $tokens_input = (int) (self::$last_generation_metrics['prompt_tokens'] ?? 0);
+            $tokens_output = (int) (self::$last_generation_metrics['completion_tokens'] ?? 0);
+            $tokens_count = $tokens_input + $tokens_output;
+            if (class_exists('Xabia_DB', false)) {
+                Xabia_DB::ensure_usage_logs_visitor_key_column();
+            }
+            $visitor_key = self::$request_visitor_key !== ''
+                ? self::$request_visitor_key
+                : self::resolve_request_visitor_key($project_id);
+            self::$request_visitor_key = $visitor_key;
+            $wpdb->insert($table, [
+                'project_id'     => $project_id,
+                'model_used'     => (string) (self::$last_generation_metrics['model'] ?? 'unknown'),
+                'tokens_input'   => $tokens_input,
+                'tokens_output'  => $tokens_output,
+                'tokens_count'   => $tokens_count,
+                'estimated_cost' => (float) (self::$last_generation_metrics['estimated_cost'] ?? 0.0),
+                'sensitive_detected' => $sensitive ? 1 : 0,
+                'query_fingerprint' => $fingerprint,
+                'visitor_key'    => substr(sanitize_text_field($visitor_key), 0, 64),
+                'created_at'     => gmdate('Y-m-d H:i:s'),
+            ]);
+            if ($wpdb->insert_id && class_exists('Xabia_DB', false)) {
+                Xabia_DB::deduct_wallet_tokens($tokens_count);
+            }
+        }
+
+        public static function classify_route_with_mini(string $project_id, string $message, array $config = [], string $lang_code = 'es'): string {
+            unset($lang_code);
+            $message = trim($message);
+            if ($message === '') {
+                return class_exists('Xabia_Router') ? Xabia_Router::ROUTE_GENERAL : 'ROUTE_GENERAL';
+            }
+            $schema = "Devuelve solo una etiqueta exacta: ROUTE_ACTION, ROUTE_KNOWLEDGE o ROUTE_GENERAL.\n"
+                . "- ROUTE_ACTION: requiere herramienta externa o dato dinámico en tiempo real.\n"
+                . "- ROUTE_KNOWLEDGE: consulta de conocimiento local/documental.\n"
+                . "- ROUTE_GENERAL: saludo/charla breve.";
+            $messages = [
+                ['role' => 'system', 'content' => $schema],
+                ['role' => 'user', 'content' => $message],
+            ];
+            $messages = self::sanitize_llm_messages_for_external_api($messages, $project_id, $config);
+            $raw = self::call_auxiliary_llm($messages, 20, 0.0, $project_id, $config);
+            $route = self::parse_route_label_from_llm_output($raw);
+            if ($route !== null) {
+                return $route;
+            }
+            return class_exists('Xabia_Router') ? Xabia_Router::ROUTE_KNOWLEDGE : 'ROUTE_KNOWLEDGE';
+        }
+
+        /**
+         * Patrón: el disparador completo es la aguja; la consulta del usuario es el pajar.
+         * Fronteras Unicode reales (?<! / ?!) para no coincidir subcadenas (p. ej. «para» ⊄ «parapente»).
+         *
+         * @return non-empty-string|null
+         */
+        private static function build_strict_condition_full_trigger_pattern(string $trigger): ?string {
+            $trigger = trim(preg_replace('/\s+/u', ' ', (string) $trigger) ?? '');
+            if ($trigger === '') {
+                return null;
+            }
+
+            return '/(?<![\p{L}\p{N}])' . preg_quote($trigger, '/') . '(?![\p{L}\p{N}])/iu';
+        }
+
+        /**
+         * Filas { trigger, response } desde rules.strict_conditions / alias / filtro.
+         *
+         * @param array<string, mixed> $config
+         * @return list<array{trigger: string, response: string}>
+         */
+        public static function resolve_strict_conditions_rows(array $config, string $project_id = ''): array {
+            $rules = isset($config['rules']) && is_array($config['rules']) ? $config['rules'] : [];
+            $raw = null;
+            foreach ([
+                $rules['strict_conditions'] ?? null,
+                $rules['strict_semantic_rules'] ?? null,
+                $rules['semantic_strict_rules'] ?? null,
+                $config['strict_conditions'] ?? null,
+            ] as $candidate) {
+                if ($candidate !== null && $candidate !== '' && $candidate !== []) {
+                    $raw = $candidate;
+                    break;
+                }
+            }
+            $out = [];
+            if (is_string($raw)) {
+                $lines = preg_split('/\r\n|\r|\n/u', $raw) ?: [];
+                foreach ($lines as $line) {
+                    $line = trim((string) $line);
+                    if ($line === '' || str_starts_with($line, '#')) {
+                        continue;
+                    }
+                    $sep = str_contains($line, "\t") ? "\t" : (str_contains($line, '|') ? '|' : ':::');
+                    $parts = explode($sep, $line, 2);
+                    $tr = isset($parts[0]) ? trim((string) $parts[0]) : '';
+                    $resp = isset($parts[1]) ? trim((string) $parts[1]) : '';
+                    if ($tr !== '' && $resp !== '') {
+                        $out[] = ['trigger' => $tr, 'response' => $resp];
+                    }
+                }
+            } elseif (is_array($raw)) {
+                foreach ($raw as $row) {
+                    if (!is_array($row)) {
+                        continue;
+                    }
+                    $tr = trim((string) ($row['trigger'] ?? $row['if'] ?? $row['match'] ?? $row['keyword'] ?? ''));
+                    $resp = (string) ($row['response'] ?? $row['reply'] ?? $row['answer'] ?? $row['text'] ?? '');
+                    $resp = trim(wp_kses_post($resp));
+                    if ($tr !== '' && $resp !== '') {
+                        $out[] = ['trigger' => $tr, 'response' => $resp];
+                    }
+                }
+            }
+            /** @var list<array{trigger: string, response: string}> $filtered */
+            $filtered = apply_filters('xabia_strict_conditions_rules', $out, $config, $project_id);
+            if (!is_array($filtered)) {
+                $filtered = $out;
+            }
+            $norm = [];
+            foreach ($filtered as $row) {
+                if (!is_array($row)) {
+                    continue;
+                }
+                $tr = trim((string) ($row['trigger'] ?? ''));
+                $resp = trim((string) ($row['response'] ?? ''));
+                if ($tr === '' || $resp === '') {
+                    continue;
+                }
+                $norm[] = ['trigger' => $tr, 'response' => $resp];
+            }
+
+            return $norm;
+        }
+
+        /**
+         * Primera regla cuyo trigger coincide con la consulta (orden: triggers más largos primero).
+         *
+         * @param array<string, mixed> $config
+         * @return array{trigger: string, response: string}|null
+         */
+        public static function match_strict_condition_for_message(string $user_message, array $config, string $project_id = ''): ?array {
+            $rows = self::resolve_strict_conditions_rows($config, $project_id);
+            if ($rows === []) {
+                return null;
+            }
+            usort($rows, static function ($a, $b) {
+                $la = mb_strlen((string) ($a['trigger'] ?? ''), 'UTF-8');
+                $lb = mb_strlen((string) ($b['trigger'] ?? ''), 'UTF-8');
+
+                return $lb <=> $la;
+            });
+            $user_query = trim(wp_strip_all_tags((string) $user_message));
+            if ($user_query === '') {
+                return null;
+            }
+            foreach ($rows as $row) {
+                $trigger = trim((string) ($row['trigger'] ?? ''));
+                $trigger = trim(preg_replace('/\s+/u', ' ', $trigger) ?? '');
+                if ($trigger === '') {
+                    continue;
+                }
+                if (mb_strlen($trigger, 'UTF-8') < 2) {
+                    continue;
+                }
+                $pattern = self::build_strict_condition_full_trigger_pattern($trigger);
+                if ($pattern === null || !is_string($pattern)) {
+                    continue;
+                }
+                if (preg_match($pattern, $user_query) === 1) {
+                    if (function_exists('error_log')) {
+                        error_log(sprintf(
+                            '[XABIA_ROUTER_MATCH] Trigger "%s" disparado en: "%s"',
+                            $trigger,
+                            function_exists('mb_substr') ? mb_substr($user_query, 0, 500) : substr($user_query, 0, 500)
+                        ));
+                    }
+
+                    return ['trigger' => $trigger, 'response' => (string) ($row['response'] ?? '')];
+                }
+            }
+
+            return null;
+        }
+
+        /**
+         * Salidas antes de mark('retrieve'): retrieve=0 y generate=0 en el pipeline de depuración.
+         *
+         * @param string|null $route_class Clasificación de ruta si ya existe (p. ej. ROUTE_ACTION); null si aún no hay ruta.
+         */
+        private static function log_early_exit(
+            string $branch_name,
+            ?string $route_class,
+            string $user_query,
+            string $returned_text
+        ): void {
+            $classified = $route_class ?? 'none';
+            $q = $user_query;
+            if (function_exists('mb_substr')) {
+                $q = mb_substr($q, 0, 500);
+            } else {
+                $q = substr($q, 0, 500);
+            }
+            $preview = function_exists('mb_substr')
+                ? mb_substr($returned_text, 0, 80)
+                : substr($returned_text, 0, 80);
+            error_log(sprintf(
+                '[XABIA_EARLY_EXIT] branch="%s" | route_class="%s" | query="%s" | preview="%s"',
+                $branch_name,
+                $classified,
+                $q,
+                $preview
+            ));
+        }
+
+        /**
+         * Persiste en sesión una respuesta corta (interceptor / condición estricta) y la devuelve al cliente.
+         */
+        private static function finalize_php_short_circuit_response(
+            string $project_id,
+            string $user_msg,
+            string $fixed_response,
+            string $finish_reason,
+            string $early_exit_branch,
+            ?string $route_class = null
+        ): void {
+            if (!session_id() && !headers_sent()) {
+                session_start();
+            }
+            $_SESSION['xabia_chat_history'][$project_id][] = ['role' => 'user', 'content' => $user_msg];
+            $_SESSION['xabia_chat_history'][$project_id][] = ['role' => 'assistant', 'content' => $fixed_response];
+            $_SESSION['xabia_chat_history'][$project_id] = array_slice($_SESSION['xabia_chat_history'][$project_id], -24);
+            $_SESSION['xabia_last_response_meta'][$project_id] = [
+                'truncated' => false,
+                'finish_reason' => $finish_reason,
+                'response' => $fixed_response,
+            ];
+            session_write_close();
+            self::log_early_exit($early_exit_branch, $route_class, $user_msg, $fixed_response);
+            self::send_chat_json_success([
+                'response' => $fixed_response,
+                'finish_reason' => $finish_reason,
+                'truncated' => false,
+            ]);
+        }
+
+        private static function maybe_summarize_history(array $history, string $project_id, array $config): array {
+            if (count($history) <= 10) {
+                return $history;
+            }
+            $slice = array_slice($history, -10);
+            $lines = [];
+            foreach ($slice as $m) {
+                if (!is_array($m)) {
+                    continue;
+                }
+                $r = ($m['role'] ?? '') === 'assistant' ? 'Asistente' : 'Usuario';
+                $c = trim((string) ($m['content'] ?? ''));
+                if ($c === '') {
+                    continue;
+                }
+                $lines[] = $r . ': ' . substr($c, 0, 220);
+            }
+            if ($lines === []) {
+                return array_slice($history, -6);
+            }
+            $summary_prompt = [
+                ['role' => 'system', 'content' => 'Resume en exactamente 2 líneas los acuerdos y contexto útil de la conversación. No inventes datos.'],
+                ['role' => 'user', 'content' => implode("\n", $lines)],
+            ];
+            $summary_prompt = self::sanitize_llm_messages_for_external_api($summary_prompt, $project_id, $config);
+            $summary = self::call_auxiliary_llm($summary_prompt, 120, 0.1, $project_id, $config);
+            if (!is_string($summary) || trim($summary) === '') {
+                return array_slice($history, -6);
+            }
+            return array_merge([
+                ['role' => 'system', 'content' => 'Resumen de contexto previo: ' . trim($summary)],
+            ], array_slice($history, -6));
+        }
+
+        /**
+         * Ya hubo una respuesta del asistente: el saludo solo corresponde al primer turno.
+         *
+         * @param list<array<string, mixed>> $history
+         */
+        private static function history_has_assistant_turn(array $history): bool {
+            foreach ($history as $msg) {
+                if (!is_array($msg) || ($msg['role'] ?? '') !== 'assistant') {
+                    continue;
+                }
+                if (trim((string) ($msg['content'] ?? '')) !== '') {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        /**
+         * Quita un saludo inicial cuando la conversación ya está abierta.
+         */
+        private static function strip_followup_greeting(string $response): string {
+            $response = ltrim($response);
+            if ($response === '') {
+                return $response;
+            }
+            $stripped = preg_replace(
+                '/^(?:¡\s*)?(?:hola|buenos\s+d[ií]as|buenas(?:\s+tardes|\s+noches)?|kaixo|egun\s+on|hello|hi|qu[eé]\s+tal|encantad[oa](?:\s+de\s+(?:saludarte|ayudarte|verte))?)\b(?:\s+de\s+nuevo|\s+otra\s+vez)?(?:\s*,?\s*soy\s+[^,!.\n]{1,48})?\s*[.!]?\s*/iu',
+                '',
+                $response,
+                1
+            );
+            if (!is_string($stripped) || trim($stripped) === '') {
+                return $response;
+            }
+
+            return ltrim($stripped);
+        }
+
+        /**
+         * Historial asimétrico: user íntegro; assistant pasado sin tags UI y truncado.
+         * Reduce tokens del hilo sin tocar RAG ni system prompt ni la respuesta que verá el usuario.
+         *
+         * @param array{role?: string, content?: string} $msg
+         * @return array{role: string, content: string}|null
+         */
+        private static function compact_history_message_for_llm(array $msg): ?array {
+            $role = (string) ($msg['role'] ?? 'user');
+            if ($role === 'system') {
+                $content = trim((string) ($msg['content'] ?? ''));
+                return $content !== '' ? ['role' => 'system', 'content' => $content] : null;
+            }
+            $content = trim((string) ($msg['content'] ?? ''));
+            if ($content === '') {
+                return null;
+            }
+            if ($role !== 'assistant') {
+                return ['role' => 'user', 'content' => $content];
+            }
+
+            $clean = preg_replace('/\[ACTION:[^\]]+\]/i', '', $content);
+            $clean = is_string($clean) ? $clean : $content;
+            $clean = preg_replace('/\n{3,}/', "\n\n", $clean);
+            $clean = trim((string) $clean);
+            if ($clean === '') {
+                return null;
+            }
+
+            $max_chars = (int) apply_filters('xabia_asymmetric_history_assistant_max_chars', 450, $msg);
+            if ($max_chars < 120) {
+                $max_chars = 120;
+            }
+            if (function_exists('mb_strlen') && function_exists('mb_substr')) {
+                if (mb_strlen($clean, 'UTF-8') > $max_chars) {
+                    $clean = rtrim(mb_substr($clean, 0, $max_chars, 'UTF-8')) . '…';
+                }
+            } elseif (strlen($clean) > $max_chars) {
+                $clean = rtrim(substr($clean, 0, $max_chars)) . '…';
+            }
+
+            return ['role' => 'assistant', 'content' => $clean];
+        }
+
+        /**
+         * @param list<array{role?: string, content?: string}> $history
+         * @return list<array{role: string, content: string}>
+         */
+        private static function asymmetric_history_slice_for_llm(array $history, int $limit = 6): array {
+            $out = [];
+            foreach (array_slice($history, -$limit) as $msg) {
+                if (!is_array($msg)) {
+                    continue;
+                }
+                $compacted = self::compact_history_message_for_llm($msg);
+                if ($compacted !== null) {
+                    $out[] = $compacted;
+                }
+            }
+            return $out;
+        }
+
+        /**
+         * Vertex local (gemini-2.5-flash) o modelo OpenAI del agente (default gpt-4o-mini).
+         *
+         * @param array<int, array{role: string, content: string}> $messages
+         */
+        private static function call_auxiliary_llm(array $messages, int $max_tokens, float $temperature, string $project_id, array $config): string {
+            if (($config['ai_driver'] ?? '') === 'google_cloud'
+                && class_exists('Xabia_Digixop_Client', false)
+                && Xabia_Digixop_Client::should_use_local_vertex($config)) {
+                $raw = self::call_google_vertex($messages, $max_tokens, $config, $temperature, $project_id, false);
+            } else {
+                $raw = self::call_openai($messages, $max_tokens, self::resolve_openai_chat_model($config), $temperature, $project_id, $config);
+            }
+
+            return is_string($raw) ? $raw : '';
+        }
+
+        private static function parse_route_label_from_llm_output(string $raw): ?string {
+            $normalized = strtoupper(trim($raw));
+            if (in_array($normalized, ['ROUTE_ACTION', 'ROUTE_KNOWLEDGE', 'ROUTE_GENERAL'], true)) {
+                return $normalized;
+            }
+            foreach (['ROUTE_ACTION', 'ROUTE_KNOWLEDGE', 'ROUTE_GENERAL'] as $label) {
+                if (strpos($normalized, $label) !== false) {
+                    return $label;
+                }
+            }
+
+            return null;
+        }
+
+        private static function normalize_history_messages($raw): array {
+            if (!is_array($raw)) {
+                return [];
+            }
+            $out = [];
+            foreach ($raw as $m) {
+                if (!is_array($m) || !isset($m['role'], $m['content'])) {
+                    continue;
+                }
+                $role = (string) $m['role'];
+                if (!in_array($role, ['user', 'assistant', 'system'], true)) {
+                    continue;
+                }
+                $content = trim(wp_strip_all_tags((string) $m['content']));
+                if ($content === '') {
+                    continue;
+                }
+                $out[] = ['role' => $role, 'content' => $content];
+            }
+            return $out;
+        }
+
+        private static function merge_history_messages(array $session_history, array $posted_history): array {
+            $merged = array_merge(
+                self::normalize_history_messages($session_history),
+                self::normalize_history_messages($posted_history)
+            );
+            $deduped = [];
+            foreach ($merged as $msg) {
+                $last = end($deduped);
+                if (is_array($last) && ($last['role'] ?? '') === $msg['role'] && ($last['content'] ?? '') === $msg['content']) {
+                    continue;
+                }
+                $deduped[] = $msg;
+            }
+            return array_slice($deduped, -24);
+        }
+
+        private static function is_protocol_continuation(string $user_msg, bool $is_continue_request): bool {
+            // x_continue es el botón Continuar: debe generar el resto, no devolver el mismo corte.
+            if ($is_continue_request) {
+                return false;
+            }
+            if (!class_exists('Xabia_Rag_Query_Rewriter', false)) {
+                return false;
+            }
+            if (!Xabia_Rag_Query_Rewriter::is_internal_instruction($user_msg)) {
+                return false;
+            }
+            $fold = mb_strtolower($user_msg, 'UTF-8');
+
+            return mb_strpos($fold, 'desde donde') !== false
+                || mb_strpos($fold, 'sin repetir') !== false
+                || mb_strpos($fold, 'exactly where you left') !== false;
+        }
+
+        /**
+         * Una continuación de protocolo no abre otra generación.
+         */
+        private static function answer_without_secondary_generation(string $project_id, string $user_query = ''): void {
+            if (!session_id() && !headers_sent()) {
+                session_start();
+            }
+            $prev = '';
+            $meta_prev = $_SESSION['xabia_last_response_meta'][$project_id] ?? [];
+            if (is_array($meta_prev)) {
+                $prev = trim((string) ($meta_prev['response'] ?? ''));
+                $_SESSION['xabia_last_response_meta'][$project_id]['truncated'] = false;
+                $_SESSION['xabia_last_response_meta'][$project_id]['finish_reason'] = 'stop';
+            }
+            session_write_close();
+            error_log('[XABIA_CORE] protocol continuation skipped generation project=' . $project_id);
+            self::log_early_exit('protocol_continuation_skip_generation', null, $user_query, $prev);
+            self::send_chat_json_success([
+                'response'      => $prev,
+                'finish_reason' => 'stop',
+                'truncated'     => false,
+            ]);
+        }
+
+        private static function chat_max_tokens($max_tokens): int {
+            $n = (int) $max_tokens;
+            if ($n > 3000) {
+                return 3000;
+            }
+            return max(1200, $n);
+        }
+
+        /**
+         * Límites de salida para peticiones estilo OpenAI (proxy Digixop / OpenAI directo).
+         *
+         * @return array{max_tokens:int, max_completion_tokens:int}
+         */
+        private static function openai_chat_token_limit_fields(int $max_tokens): array {
+            $budget = self::chat_max_tokens($max_tokens);
+
+            return [
+                'max_tokens'             => $budget,
+                'max_completion_tokens'  => $budget,
+            ];
+        }
+
+        private static function finish_reason_is_provider_max_tokens(string $reason): bool {
+            $r = strtolower(trim($reason));
+            return in_array($r, ['max_tokens', 'max_output_tokens', 'max_tokens_reached', 'max_output_tokens_reached'], true);
+        }
+
+        private static function finish_reason_is_natural_stop(string $reason): bool {
+            $r = strtolower(trim($reason));
+            return in_array($r, ['stop', 'end_turn', 'completed', 'finish_reason_unspecified'], true);
+        }
+
+        private static function finish_reason_indicates_truncation(string $reason): bool {
+            $r = strtolower(trim($reason));
+            return in_array($r, ['length', 'max_tokens', 'max_output_tokens', 'max_tokens_reached', 'max_output_tokens_reached', 'max_tokens_exceeded'], true);
+        }
+
+        /**
+         * Corte prematuro: el proveedor declaró length/MAX_TOKENS muy por debajo del presupuesto (p. ej. proxy capado a ~60).
+         *
+         * @param array<string, mixed>|null $metrics
+         */
+        private static function is_premature_length_cut(string $finish_reason, ?array $metrics, int $max_tokens): bool {
+            if (!self::finish_reason_indicates_truncation($finish_reason)) {
+                return false;
+            }
+            $completion_tokens = 0;
+            if (is_array($metrics) && isset($metrics['completion_tokens'])) {
+                $completion_tokens = max(0, (int) $metrics['completion_tokens']);
+            }
+            $budget = max(1, self::chat_max_tokens($max_tokens));
+            if ($completion_tokens <= 0) {
+                return true;
+            }
+
+            return $completion_tokens < (int) floor($budget * 0.85);
+        }
+
+        private static function response_looks_truncated(string $text): bool {
+            return function_exists('xabia_response_looks_truncated')
+                ? xabia_response_looks_truncated($text)
+                : false;
+        }
+
+        /**
+         * Solo marcar truncated=true cuando el proveedor declaró límite de tokens Y el output agotó el presupuesto.
+         *
+         * @param array<string, mixed>|null $metrics
+         */
+        private static function should_mark_response_truncated(
+            string $finish_reason,
+            string $response,
+            int $max_tokens,
+            ?array $metrics = null
+        ): bool {
+            if (self::finish_reason_indicates_truncation($finish_reason)) {
+                return true;
+            }
+
+            if (self::finish_reason_is_natural_stop($finish_reason)) {
+                return false;
+            }
+
+            return self::response_looks_truncated($response);
+        }
+
+        private static function is_rag_development_mode(array $config = []): bool {
+            if (defined('XABIA_RAG_DEV') && XABIA_RAG_DEV) {
+                return true;
+            }
+            if (defined('WP_DEBUG') && WP_DEBUG) {
+                return true;
+            }
+            if (!empty($config['rules']['rag_dev_mode'])) {
+                return true;
+            }
+
+            return (bool) apply_filters('xabia_rag_development_mode', false, $config);
+        }
+
+        private static function enable_rag_dev_fresh_queries(): void {
+            static $armed = false;
+            if ($armed) {
+                return;
+            }
+            $armed = true;
+            self::$rag_development_mode_active = true;
+            add_filter('xabia_response_cache_version', static function ($ver) {
+                return (string) $ver . '|dev_' . microtime(true);
+            }, 999, 1);
+        }
+
+        private static function should_log_rag_context_chivato(array $config = []): bool {
+            if (defined('XABIA_RAG_CONTEXT_LOG') && XABIA_RAG_CONTEXT_LOG) {
+                return true;
+            }
+            if (defined('WP_DEBUG') && WP_DEBUG && defined('WP_DEBUG_LOG') && WP_DEBUG_LOG) {
+                return true;
+            }
+
+            return (bool) apply_filters('xabia_rag_context_debug_log', false, $config);
+        }
+
+        /**
+         * @param array<string, mixed> $config
+         */
+        private static function log_rag_context_chivato(string $project_id, string $assembled_payload, array $config): void {
+            if (!self::should_log_rag_context_chivato($config)) {
+                return;
+            }
+            $dbg = self::$last_rag_debug;
+            $datos_pos = mb_stripos($assembled_payload, '[DATOS]');
+            $datos_body = $datos_pos !== false ? mb_substr($assembled_payload, $datos_pos) : $assembled_payload;
+            $marmitako = mb_stripos($datos_body, 'marmitako') !== false ? 'yes' : 'no';
+            $velero = mb_stripos($datos_body, 'velero') !== false ? 'yes' : 'no';
+            $ente_sample = (string) ($dbg['ente_sample'] ?? '');
+            error_log(
+                '[XABIA RAG CHIVATO] project=' . $project_id
+                . ' chunks=' . (int) ($dbg['chunk_count'] ?? 0)
+                . ' search_term=' . (string) ($dbg['search_term'] ?? '')
+                . ' needles=' . (string) ($dbg['needles_csv'] ?? '')
+                . ' lexical=' . (string) ($dbg['lexical_query'] ?? '')
+                . ' velero_in_raw=' . (string) ($dbg['velero_in_raw_context'] ?? 'n/a')
+                . ' keyword_boost=' . (string) ($dbg['keyword_boost_status'] ?? 'n/a')
+                . ' rescue_needle=' . (string) ($dbg['rescue_needle'] ?? '')
+                . ' ente_sample=' . ($ente_sample !== '' ? $ente_sample : 'n/a')
+                . ' velero_in_datos=' . $velero
+                . ' marmitako_in_datos=' . $marmitako
+                . ' payload_len=' . strlen($assembled_payload)
+            );
+        }
+
+        /**
+         * Diagnóstico transporte Hub RAG (HTTP, WP_Error, timeout cURL) para error_log.
+         *
+         * @param array<string, mixed> $hub_out Respuesta de hub_signed_json_post.
+         */
+        public static function log_hub_rag_transport_failure(
+            string $project_id,
+            string $operation,
+            array $hub_out,
+            string $url = ''
+        ): void {
+            if (!empty($hub_out['ok'])) {
+                return;
+            }
+            $http_code = (int) ($hub_out['code'] ?? 0);
+            $wp_error = isset($hub_out['wp_error']) && is_array($hub_out['wp_error']) ? $hub_out['wp_error'] : null;
+            $parts = [
+                'project=' . $project_id,
+                'operation=' . $operation,
+                'http_code=' . $http_code,
+            ];
+            if ($url !== '') {
+                $parts[] = 'url=' . $url;
+            }
+            if (is_array($wp_error)) {
+                $parts[] = 'wp_error_code=' . (string) ($wp_error['code'] ?? '');
+                $parts[] = 'wp_error_message=' . substr((string) ($wp_error['message'] ?? ''), 0, 500);
+                if (isset($wp_error['data']) && $wp_error['data'] !== null && $wp_error['data'] !== '') {
+                    $data_json = wp_json_encode($wp_error['data']);
+                    if (is_string($data_json)) {
+                        $parts[] = 'wp_error_data=' . substr($data_json, 0, 400);
+                    }
+                }
+            }
+            $raw = (string) ($hub_out['raw'] ?? '');
+            if ($raw !== '') {
+                $parts[] = 'response_snippet=' . substr($raw, 0, 1200);
+            }
+            error_log('[XABIA HUB RAG TRANSPORT] ' . implode(' ', $parts));
+        }
+
+        /**
+         * Fallback local cuando el Hub no devuelve contexto utilizable.
+         */
+        private static function fallback_local_rag_when_hub_empty(
+            string $project_id,
+            string $search_term,
+            string $ente_scope,
+            bool $strict_ente,
+            int $max_chunks
+        ): string {
+            if (!self::is_hub_rag_enabled_for_project($project_id)) {
+                return '';
+            }
+
+            return self::local_knowledge_rescue_like_search($project_id, $search_term, $ente_scope, $strict_ente, $max_chunks);
+        }
+
+        /**
+         * La generación es una sola llamada acotada por max_tokens.
+         * Un corte del proveedor no dispara otra petición; el cliente lo verá en truncated/stream.
+         *
+         * @param array<int, array<string, mixed>> $messages
+         * @return array{response:string, continued:bool, finish_reason:string, metrics:array<string, int>|null}
+         */
+        private static function auto_continue_response_once(
+            array $messages,
+            string $partial_response,
+            string $ai_driver,
+            int $max_tokens,
+            array $config,
+            float $temperature,
+            string $project_id,
+            bool $force_premature_continue = false
+        ): array {
+            unset($messages, $ai_driver, $max_tokens, $config, $temperature, $project_id, $force_premature_continue);
+
+            return [
+                'response'      => $partial_response,
+                'continued'     => false,
+                'finish_reason' => (string) self::$last_generation_finish_reason,
+                'metrics'       => is_array(self::$last_generation_metrics) ? self::$last_generation_metrics : null,
+            ];
+        }
+
+        /**
+         * @param array<int, array<string, mixed>> $messages
+         * @return array{response:string, ran:bool, attempted:bool, finish_reason:string}
+         */
+        private static function maybe_auto_continue_chat_response(
+            array $messages,
+            string $response,
+            string $ai_driver,
+            int $max_tokens,
+            array $config,
+            float $temperature,
+            string $project_id,
+            bool $is_continue_request
+        ): array {
+            unset($messages, $ai_driver, $max_tokens, $config, $temperature, $project_id, $is_continue_request);
+
+            return [
+                'response'      => $response,
+                'ran'           => false,
+                'attempted'     => false,
+                'finish_reason' => (string) self::$last_generation_finish_reason,
+            ];
+        }
+
+        /**
+         * @param array<string, int>|null $first
+         * @param array<string, int>|null $second
+         * @return array<string, int>|null
+         */
+        private static function merge_generation_metrics(?array $first, ?array $second): ?array {
+            if ($first === null) {
+                return $second;
+            }
+            if ($second === null) {
+                return $first;
+            }
+            $keys = array_unique(array_merge(array_keys($first), array_keys($second)));
+            $merged = [];
+            foreach ($keys as $key) {
+                $merged[$key] = (int) ($first[$key] ?? 0) + (int) ($second[$key] ?? 0);
+            }
+            return $merged;
+        }
+
+        /**
+         * @param list<array{role?: string, content?: string}> $history
+         */
+        private static function is_photo_request(string $msg, array $history = []): bool {
+            $t = mb_strtolower(trim(wp_strip_all_tags($msg)), 'UTF-8');
+            if ($t === '') {
+                return false;
+            }
+
+            if (preg_match(
+                '/\b(foto|fotos|imagen|imagenes|imágenes|picture|pictures|logo|logotipo|logotipos|ver\s+(la\s+)?(casa|alojamiento|habitaci[oó]n)|ens[eé]ñar|mu[eé]strar|enseñar|mostrar)\b/u',
+                $t
+            ) === 1) {
+                return true;
+            }
+
+            return self::query_implies_assent_followup($msg) && self::assistant_last_turn_invited_photos($history);
+        }
+
+        /**
+         * Extrae URLs de imagen del contexto RAG.
+         * Preferir marcadores de ingesta «[Imagen disponible: https://…]»; legacy imagen:/logotipo: solo si ya son URL.
+         *
+         * @return array<int, array{value:string, label:string, kind:string}>
+         */
+        private static function extract_imagen_entries_from_context(string $context): array {
+            $entries = [];
+            if ($context === '') {
+                return $entries;
+            }
+            if (preg_match_all('/\[Imagen disponible:\s*(https?:\/\/[^\s\]]+)\s*\]/iu', $context, $avail, PREG_SET_ORDER)) {
+                foreach ($avail as $m) {
+                    $url = trim((string) ($m[1] ?? ''));
+                    if ($url !== '') {
+                        $entries[] = ['value' => $url, 'label' => '', 'kind' => 'imagen'];
+                    }
+                }
+            }
+            if (preg_match_all('/\b(imagen(?:_\d+)?|logotipo(?:_\d+)?|empresa_logo):\s*(https?:\/\/[^\s\n\r|]+)/iu', $context, $lines, PREG_SET_ORDER)) {
+                foreach ($lines as $line) {
+                    $key = mb_strtolower(trim((string) ($line[1] ?? '')), 'UTF-8');
+                    $val = rtrim(trim((string) ($line[2] ?? '')), '.,;)');
+                    if ($val === '') {
+                        continue;
+                    }
+                    $kind = (str_starts_with($key, 'logotipo') || $key === 'empresa_logo') ? 'logotipo' : 'imagen';
+                    $entries[] = ['value' => $val, 'label' => '', 'kind' => $kind];
+                }
+            }
+            $dedup = [];
+            $out = [];
+            foreach ($entries as $e) {
+                $k = ($e['kind'] ?? 'imagen') . '|' . $e['value'];
+                if (!isset($dedup[$k])) {
+                    $dedup[$k] = true;
+                    if (!isset($e['kind'])) {
+                        $e['kind'] = 'imagen';
+                    }
+                    $out[] = $e;
+                }
+            }
+
+            return $out;
+        }
+
+        private static function pick_imagen_for_hint(array $entries, string $hint, bool $prefer_photos = true): string {
+            if ($entries === []) {
+                return '';
+            }
+            if ($prefer_photos) {
+                $photos = array_values(array_filter($entries, static function (array $entry): bool {
+                    return ($entry['kind'] ?? 'imagen') === 'imagen';
+                }));
+                if ($photos !== []) {
+                    $entries = $photos;
+                }
+            } else {
+                $logos = array_values(array_filter($entries, static function (array $entry): bool {
+                    return ($entry['kind'] ?? '') === 'logotipo';
+                }));
+                if ($logos !== []) {
+                    $entries = $logos;
+                }
+            }
+            $hint_norm = mb_strtolower(remove_accents($hint), 'UTF-8');
+            $tokens = array_filter(preg_split('/\s+/u', $hint_norm) ?: [], static function ($w) {
+                return strlen($w) >= 4;
+            });
+            $best = '';
+            $best_score = 0;
+            foreach ($entries as $entry) {
+                $val = $entry['value'];
+                $label = $entry['label'];
+                $hay = mb_strtolower(remove_accents($val . ' ' . $label), 'UTF-8');
+                $score = 0;
+                foreach ($tokens as $tok) {
+                    if ($tok !== '' && strpos($hay, $tok) !== false) {
+                        $score += 3;
+                    }
+                }
+                if ($score > $best_score) {
+                    $best_score = $score;
+                    $best = $val;
+                }
+            }
+            if ($best !== '') {
+                return $best;
+            }
+
+            return $entries[0]['value'];
+        }
+
+        private static function maybe_append_photo_from_context(
+            string $response,
+            string $context,
+            string $user_msg,
+            string $last_search,
+            string $project_id = '',
+            array $history = []
+        ): string {
+            if (strpos($response, '[ACTION:IMG:') !== false) {
+                return $response;
+            }
+            if (!self::is_photo_request($user_msg, $history) && !self::is_photo_request($last_search, $history)) {
+                return $response;
+            }
+            $hint = self::resolve_entity_hint_for_utility_turn($user_msg, $last_search, $history, $project_id);
+            if ($hint === '') {
+                $hint = trim($user_msg . ' ' . $last_search);
+            }
+            $entries = self::extract_imagen_entries_from_context($context);
+            if ($entries === []) {
+                return $response;
+            }
+            // Preferir logotipo cuando el usuario pide «logo»; si no, cualquier entrada resoluble.
+            $prefer_photos = !preg_match('/\b(logo|logotipo|logotipos)\b/iu', $user_msg);
+            $raw = self::pick_imagen_for_hint($entries, $hint, $prefer_photos);
+            if ($raw === '') {
+                $raw = (string) ($entries[0]['value'] ?? '');
+            }
+            if ($raw === '') {
+                return $response;
+            }
+            $resolved = self::resolve_action_img_ids_in_response('[ACTION:IMG:' . $raw . ']', $project_id);
+            if ($resolved === '' || strpos($resolved, '[ACTION:IMG:') === false) {
+                return $response;
+            }
+            // Si sigue siendo un ID numérico sin URL, no adjuntar (evita botón roto).
+            if (preg_match('/\[ACTION:IMG:(\d+)\]/', $resolved)) {
+                return $response;
+            }
+
+            return rtrim($response) . "\n\n" . trim($resolved);
+        }
+
+        /**
+         * Tarjeta visual de la ficha RAG cuando piden fotos y el modelo no emitió [ACTION:CARD].
+         *
+         * @param list<array{role?: string, content?: string}> $history
+         */
+        private static function maybe_append_entity_card_from_context(
+            string $response,
+            string $context,
+            string $user_msg,
+            string $search_term,
+            array $history,
+            string $project_id,
+            array $config
+        ): string {
+            if (!class_exists('Xabia_Action_Card', false) || $context === '') {
+                return $response;
+            }
+            if (!self::is_photo_request($user_msg, $history) && !self::is_photo_request($search_term, $history)) {
+                return $response;
+            }
+            $hint = self::resolve_entity_hint_for_utility_turn($user_msg, $search_term, $history, $project_id);
+            if ($hint === '') {
+                return $response;
+            }
+            if (self::response_already_has_card_for_entity($response, $hint)) {
+                return $response;
+            }
+            $part = self::find_rag_entity_contract_part($context, $hint);
+            if ($part === '') {
+                return $response;
+            }
+            if (!preg_match('/\[Entidad:\s*([^\]]+)\]/u', $part, $titleMatch)) {
+                return $response;
+            }
+            $title = trim((string) ($titleMatch[1] ?? ''));
+            $tag = self::encode_rag_entity_card_from_part($part, $title, $project_id, 'rag_photo', '', $config);
+            if ($tag === '') {
+                return $response;
+            }
+
+            return rtrim($response) . "\n\n" . $tag;
+        }
+
+        /**
+         * Si el asistente lista «Casa X: …» pero el modelo no emitió [ACTION:CARD], las añade desde el RAG.
+         */
+        private static function maybe_append_lodging_recommendation_cards_from_context(
+            string $response,
+            string $context,
+            string $project_id,
+            array $config
+        ): string {
+            if (!class_exists('Xabia_Action_Card', false)) {
+                return $response;
+            }
+            $lodging_titles = self::collect_lodging_entity_hints_from_response($response, $project_id);
+            if ($lodging_titles === []) {
+                return $response;
+            }
+            $append = [];
+            foreach ($lodging_titles as $lodging_title) {
+                if (count($append) >= 4) {
+                    break;
+                }
+                if (self::response_already_has_card_for_entity($response, $lodging_title)) {
+                    continue;
+                }
+                $part = $context !== '' ? self::find_rag_entity_contract_part($context, $lodging_title) : '';
+                if ($part === '') {
+                    $rescued = self::local_knowledge_rescue_like_search($project_id, $lodging_title, '', false, 6);
+                    if ($rescued !== '') {
+                        $part = self::find_rag_entity_contract_part($rescued, $lodging_title);
+                        if ($part === '') {
+                            $part = $rescued;
+                        }
+                    }
+                }
+                $line_blurb = self::extract_lodging_line_blurb_from_response($response, $lodging_title);
+                $title = '';
+                if ($part !== '' && preg_match('/\[Entidad:\s*([^\]]+)\]/u', $part, $titleMatch)) {
+                    $title = trim((string) ($titleMatch[1] ?? ''));
+                }
+                if ($title === '') {
+                    $title = self::lodging_hint_to_card_title($lodging_title, $project_id);
+                }
+                if ($title === '') {
+                    continue;
+                }
+                if ($line_blurb === '' && $part === '') {
+                    $line_blurb = self::extract_canonical_name_blurb_from_response($response, $lodging_title);
+                }
+                $tag = self::encode_rag_entity_card_from_part(
+                    $part !== '' ? $part : ($line_blurb !== '' ? $line_blurb : $lodging_title),
+                    $title,
+                    $project_id,
+                    'rag_lodging',
+                    $line_blurb,
+                    $config
+                );
+                if ($tag === '' || strpos($response, $tag) !== false) {
+                    continue;
+                }
+                foreach ($append as $existing) {
+                    if ($existing === $tag) {
+                        continue 2;
+                    }
+                }
+                $append[] = $tag;
+            }
+            if ($append === []) {
+                return $response;
+            }
+            self::$last_rag_debug['lodging_cards_appended'] = count($append);
+            $response = self::condense_lodging_prose_when_cards_present($response, $lodging_titles, count($append));
+
+            return rtrim($response) . "\n\n" . implode("\n", $append);
+        }
+
+        /**
+         * Acorta la prosa cuando las pastillas ya llevan título y descripción.
+         *
+         * @param list<string> $lodging_hints
+         */
+        private static function condense_lodging_prose_when_cards_present(string $response, array $lodging_hints, int $cards_count): string {
+            if ($cards_count < 1 || $lodging_hints === []) {
+                return $response;
+            }
+            $body = $response;
+            if (strpos($body, '[ACTION:CARD:') !== false) {
+                $body = (string) preg_replace('/\n\n\[ACTION:CARD:[^\]]+\].*$/su', '', $body);
+            }
+            foreach ($lodging_hints as $hint) {
+                $hint = trim((string) $hint);
+                if ($hint === '') {
+                    continue;
+                }
+                $quoted = preg_quote($hint, '/');
+                $short = trim((string) (preg_replace('/^casa\s+/iu', '', $hint) ?? $hint));
+                $variants = array_values(array_unique(array_filter([$hint, $short, 'Casa ' . $short])));
+                foreach ($variants as $name) {
+                    $qn = preg_quote($name, '/');
+                    $body = (string) preg_replace(
+                        '/(?:^|\n)\s*(?:[-*•]\s*)?(?:\*\*)?' . $qn . '(?:\*\*)?\s*:\s*[^\n]+/iu',
+                        "\n",
+                        $body
+                    );
+                }
+            }
+            $body = (string) preg_replace("/\n{3,}/u", "\n\n", trim($body));
+            if ($body === '') {
+                return __('Te dejo las opciones en las fichas:', 'xabia-intelligence');
+            }
+            if (!preg_match('/(?:opciones|recomend|casas?|alojamientos?|fichas?)/iu', $body)) {
+                $body = rtrim($body) . "\n\n" . __('Mira las fichas:', 'xabia-intelligence');
+            }
+
+            return $body;
+        }
+
+        private static function lodging_text_looks_like_price(string $value): bool {
+            $s = trim($value);
+            if ($s === '' || !preg_match('/\d/u', $s)) {
+                return false;
+            }
+            if (preg_match('/\d{4}-\d{2}-\d{2}|\d{1,2}:\d{2}\b/u', $s) && !preg_match('/[€$£]|eur|noche/iu', $s)) {
+                return false;
+            }
+            if (preg_match('/[€$£]|eur|usd|gbp|noche|\/\s*noche/iu', $s)) {
+                return true;
+            }
+
+            return (bool) preg_match('/^\d{1,6}(?:[.,]\d{1,2})?(?:\s*\/\s*\p{L}+)?$/u', $s);
+        }
+
+        private static function format_lodging_price_highlight(string $raw, bool $allow_default_dates = true): string {
+            $s = trim(preg_replace('/\s+/u', ' ', wp_strip_all_tags($raw)) ?? '');
+            if ($s === '') {
+                return $allow_default_dates ? __('Consultar fechas', 'xabia-intelligence') : '';
+            }
+            if (preg_match('/^desde\s+/iu', $s)) {
+                if (!preg_match('/noche|\/\s*noche/iu', $s) && preg_match('/€/u', $s)) {
+                    $s .= ' / noche';
+                }
+
+                return $s;
+            }
+            if (self::lodging_text_looks_like_price($s)) {
+                if (!preg_match('/noche|\/\s*noche/iu', $s) && preg_match('/€/u', $s)) {
+                    return 'Desde ' . $s . ' / noche';
+                }
+                if (!preg_match('/€/u', $s) && preg_match('/^\d/', $s)) {
+                    return 'Desde ' . $s . ' € / noche';
+                }
+
+                return 'Desde ' . $s;
+            }
+
+            return $s;
+        }
+
+        private static function extract_lodging_price_highlight_from_part(string $part, string $source, bool $allow_default_dates = true): string {
+            if (trim($part) === '') {
+                if ($source === 'rag_lodging') {
+                    return $allow_default_dates ? __('Consultar fechas', 'xabia-intelligence') : '';
+                }
+
+                return '';
+            }
+            foreach (['Tarifa base', 'Tarifa', 'Precio base', 'Precio orientativo', 'Precio'] as $label) {
+                if (preg_match('/\[' . preg_quote($label, '/') . ':\s*([^\]]+)\]/u', $part, $m)) {
+                    $v = trim((string) ($m[1] ?? ''));
+                    if ($v !== '') {
+                        return self::format_lodging_price_highlight($v, $allow_default_dates);
+                    }
+                }
+            }
+            if (preg_match('/\[Dato clave:\s*([^\]]+)\]/u', $part, $hm)) {
+                $v = trim((string) ($hm[1] ?? ''));
+                if ($v !== '' && self::lodging_text_looks_like_price($v)) {
+                    return self::format_lodging_price_highlight($v, $allow_default_dates);
+                }
+            }
+            if (preg_match('/(?:desde|from)\s*(\d{1,4}(?:[.,]\d{1,2})?)\s*€(?:\s*(?:\/\s*noche|por noche))?/iu', $part, $pm)) {
+                return self::format_lodging_price_highlight(trim((string) ($pm[0] ?? '')), $allow_default_dates);
+            }
+            if (preg_match('/(\d{1,4}(?:[.,]\d{1,2})?)\s*€\s*(?:\/\s*noche|por noche)/iu', $part, $pm2)) {
+                return self::format_lodging_price_highlight(trim((string) ($pm2[0] ?? '')), $allow_default_dates);
+            }
+            if ($source === 'rag_lodging') {
+                return $allow_default_dates ? __('Consultar fechas', 'xabia-intelligence') : '';
+            }
+
+            return '';
+        }
+
+        /**
+         * «Consultar fechas» solo cuando el proyecto tiene motor de fechas (p. ej. Avirato / reservas).
+         *
+         * @param array<string, mixed> $config
+         */
+        private static function project_allows_lodging_date_highlights(array $config): bool {
+            $addon = strtolower((string) ($config['addon_slug'] ?? ''));
+            if (($config['source_type'] ?? '') === 'addon' && in_array($addon, ['avirato', 'amelia'], true)) {
+                return true;
+            }
+            if (class_exists('Xabia_Addons', false) && method_exists('Xabia_Addons', 'is_active')) {
+                foreach (['avirato', 'amelia'] as $slug) {
+                    if (Xabia_Addons::is_active($slug)) {
+                        return true;
+                    }
+                }
+            }
+
+            return false;
+        }
+
+        /**
+         * Idioma corto de la conversación (agnóstico: POST, config de proxy, locale WP).
+         *
+         * @param array<string, mixed> $config
+         */
+        private static function conversation_lang_from_config(array $config = []): string {
+            $lang = isset($config['_xabia_proxy_user_lang']) ? (string) $config['_xabia_proxy_user_lang'] : '';
+            if ($lang === '' && isset($_POST['lang'])) {
+                $lang = sanitize_text_field(wp_unslash((string) $_POST['lang']));
+            }
+            if ($lang === '' && isset($_POST['user_lang'])) {
+                $lang = sanitize_text_field(wp_unslash((string) $_POST['user_lang']));
+            }
+            if (class_exists('Xabia_I18n_Bridge', false)) {
+                $short = Xabia_I18n_Bridge::to_short_iso($lang);
+                if ($short !== '') {
+                    return $short;
+                }
+            }
+            $lang = strtolower(preg_replace('/[^a-z]/', '', $lang) ?? '');
+
+            return strlen($lang) >= 2 ? substr($lang, 0, 2) : 'es';
+        }
+
+        private static function normalize_conversation_lang(string $lang): string {
+            $lang = strtolower(trim(preg_replace('/[^a-z]/', '', $lang) ?? ''));
+            if (strlen($lang) > 2) {
+                $lang = substr($lang, 0, 2);
+            }
+
+            return $lang !== '' ? $lang : 'es';
+        }
+
+        /**
+         * @return list<string>
+         */
+        private static function permalink_lang_prefix_candidates(): array {
+            $list = ['es', 'eu', 'en', 'fr', 'ca', 'gl', 'de', 'it', 'pt'];
+            $filtered = apply_filters('xabia_catalog_permalink_lang_prefixes', $list);
+
+            return is_array($filtered) ? array_values(array_filter(array_map('strval', $filtered))) : $list;
+        }
+
+        private static function extract_lang_prefix_from_url_path(string $url): string {
+            $parts = wp_parse_url($url);
+            if (!is_array($parts)) {
+                return '';
+            }
+            $path = trim((string) ($parts['path'] ?? ''), '/');
+            if ($path === '') {
+                return '';
+            }
+            $slash = strpos($path, '/');
+            $seg = $slash === false ? $path : substr($path, 0, $slash);
+            $seg = strtolower($seg);
+            if ($seg !== '' && in_array($seg, self::permalink_lang_prefix_candidates(), true)) {
+                return $seg;
+            }
+
+            return '';
+        }
+
+        private static function permalink_matches_conversation_lang(string $url, string $current_lang): bool {
+            $url = trim($url);
+            if ($url === '' || !preg_match('#^https?://#i', $url)) {
+                return false;
+            }
+            $current_lang = self::normalize_conversation_lang($current_lang);
+            $prefix = self::extract_lang_prefix_from_url_path($url);
+            $default_lang = self::normalize_conversation_lang(
+                (string) apply_filters('xabia_catalog_default_lang', 'es', $url, $current_lang)
+            );
+
+            if ($prefix === '') {
+                return $current_lang === $default_lang;
+            }
+            if ($current_lang === $default_lang) {
+                if (in_array($prefix, ['fr', 'en', 'de', 'it', 'pt', 'ca', 'gl'], true) && $current_lang === 'es') {
+                    return false;
+                }
+
+                return $prefix === $current_lang;
+            }
+
+            return $prefix === $current_lang;
+        }
+
+        private static function url_belongs_to_site_home(string $url): bool {
+            if (!function_exists('home_url')) {
+                return true;
+            }
+            $home = wp_parse_url(home_url('/'));
+            $target = wp_parse_url($url);
+            if (!is_array($home) || !is_array($target)) {
+                return false;
+            }
+            $h1 = strtolower((string) ($home['host'] ?? ''));
+            $h2 = strtolower((string) ($target['host'] ?? ''));
+            if ($h1 === '' || $h2 === '') {
+                return false;
+            }
+            if ($h1 === $h2) {
+                return true;
+            }
+
+            return (bool) apply_filters('xabia_catalog_permalink_same_site_hosts', false, $h1, $h2, $url);
+        }
+
+        /**
+         * Prioridad 1: [Enlace:] del chunk RAG si coincide con $current_lang.
+         * Prioridad 2: ID o título WP filtrado por idioma (sin WPML/Polylang).
+         */
+        private static function resolve_catalog_entity_permalink(string $title, string $current_lang, string $part = '', string $rag_enlace = ''): string {
+            $title = trim(wp_strip_all_tags($title));
+            $current_lang = self::normalize_conversation_lang($current_lang);
+            $rag_enlace = trim($rag_enlace);
+            if ($rag_enlace !== '' && self::url_belongs_to_site_home($rag_enlace)
+                && self::permalink_matches_conversation_lang($rag_enlace, $current_lang)
+            ) {
+                return $rag_enlace;
+            }
+
+            $pid = 0;
+            if ($part !== '' && preg_match('/\[ID:\s*(\d+)\]/u', $part, $im)) {
+                $pid = (int) ($im[1] ?? 0);
+            }
+            if ($pid > 0 && function_exists('get_post_status') && get_post_status($pid) === 'publish' && function_exists('get_permalink')) {
+                $url = get_permalink($pid);
+                $url = is_string($url) ? $url : '';
+                if ($url !== '' && self::permalink_matches_conversation_lang($url, $current_lang)) {
+                    return $url;
+                }
+            }
+            if ($title === '' || !isset($GLOBALS['wpdb']) || !is_object($GLOBALS['wpdb'])) {
+                return '';
+            }
+            global $wpdb;
+            $rows = $wpdb->get_col($wpdb->prepare(
+                "SELECT ID FROM {$wpdb->posts} WHERE post_status = 'publish' AND post_title = %s ORDER BY post_modified DESC LIMIT 12",
+                $title
+            ));
+            if (!is_array($rows)) {
+                return '';
+            }
+            foreach ($rows as $row_id) {
+                $found = (int) $row_id;
+                if ($found < 1 || !function_exists('get_permalink')) {
+                    continue;
+                }
+                $url = get_permalink($found);
+                $url = is_string($url) ? $url : '';
+                if ($url === '') {
+                    continue;
+                }
+                $post_name = '';
+                if (function_exists('get_post_field')) {
+                    $post_name = (string) get_post_field('post_name', $found);
+                }
+                if ($post_name !== '' && !self::post_name_matches_conversation_lang($post_name, $current_lang)) {
+                    continue;
+                }
+                if (self::permalink_matches_conversation_lang($url, $current_lang)) {
+                    return $url;
+                }
+            }
+
+            return '';
+        }
+
+        private static function post_name_matches_conversation_lang(string $post_name, string $current_lang): bool {
+            $post_name = strtolower(trim($post_name));
+            if ($post_name === '') {
+                return true;
+            }
+            $current_lang = self::normalize_conversation_lang($current_lang);
+            $default_lang = self::normalize_conversation_lang(
+                (string) apply_filters('xabia_catalog_default_lang', 'es', $post_name, $current_lang)
+            );
+            foreach (self::permalink_lang_prefix_candidates() as $code) {
+                if ($code === $default_lang) {
+                    continue;
+                }
+                if (preg_match('/^(?:' . preg_quote($code, '/') . ')[\-_]/', $post_name)
+                    || preg_match('/[\-_](?:' . preg_quote($code, '/') . ')$/u', $post_name)
+                ) {
+                    return $code === $current_lang;
+                }
+            }
+            if ($current_lang !== $default_lang) {
+                return (bool) preg_match('/^(?:' . preg_quote($current_lang, '/') . ')[\-_]/', $post_name);
+            }
+
+            return true;
+        }
+
+        /** @deprecated */
+        private static function resolve_wp_permalink_for_catalog_entity(string $title, string $part): string {
+            return self::resolve_catalog_entity_permalink($title, 'es', $part, '');
+        }
+
+        /**
+         * @return list<string> hints (p. ej. «Casa Garaixe» o «Garaixe») mencionados en la respuesta.
+         */
+        private static function collect_lodging_entity_hints_from_response(string $response, string $project_id): array {
+            $hints = self::extract_recommended_lodging_titles_from_response($response);
+            $plain = self::plain_text_for_lodging_extract($response);
+            $plain_norm = self::lodging_match_normalize($plain);
+            if ($plain_norm !== '' && $project_id !== '' && class_exists('Xabia_DB', false)) {
+                $entities = Xabia_DB::get_project_canonical_entities($project_id);
+                foreach ($entities as $row) {
+                    if (!is_array($row)) {
+                        continue;
+                    }
+                    $display = trim((string) ($row['display'] ?? ''));
+                    $ente_id = trim((string) ($row['ente_id'] ?? ''));
+                    foreach ([$display, $ente_id] as $label) {
+                        $label = trim($label);
+                        if ($label === '' || $label === 'global') {
+                            continue;
+                        }
+                        if (!self::lodging_plain_mentions_label($plain, $plain_norm, $label)) {
+                            continue;
+                        }
+                        $hint = $display !== '' ? $display : $label;
+                        $hints[] = $hint;
+                    }
+                }
+            }
+            $filtered = apply_filters('xabia_lodging_card_entity_hints', $hints, $response, $project_id, $plain);
+            if (!is_array($filtered)) {
+                $filtered = $hints;
+            }
+            $out = [];
+            foreach ($filtered as $h) {
+                $h = trim((string) $h);
+                if ($h !== '' && !self::entity_name_extract_candidate_rejected($h)) {
+                    $out[] = $h;
+                }
+            }
+
+            return array_values(array_unique($out));
+        }
+
+        private static function lodging_match_normalize(string $text): string {
+            $t = trim(wp_strip_all_tags($text));
+            if ($t === '') {
+                return '';
+            }
+            if (function_exists('remove_accents')) {
+                $t = remove_accents($t);
+            }
+
+            return mb_strtolower($t, 'UTF-8');
+        }
+
+        private static function lodging_plain_mentions_label(string $plain, string $plain_norm, string $label): bool {
+            $label = trim($label);
+            if ($label === '') {
+                return false;
+            }
+            $norm_label = self::lodging_match_normalize($label);
+            if ($norm_label === '' || (function_exists('mb_strlen') ? mb_strlen($norm_label) : strlen($norm_label)) < 4) {
+                return false;
+            }
+            if ($plain_norm !== '' && str_contains($plain_norm, $norm_label)) {
+                return true;
+            }
+            $quoted = preg_quote($label, '/');
+
+            return (bool) preg_match('/(?:^|[\s,.:;(\-–—])' . $quoted . '(?:$|[\s,.:;)\-–—!?])/iu', $plain);
+        }
+
+        private static function lodging_hint_to_card_title(string $hint, string $project_id): string {
+            $hint = trim($hint);
+            if ($hint === '') {
+                return '';
+            }
+            if (class_exists('Xabia_DB', false) && $project_id !== '') {
+                $entities = Xabia_DB::get_project_canonical_entities($project_id);
+                foreach ($entities as $row) {
+                    if (!is_array($row)) {
+                        continue;
+                    }
+                    $display = trim((string) ($row['display'] ?? ''));
+                    if ($display !== '' && self::entity_hint_matches_contract_title($hint, $display)) {
+                        return $display;
+                    }
+                }
+            }
+            if (preg_match('/^Casa\s+(.+)$/iu', $hint, $m)) {
+                return trim((string) ($m[1] ?? ''));
+            }
+
+            return $hint;
+        }
+
+        private static function extract_canonical_name_blurb_from_response(string $response, string $hint): string {
+            $plain = self::plain_text_for_lodging_extract($response);
+            if ($plain === '') {
+                return '';
+            }
+            $short = preg_replace('/^casa\s+/iu', '', trim($hint));
+            $candidates = array_values(array_unique(array_filter([$hint, $short])));
+            foreach ($candidates as $name) {
+                $quoted = preg_quote((string) $name, '/');
+                if (preg_match('/(?:^|\n)\s*(?:[-*•]\s*)?(?:Casa\s+)?' . $quoted . '\s*(?::|[-–—])\s*([^\n]+)/iu', $plain, $match)) {
+                    return trim((string) preg_replace('/\s+/u', ' ', (string) ($match[1] ?? '')));
+                }
+                if (preg_match('/\b' . $quoted . '\b[^.\n]{0,220}/iu', $plain, $match)) {
+                    $snippet = trim((string) ($match[0] ?? ''));
+                    if ($snippet !== '' && (function_exists('mb_strlen') ? mb_strlen($snippet) : strlen($snippet)) > (function_exists('mb_strlen') ? mb_strlen($name) : strlen($name)) + 8) {
+                        return trim((string) preg_replace('/\s+/u', ' ', $snippet));
+                    }
+                }
+            }
+
+            return '';
+        }
+
+        /**
+         * @return list<string>
+         */
+        public static function extract_recommended_lodging_titles_from_response(string $response): array {
+            $plain = self::plain_text_for_lodging_extract($response);
+            if ($plain === '') {
+                return [];
+            }
+            $names = [];
+            if (preg_match_all('/(?:^|\n)\s*(?:\d+[.)]\s*|[-*•]\s*)?(Casa\s+[A-Za-zÀ-ÿ][A-Za-zÀ-ÿ0-9\s\-]{1,35})\s*:?/imu', $plain, $matches)) {
+                foreach ($matches[1] as $name) {
+                    $name = trim((string) preg_replace('/\s+/u', ' ', (string) $name));
+                    if ($name !== '' && !self::entity_name_extract_candidate_rejected($name)) {
+                        $names[] = $name;
+                    }
+                }
+            }
+
+            return array_values(array_unique($names));
+        }
+
+        private static function plain_text_for_lodging_extract(string $response): string
+        {
+            $plain = trim(wp_strip_all_tags((string) $response));
+            if ($plain === '') {
+                return '';
+            }
+
+            return (string) preg_replace('/\*\*/u', '', $plain);
+        }
+
+        private static function extract_lodging_line_blurb_from_response(string $response, string $lodging_title): string
+        {
+            $plain = self::plain_text_for_lodging_extract($response);
+            if ($plain === '' || $lodging_title === '') {
+                return '';
+            }
+            $quoted = preg_quote($lodging_title, '/');
+            if (!preg_match('/(?:^|\n)\s*(?:\d+[.)]\s*|[-*•]\s*)?' . $quoted . '\s*:?\s*([^\n]+)/iu', $plain, $match)) {
+                return '';
+            }
+
+            return trim((string) preg_replace('/\s+/u', ' ', (string) ($match[1] ?? '')));
+        }
+
+        private static function find_rag_entity_contract_part(string $context, string $hint): string {
+            $parts = preg_split('/(?=\[Entidad:)/u', $context) ?: [];
+            foreach ($parts as $part) {
+                if (!is_string($part) || !preg_match('/\[Entidad:\s*([^\]]+)\]/u', $part, $titleMatch)) {
+                    continue;
+                }
+                $title = trim((string) ($titleMatch[1] ?? ''));
+                if ($title !== '' && self::entity_hint_matches_contract_title($hint, $title)) {
+                    return $part;
+                }
+            }
+
+            return '';
+        }
+
+        private static function encode_rag_entity_card_from_part(
+            string $part,
+            string $title,
+            string $project_id,
+            string $source,
+            string $response_blurb = '',
+            array $config = []
+        ): string {
+            if (!class_exists('Xabia_Action_Card', false) || trim($title) === '') {
+                return '';
+            }
+            $allow_lodging_date_default = $source === 'rag_lodging' && self::project_allows_lodging_date_highlights($config);
+            $image = '';
+            if (preg_match('/\[Imagen disponible:\s*(https?:\/\/[^\s\]]+)\s*\]/iu', $part, $im)) {
+                $image = trim((string) ($im[1] ?? ''));
+            }
+            $badge = '';
+            $price = '';
+            $dato_clave = '';
+            if (preg_match('/\[Dato clave:\s*([^\]]+)\]/u', $part, $hm)) {
+                $dato_clave = trim((string) ($hm[1] ?? ''));
+            }
+            if ($source === 'rag_lodging') {
+                $price_highlight = self::extract_lodging_price_highlight_from_part($part, $source, $allow_lodging_date_default);
+                if ($price_highlight !== '') {
+                    $price = $price_highlight;
+                } elseif ($dato_clave !== '') {
+                    if (self::lodging_text_looks_like_price($dato_clave)) {
+                        $price = $dato_clave;
+                    } else {
+                        $price = self::extract_lodging_price_highlight_from_part($part, $source, $allow_lodging_date_default);
+                    }
+                }
+            } elseif ($dato_clave !== '' && class_exists('Xabia_Action_Card', false)) {
+                if (Xabia_Action_Card::highlight_is_price_public($dato_clave)) {
+                    $price = $dato_clave;
+                }
+            }
+            if (preg_match('/\[Clasificaci[oó]n:\s*([^\]]+)\]/u', $part, $cla)) {
+                $bits = preg_split('/\s*,\s*/u', (string) ($cla[1] ?? '')) ?: [];
+                $bits = array_values(array_filter(array_map('trim', $bits)));
+                if ($bits !== []) {
+                    $badge = self::pick_directory_card_badge_from_clasificacion_bits($bits, $part, $project_id);
+                }
+            }
+            $meta = '';
+            if (preg_match('/\[Capacidad máxima:\s*([^\]]+)\]/u', $part, $cm)) {
+                $meta = trim((string) ($cm[1] ?? ''));
+            }
+            $description = '';
+            if (preg_match('/\[Resumen:\s*([^\]]+)\]/u', $part, $sm)) {
+                $description = trim((string) ($sm[1] ?? ''));
+            }
+            $entity_id = 0;
+            if (preg_match('/\[ID:\s*(\d+)\]/u', $part, $im)) {
+                $entity_id = (int) ($im[1] ?? 0);
+            }
+            $current_lang = self::conversation_lang_from_config(is_array($config) ? $config : []);
+            $rag_enlace = '';
+            if (preg_match('/\[Enlace:\s*(https?:\/\/[^\s\]]+)\s*\]/iu', $part, $um)) {
+                $rag_enlace = trim((string) ($um[1] ?? ''));
+            }
+            $permalink = self::resolve_catalog_entity_permalink($title, $current_lang, $part, $rag_enlace);
+            $external_url = '';
+            if ($rag_enlace !== '') {
+                if ($permalink !== '' && strcasecmp(rtrim($rag_enlace, '/'), rtrim($permalink, '/')) === 0) {
+                    $external_url = '';
+                } elseif (!self::url_belongs_to_site_home($rag_enlace)
+                    || !self::permalink_matches_conversation_lang($rag_enlace, $current_lang)
+                ) {
+                    $external_url = $rag_enlace;
+                } elseif ($permalink === '' && self::url_belongs_to_site_home($rag_enlace)
+                    && self::permalink_matches_conversation_lang($rag_enlace, $current_lang)
+                ) {
+                    $permalink = $rag_enlace;
+                }
+            }
+            if ($description === '' && $response_blurb !== '') {
+                $description = $response_blurb;
+            }
+            if ($source === 'rag_lodging' && $description !== '' && (function_exists('mb_strlen') ? mb_strlen($description, 'UTF-8') : strlen($description)) > 220) {
+                $description = trim((string) (function_exists('mb_substr') ? mb_substr($description, 0, 217, 'UTF-8') : substr($description, 0, 217))) . '…';
+            }
+            $norm_title = mb_strtolower(trim(wp_strip_all_tags($title)), 'UTF-8');
+            $norm_desc = mb_strtolower(trim(wp_strip_all_tags($description)), 'UTF-8');
+            if ($norm_title !== '' && $norm_desc !== '' && ($norm_desc === $norm_title || str_starts_with($norm_desc, $norm_title . ' ') || str_starts_with($norm_desc, $norm_title . ':'))) {
+                $description = '';
+            }
+            $description = self::sanitize_directory_card_description_text($description);
+            if ($description !== '' && (function_exists('mb_strlen') ? mb_strlen($description, 'UTF-8') : strlen($description)) > 180) {
+                $description = trim((function_exists('mb_substr') ? mb_substr($description, 0, 177, 'UTF-8') : substr($description, 0, 177))) . '…';
+            }
+            if ($image === '' && $badge === '' && $price === '' && $permalink === '' && $external_url === '' && $description === '') {
+                if ($source !== 'rag_lodging' || trim($title) === '') {
+                    return '';
+                }
+            }
+
+            $payload = [
+                'title'       => $title,
+                'image'       => $image,
+                'badge'       => $badge,
+                'price'       => $price,
+                'meta'        => $meta,
+                'description' => $description,
+                'action_type' => ($permalink !== '' || $external_url !== '') ? 'view' : '',
+                'permalink'   => $permalink,
+                'external_url'=> $external_url,
+                'label'       => $permalink !== '' ? 'Ver ficha' : '',
+            ];
+            if ($entity_id > 0) {
+                $payload['id'] = $entity_id;
+            }
+
+            return Xabia_Action_Card::encode($payload, ['source' => $source, 'project_id' => $project_id]);
+        }
+
+        /**
+         * Badge de tarjeta directorio: evita un único término hiperespecífico si la lista trae también un padre amplio.
+         *
+         * @param list<string> $bits Etiquetas de [Clasificación: …]
+         */
+        /**
+         * Limpia descripción de ficha antes de serializar (URL/ACTION pegados por el modelo).
+         */
+        private static function sanitize_directory_card_description_text(string $description): string
+        {
+            $description = trim(wp_strip_all_tags($description));
+            if ($description === '') {
+                return '';
+            }
+            $description = self::strip_empty_action_markers($description);
+            $description = (string) preg_replace('/\.?\s*URL:\s*https?:\/\/[^\s\)\]<>"]+/iu', '', $description);
+            $description = (string) preg_replace('/\(?\s*ACTION:\s*URL:\s*https?:\/\/[^\s\)\]]+\)?/iu', '', $description);
+            $description = (string) preg_replace('/\s+/u', ' ', $description);
+
+            return trim($description, " \t\n\r\0\x0B.,;:)");
+        }
+
+        private static function pick_directory_card_badge_from_clasificacion_bits(array $bits, string $part, string $project_id): string
+        {
+            $bits = array_values(array_filter(array_map('trim', $bits)));
+            if ($bits === []) {
+                return '';
+            }
+            if (count($bits) === 1) {
+                return $bits[0];
+            }
+            $filtered = $bits;
+            if (function_exists('apply_filters')) {
+                $custom = apply_filters('xabia_directory_card_clasificacion_badge', '', $bits, $part, $project_id);
+                if (is_string($custom) && trim($custom) !== '') {
+                    return trim($custom);
+                }
+            }
+            $hyper = '/\b(?:games?|pony|mini|infantil|niñ[oa]s?|kids?|party)\b/iu';
+            $broad = [];
+            foreach ($filtered as $b) {
+                if ($b === '') {
+                    continue;
+                }
+                if (@preg_match($hyper, $b) === 1) {
+                    continue;
+                }
+                $broad[] = $b;
+            }
+            if ($broad !== []) {
+                usort($broad, static function (string $a, string $b): int {
+                    return strlen($b) <=> strlen($a);
+                });
+
+                return $broad[0];
+            }
+            usort($filtered, static function (string $a, string $b): int {
+                return strlen($a) <=> strlen($b);
+            });
+
+            return $filtered[0] ?? '';
+        }
+
+        private static function response_already_has_card_for_entity(string $response, string $entity_hint): bool {
+            if ($entity_hint === '' || strpos($response, '[ACTION:CARD:') === false || !class_exists('Xabia_Action_Card', false)) {
+                return false;
+            }
+            if (!preg_match_all('/\[ACTION:CARD:([^\]]+)\]/u', $response, $matches)) {
+                return false;
+            }
+            foreach ($matches[1] as $raw) {
+                $decoded = Xabia_Action_Card::decode((string) $raw);
+                if (!is_array($decoded) || empty($decoded['t'])) {
+                    continue;
+                }
+                if (self::entity_hint_matches_contract_title($entity_hint, (string) $decoded['t'])) {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        /**
+         * @param list<array{role?: string, content?: string}> $history
+         */
+        private static function resolve_entity_hint_for_utility_turn(
+            string $user_msg,
+            string $search_term,
+            array $history,
+            string $project_id
+        ): string {
+            $named = self::resolve_named_entity_from_user_message($user_msg);
+            if ($named !== '') {
+                return $named;
+            }
+            if (self::query_implies_assent_followup($user_msg)) {
+                $from_hist = self::resolve_entity_from_conversation_history($history, $project_id);
+                if ($from_hist !== '') {
+                    return $from_hist;
+                }
+            }
+            $search_term = trim(wp_strip_all_tags($search_term));
+            if ($search_term !== '' && !self::query_implies_assent_followup($search_term)) {
+                return $search_term;
+            }
+
+            return '';
+        }
+
+        private static function entity_hint_matches_contract_title(string $hint, string $title): bool {
+            $hint = mb_strtolower(trim(wp_strip_all_tags($hint)), 'UTF-8');
+            $title = mb_strtolower(trim(wp_strip_all_tags($title)), 'UTF-8');
+            if ($hint === '' || $title === '') {
+                return false;
+            }
+            if ($hint === $title || str_contains($title, $hint) || str_contains($hint, $title)) {
+                return true;
+            }
+            $hint = preg_replace('/^casa\s+/u', '', $hint) ?? $hint;
+            $title = preg_replace('/^casa\s+/u', '', $title) ?? $title;
+
+            return $hint !== '' && $title !== '' && ($hint === $title || str_contains($title, $hint) || str_contains($hint, $title));
+        }
+
+        /**
+         * Si el usuario pide contacto/web/teléfono y el CONTEXTO trae empresa_web / empresa_tel,
+         * anexa [ACTION:URL:] / [ACTION:CALL:] cuando el LLM no los emitió.
+         */
+        private static function maybe_append_contact_actions_from_context(
+            string $response,
+            string $context,
+            string $user_msg,
+            string $last_search
+        ): string {
+            if (!self::query_implies_entity_utility_request($user_msg)
+                && !self::query_implies_entity_utility_request($last_search)) {
+                return $response;
+            }
+            // Solo contacto/web/tel — no fotos.
+            $ask = mb_strtolower(trim(wp_strip_all_tags($user_msg . ' ' . $last_search)), 'UTF-8');
+            $wants_contact = (bool) preg_match(
+                '/\b(contacto|contactar|contactarme|tel[eé]fono|telefono|email|correo|e-?mail|web|p[aá]gina\s+web|whatsapp|llamar|llamad)\b/u',
+                $ask
+            );
+            if (!$wants_contact) {
+                return $response;
+            }
+
+            $hint = self::resolve_named_entity_from_user_message($user_msg);
+            if ($hint === '') {
+                $hint = trim($last_search);
+            }
+            $block = self::pick_entity_contact_block_from_context($context, $hint);
+            if ($block === []) {
+                return $response;
+            }
+
+            $append = [];
+            $has_url = strpos($response, '[ACTION:URL:') !== false;
+            $has_call = strpos($response, '[ACTION:CALL:') !== false;
+            if (!$has_url && !empty($block['web']) && preg_match('#^https?://#i', $block['web'])) {
+                $append[] = '[ACTION:URL:' . $block['web'] . ']';
+            }
+            if (!$has_call && !empty($block['tel'])) {
+                $tel = preg_replace('/[^\d+]/', '', $block['tel']);
+                if (is_string($tel) && strlen($tel) >= 7) {
+                    $append[] = '[ACTION:CALL:' . $tel . ']';
+                }
+            }
+            if ($append === []) {
+                return $response;
+            }
+
+            return rtrim($response) . "\n\n" . implode("\n", $append);
+        }
+
+        /**
+         * Extrae web/tel de un bloque de ficha del contexto, priorizando la entidad del hint.
+         *
+         * @return array{web?: string, tel?: string}
+         */
+        private static function pick_entity_contact_block_from_context(string $context, string $hint): array {
+            if ($context === '') {
+                return [];
+            }
+            $parts = preg_split('/\n\n+/u', $context) ?: [$context];
+            $hint_l = mb_strtolower(remove_accents(trim($hint)), 'UTF-8');
+            $hint_toks = array_values(array_filter(preg_split('/\s+/u', $hint_l) ?: [], static function ($t) {
+                return is_string($t) && strlen($t) >= 4;
+            }));
+
+            $best = [];
+            $best_score = -1;
+            foreach ($parts as $part) {
+                $part = trim((string) $part);
+                if ($part === '') {
+                    continue;
+                }
+                $web = '';
+                $tel = '';
+                if (preg_match('/\bempresa_web:\s*(https?:\/\/[^\s|;]+)/iu', $part, $m)) {
+                    $web = rtrim(trim($m[1]), '.,;)');
+                } elseif (preg_match('/\b(?:web|url|website):\s*(https?:\/\/[^\s|;]+)/iu', $part, $m)) {
+                    $web = rtrim(trim($m[1]), '.,;)');
+                }
+                if (preg_match('/\bempresa_tel:\s*([+\d][\d\s().-]{6,})/iu', $part, $m)) {
+                    $tel = trim($m[1]);
+                } elseif (preg_match('/\b(?:tel[eé]fono|telefono|phone):\s*([+\d][\d\s().-]{6,})/iu', $part, $m)) {
+                    $tel = trim($m[1]);
+                }
+                if ($web === '' && $tel === '') {
+                    continue;
+                }
+                $score = 0;
+                $hay = mb_strtolower(remove_accents($part), 'UTF-8');
+                foreach ($hint_toks as $tok) {
+                    if ($tok !== '' && strpos($hay, $tok) !== false) {
+                        $score += 10;
+                    }
+                }
+                if ($score > $best_score) {
+                    $best_score = $score;
+                    $best = array_filter(['web' => $web, 'tel' => $tel]);
+                }
+            }
+            if ($hint_toks !== [] && $best_score >= 1) {
+                return $best;
+            }
+            if ($best !== []) {
+                return $best;
+            }
+
+            return [];
+        }
+
+        private static function is_hub_rag_enabled_for_project(string $project_id): bool {
+            return class_exists('Xabia_Hub_Knowledge', false) && Xabia_Hub_Knowledge::is_hub_rag_enabled($project_id);
+        }
+
+        /**
+         * Nodos federados solo si el cerebro no está ya centralizado en el Hub (evita timeouts en sitios cloud).
+         */
+        private static function should_use_federation_tools_for_project(string $project_id): bool {
+            if (!class_exists('Xabia_Federation_Nexus', false) || Xabia_Federation_Nexus::get_friend_nodes() === []) {
+                return false;
+            }
+
+            return !self::is_hub_rag_enabled_for_project($project_id);
+        }
+
+        /**
+         * Durante xabia_ask_ai: acota espera al Hub (evita bloquear PHP 120s; el hosting suele matar antes).
+         *
+         * @param array<string, mixed> $args
+         * @return array<string, mixed>
+         */
+        public static function filter_hub_signed_post_args_for_chat(array $args, string $url): array {
+            if (strpos($url, 'knowledge/search') === false) {
+                return $args;
+            }
+            $args['timeout'] = 28;
+
+            return $args;
+        }
+
+        /**
+         * Término RAG: texto plano (sin HTML), sin caracteres de control, longitud acotada.
+         * Usar en todo término que vaya a Hub, embedding o LIKE local.
+         */
+        private static function sanitize_rag_search_term(string $term): string
+        {
+            $term = wp_strip_all_tags((string) $term);
+            $term = sanitize_text_field($term);
+            $term = is_string($term) ? preg_replace('/\s+/u', ' ', trim($term)) : '';
+            if (!is_string($term) || $term === '') {
+                return '';
+            }
+            if (mb_strlen($term, 'UTF-8') > 80) {
+                $term = mb_substr($term, 0, 80, 'UTF-8');
+            }
+
+            return $term;
+        }
+
+        /**
+         * Etiquetas de día al estilo del CSV de agenda («Jueves 27 de agosto») para anclar RAG a hoy/mañana.
+         *
+         * @return list<string>
+         */
+        private static function relative_day_labels_for_rag(string $user_msg): array {
+            if (class_exists('Xabia_Brain', false) && method_exists('Xabia_Brain', 'relative_calendar_labels_for_query')) {
+                return Xabia_Brain::relative_calendar_labels_for_query($user_msg);
+            }
+
+            return [];
+        }
+
+        /**
+         * Tema léxico corto (concierto/música…) para combinar con la etiqueta de día en rescate LIKE.
+         */
+        private static function relative_day_topic_for_rag(string $user_msg): string {
+            if (preg_match('/\b(conciertos?|m[uú]sica|eventos?|actuaciones?|verbenas?|planes?|txosnas?|txoznas?)\b/iu', $user_msg, $m)) {
+                return (string) $m[1];
+            }
+
+            return '';
+        }
+
+        /**
+         * Término ampliado para embedding / vectorial (acrónimos y variantes morfológicas; sin APIs externas).
+         */
+        private static function rag_retrieval_search_term(string $search_term, string $user_msg_clean): string {
+            $base = trim($search_term !== '' ? $search_term : $user_msg_clean);
+            if ($base === '') {
+                return '';
+            }
+            if (!class_exists('Xabia_Rag_Language_Bridge', false)) {
+                return class_exists('Xabia_Rag_Query_Rewriter', false)
+                    ? Xabia_Rag_Query_Rewriter::sanitize_retrieval_text($base, 2000)
+                    : self::sanitize_rag_search_term($base);
+            }
+            $source = trim($user_msg_clean !== '' ? $user_msg_clean : $base);
+            $variants = Xabia_Rag_Language_Bridge::retrieval_term_variants($source);
+            $parts = [$base];
+            foreach ($variants as $variant) {
+                $parts[] = $variant;
+            }
+            $parts = array_values(array_unique(array_filter(array_map('trim', $parts))));
+            $combined = trim(implode(' ', $parts));
+            $text = $combined !== '' ? $combined : $base;
+
+            return class_exists('Xabia_Rag_Query_Rewriter', false)
+                ? Xabia_Rag_Query_Rewriter::sanitize_retrieval_text($text, 2000)
+                : self::sanitize_rag_search_term($text);
+        }
+
+        /**
+         * En modo Hub cloud no ejecutar refuerzos LIKE en WordPress: el Hub ya hace léxico + vectorial.
+         */
+        private static function should_skip_local_lexical_rag(string $project_id, string $context, int $chunk_count): bool {
+            return self::is_hub_rag_enabled_for_project($project_id);
+        }
+
+        private static function safe_local_knowledge_search(
+            string $project_id,
+            string $search_term,
+            string $ente_scope,
+            bool $strict_ente,
+            int $max_chunks
+        ): string {
+            if (self::is_hub_rag_enabled_for_project($project_id)) {
+                return '';
+            }
+
+            return self::local_knowledge_rescue_like_search($project_id, $search_term, $ente_scope, $strict_ente, $max_chunks);
+        }
+
+        /**
+         * Búsqueda LIKE de último recurso en la tabla local de conocimiento (ignora el guard Hub-only).
+         */
+        private static function local_knowledge_rescue_like_search(
+            string $project_id,
+            string $search_term,
+            string $ente_scope,
+            bool $strict_ente,
+            int $max_chunks
+        ): string {
+            if (!class_exists('Xabia_Brain', false)) {
+                return '';
+            }
+            $search_term = self::sanitize_rag_search_term($search_term);
+            if ($search_term === '') {
+                return '';
+            }
+            try {
+                return trim((string) Xabia_Brain::search_knowledge(
+                    $project_id,
+                    $search_term,
+                    $ente_scope,
+                    $strict_ente,
+                    $max_chunks
+                ));
+            } catch (\Throwable $e) {
+                if (function_exists('xabia_trace')) {
+                    xabia_trace('[XABIA_CORE] local knowledge rescue search failed', [
+                        'message' => $e->getMessage(),
+                        'term'    => substr($search_term, 0, 120),
+                    ]);
+                }
+
+                return '';
+            }
+        }
+
+        public static function handle_chat_request() {
+            self::assert_pro_runtime('vector_rag');
+            if (class_exists('Xabia_Chat_Pipeline', false)) {
+                Xabia_Chat_Pipeline::begin();
+                register_shutdown_function([Xabia_Chat_Pipeline::class, 'write_debug_log']);
+            }
+            xabia_trace('[XABIA_CORE] xabia_ask_ai entry', [
+                'project_id'  => sanitize_text_field((string) ($_POST['project_id'] ?? '')),
+                'message_len' => strlen((string) wp_unslash($_POST['message'] ?? '')),
+                'has_nonce'   => isset($_POST['nonce']) && (string) wp_unslash($_POST['nonce']) !== '',
+            ]);
+
+            add_filter('xabia_hub_signed_post_args', [__CLASS__, 'filter_hub_signed_post_args_for_chat'], 999, 2);
+            try {
+                self::handle_chat_request_impl();
+            } catch (\Throwable $e) {
+                if (function_exists('xabia_trace')) {
+                    xabia_trace('[XABIA_CORE] xabia_ask_ai uncaught', ['message' => $e->getMessage()]);
+                }
+                error_log('[XABIA_CORE] xabia_ask_ai uncaught: ' . $e->getMessage());
+                $message = __('Error interno del servidor. Inténtalo de nuevo.', 'xabia-intelligence');
+                if (class_exists('Xabia_Chat_Stream', false) && Xabia_Chat_Stream::is_open()) {
+                    Xabia_Chat_Stream::fail($message);
+                }
+                self::send_chat_json_error([
+                    'message' => $message,
+                ]);
+            } finally {
+                remove_filter('xabia_hub_signed_post_args', [__CLASS__, 'filter_hub_signed_post_args_for_chat'], 999);
+                if (class_exists('Xabia_Chat_Pipeline', false)) {
+                    Xabia_Chat_Pipeline::write_debug_log();
+                }
+            }
+        }
+
+        private static function handle_chat_request_impl(): void {
+            // Embedding + Hub (28s) + LLM; sin refuerzo LIKE local cuando RAG cloud está activo.
+            if (function_exists('set_time_limit')) {
+                @set_time_limit(90);
+            }
+            @ini_set('max_execution_time', '90');
+
+            $skip_response_cache = false;
+            if (isset($_POST['nonce']) && (string) wp_unslash($_POST['nonce']) !== '') {
+                $raw_nonce = sanitize_text_field(wp_unslash($_POST['nonce']));
+                $ok_admin = wp_verify_nonce($raw_nonce, 'xabia_admin_nonce');
+                $ok_public = wp_verify_nonce($raw_nonce, 'xabia_nonce');
+                if ($ok_admin) {
+                    if (!current_user_can('manage_options')) {
+                        xabia_trace('[XABIA_CORE] xabia_ask_ai aborted: admin nonce but user lacks manage_options.');
+                        self::send_chat_json_error(['message' => __('Permiso denegado.', 'xabia-intelligence')]);
+                        return;
+                    }
+                    $skip_response_cache = true;
+                } elseif ($ok_public) {
+                    
+                } else {
+                    xabia_trace('[XABIA_CORE] xabia_ask_ai aborted: nonce check failed (not xabia_admin_nonce nor xabia_nonce).');
+                    self::send_chat_json_error(['message' => __('La comprobación de seguridad falló.', 'xabia-intelligence')]);
+                    return;
+                }
+            }
+            if (class_exists('Xabia_Chat_Pipeline', false)) {
+                Xabia_Chat_Pipeline::mark('nonce');
+            }
+
+            /** @var string|null Clasificación de ruta (ROUTE_*) cuando ya se ha ejecutado Xabia_Router::classify. */
+            $classified_route = null;
+
+            $project_id = sanitize_text_field($_POST['project_id'] ?? 'default');
+            $scope      = sanitize_text_field($_POST['x_scope'] ?? 'global');
+            $ente_id_param_raw = sanitize_text_field(wp_unslash($_POST['ente_id'] ?? ''));
+            $user_msg_raw = wp_unslash($_POST['message'] ?? '');
+            $user_msg = class_exists('Xabia_Chat_Input', false)
+                ? Xabia_Chat_Input::clamp((string) $user_msg_raw)
+                : sanitize_textarea_field((string) $user_msg_raw);
+            $is_continue_request = !empty($_POST['x_continue']);
+            $lang_raw   = isset($_POST['lang']) ? sanitize_text_field(wp_unslash($_POST['lang'])) : '';
+            if (class_exists('Xabia_I18n_Bridge', false)) {
+                $lang_code = Xabia_I18n_Bridge::to_short_iso($lang_raw);
+                if ($lang_code === '') {
+                    $lang_code = Xabia_I18n_Bridge::get_current_language();
+                }
+            } else {
+                $lang_code = strtolower(substr(preg_replace('/[^a-zA-Z]/', '', $lang_raw), 0, 2));
+                if ($lang_code === '') {
+                    $lang_code = strtolower(substr(get_locale(), 0, 2));
+                }
+            }
+            if ($lang_code === '') {
+                $lang_code = 'es';
+            }
+
+            $client_user_lang = !empty($_POST['user_lang'])
+                ? (string) wp_unslash($_POST['user_lang'])
+                : '';
+            if (class_exists('Xabia_I18n_Bridge', false)) {
+                $user_lang = Xabia_I18n_Bridge::resolve_user_lang($client_user_lang);
+            } else {
+                $user_lang = '';
+                if ($client_user_lang !== '') {
+                    $ul = preg_replace('/[^a-zA-Z0-9\-]/', '', $client_user_lang);
+                    $user_lang = substr($ul, 0, 35);
+                }
+                if ($user_lang === '') {
+                    $user_lang = $lang_code;
+                }
+            }
+            
+            if (empty($user_msg)) {
+                xabia_trace('[XABIA_CORE] xabia_ask_ai empty message, short-circuit success.');
+                self::log_early_exit('empty_message', $classified_route, '', '...');
+                self::send_chat_json_success(['response' => '...']);
+                return;
+            }
+
+            self::reset_digixop_session_counters();
+
+            
+            if (!session_id() && !headers_sent()) session_start();
+            $history = $_SESSION['xabia_chat_history'][$project_id] ?? [];
+            $posted_history = [];
+            if (!empty($_POST['history'])) {
+                $raw = json_decode(wp_unslash((string) $_POST['history']), true);
+                $posted_history = self::normalize_history_messages(is_array($raw) ? $raw : []);
+            }
+            $history = self::merge_history_messages(is_array($history) ? $history : [], $posted_history);
+            self::ensure_catalog_manifest_from_history($project_id, $history);
+            $last_search = self::sanitize_rag_search_term((string) ($_SESSION['xabia_last_search'][$project_id] ?? ''));
+            $last_entity = self::sanitize_rag_search_term((string) ($_SESSION['xabia_last_entity'][$project_id] ?? ''));
+            $last_search = self::sanitize_persisted_entity_reference($last_search, $project_id, $history);
+            $last_entity = self::sanitize_persisted_entity_reference($last_entity, $project_id, $history);
+            session_write_close();
+
+            $keyword_intercept = function_exists('xabia_intercept_keywords')
+                ? xabia_intercept_keywords($project_id, $user_msg, ['history' => $history])
+                : null;
+            if (is_array($keyword_intercept)) {
+                if (($keyword_intercept['type'] ?? '') === 'response' && isset($keyword_intercept['response'])) {
+                    self::finalize_php_short_circuit_response(
+                        $project_id,
+                        $user_msg,
+                        (string) $keyword_intercept['response'],
+                        'php_intercept',
+                        'xabia_intercept_keywords_response',
+                        $classified_route
+                    );
+
+                    return;
+                }
+                if (($keyword_intercept['type'] ?? '') === 'continue' && !empty($keyword_intercept['message'])) {
+                    $user_msg = (string) $keyword_intercept['message'];
+                    $is_continue_request = true;
+                }
+            }
+
+            if ($is_continue_request) {
+                $skip_response_cache = true;
+            }
+            if (self::is_protocol_continuation($user_msg, $is_continue_request)) {
+                self::answer_without_secondary_generation($project_id, $user_msg);
+                return;
+            }
+
+            
+            $current_human_date = date_i18n('l, j \d\e F \d\e Y');
+            $current_sql_date   = function_exists('current_time') ? current_time('Y-m-d') : date('Y-m-d');
+            $current_temporal   = $current_human_date . ' (ISO ' . $current_sql_date . ')';
+
+            
+            $projects = get_option('xabia_projects_config', []);
+            $config = $projects[$project_id] ?? [];
+            $config['_xabia_proxy_user_lang'] = $user_lang;
+            if (self::is_rag_development_mode($config)) {
+                $skip_response_cache = true;
+                self::enable_rag_dev_fresh_queries();
+            }
+            if (!$is_continue_request) {
+                $strict_hit = self::match_strict_condition_for_message($user_msg, $config, $project_id);
+                if (is_array($strict_hit) && ($strict_hit['response'] ?? '') !== '') {
+                    $resp_raw = (string) $strict_hit['response'];
+                    $trig = (string) ($strict_hit['trigger'] ?? '');
+                    if (function_exists('xabia_trace')) {
+                        xabia_trace('[XABIA_ROUTER_MATCH]', [
+                            'project_id' => $project_id,
+                            'trigger'    => $trig,
+                            'query'      => mb_substr($user_msg, 0, 500),
+                            'response'   => mb_substr($resp_raw, 0, 800),
+                        ]);
+                    }
+                    self::finalize_php_short_circuit_response(
+                        $project_id,
+                        $user_msg,
+                        self::sanitize_chat_response_for_output($resp_raw),
+                        'php_strict_conditions',
+                        'match_strict_condition_for_message',
+                        $classified_route
+                    );
+
+                    return;
+                }
+            }
+            self::$request_visitor_key = self::resolve_request_visitor_key($project_id);
+            self::enforce_cost_firewalls($project_id, $config, $skip_response_cache, $user_msg);
+            if (!$skip_response_cache && class_exists('Xabia_Router')) {
+                $early_cached = Xabia_Router::find_cached_response_for_query($project_id, $user_msg, $lang_code);
+                if (is_array($early_cached) && !empty($early_cached['response'])) {
+                    $early_text = (string) $early_cached['response'];
+                    if (!self::responseLooksLikeTechnicalFailure($early_text)
+                        && $early_text !== self::friendlyTemporaryFailureMessage()) {
+                        if (function_exists('xabia_trace')) {
+                            xabia_trace('[XABIA_CORE] response_cache early hit (pre-router)', [
+                                'project_id' => $project_id,
+                                'source_type' => (string) ($early_cached['source_type'] ?? ''),
+                            ]);
+                        }
+                        self::log_early_exit('response_cache_pre_router', $classified_route, $user_msg, $early_text);
+                        self::send_chat_json_success(['response' => $early_text]);
+                        return;
+                    }
+                }
+            }
+            $route = class_exists('Xabia_Router')
+                ? Xabia_Router::classify($project_id, $user_msg, $config, $lang_code)
+                : 'ROUTE_KNOWLEDGE';
+            $classified_route = $route;
+            if (class_exists('Xabia_Chat_Pipeline', false)) {
+                Xabia_Chat_Pipeline::mark('route');
+            }
+            $cache_hash = class_exists('Xabia_Router')
+                ? Xabia_Router::query_hash($project_id, $user_msg, $route, $lang_code)
+                : '';
+            if (!$skip_response_cache && $cache_hash !== '' && class_exists('Xabia_Router') && $route !== 'ROUTE_ACTION') {
+                $cached = Xabia_Router::get_cached_response($project_id, $cache_hash);
+                if (is_array($cached) && !empty($cached['response'])) {
+                    $cached_text = (string) $cached['response'];
+                    self::log_early_exit('response_cache_post_route_hash', $classified_route, $user_msg, $cached_text);
+                    self::send_chat_json_success(['response' => $cached_text]);
+                    return;
+                }
+            }
+            if ($route === 'ROUTE_ACTION' && class_exists('Xabia_Router')) {
+                $actionResponse = Xabia_Router::maybe_handle_action_route($project_id, $user_msg, $config, [
+                    'lang_code' => $lang_code,
+                    'user_lang' => $user_lang,
+                ]);
+                if (is_string($actionResponse) && trim($actionResponse) !== '') {
+                    if (!session_id() && !headers_sent()) session_start();
+                    $_SESSION['xabia_chat_history'][$project_id][] = ['role' => 'user', 'content' => $user_msg];
+                    $_SESSION['xabia_chat_history'][$project_id][] = ['role' => 'assistant', 'content' => $actionResponse];
+                    $_SESSION['xabia_chat_history'][$project_id] = array_slice($_SESSION['xabia_chat_history'][$project_id], -24);
+                    $_SESSION['xabia_last_response_meta'][$project_id] = [
+                        'truncated' => false,
+                        'finish_reason' => 'php_action',
+                        'response' => $actionResponse,
+                    ];
+                    session_write_close();
+                    self::log_early_exit('ROUTE_ACTION_php_action', $classified_route, $user_msg, $actionResponse);
+                    self::send_chat_json_success([
+                        'response' => $actionResponse,
+                        'finish_reason' => 'php_action',
+                        'truncated' => false,
+                    ]);
+                    return;
+                }
+            }
+            $use_vector = !empty($config['rules']['use_vector_search']);
+
+            $user_msg_clean = self::sanitize_rag_search_term(trim(strip_tags($user_msg)) ?: $user_msg);
+            $named_entity = self::resolve_named_entity_from_user_message($user_msg_clean);
+            $manifest_entity = self::resolve_manifest_entity_reference($user_msg_clean, $project_id, $named_entity, $history);
+            if ($manifest_entity !== '') {
+                $named_entity = $manifest_entity;
+            } elseif ($named_entity === '') {
+                $named_entity = self::resolve_entity_from_catalog_manifest($user_msg_clean, $project_id, $history);
+            } elseif (self::is_manifest_ordinal_phrase($named_entity)) {
+                $ordinal = self::resolve_entity_ordinal_from_manifest($user_msg_clean, $project_id, $history);
+                if ($ordinal === '') {
+                    $ordinal = self::resolve_entity_ordinal_from_manifest($named_entity, $project_id, $history);
+                }
+                if ($ordinal !== '') {
+                    $named_entity = $ordinal;
+                }
+            }
+            $utility_request = self::query_implies_entity_utility_request($user_msg_clean)
+                || self::query_implies_assent_to_assistant_offer($user_msg_clean, is_array($history) ? $history : []);
+            if ($named_entity === '' && $utility_request) {
+                if ($last_entity !== '') {
+                    $named_entity = $last_entity;
+                } else {
+                    $hist_entity = self::resolve_entity_from_conversation_history($history, $project_id);
+                    if ($hist_entity !== '') {
+                        $named_entity = $hist_entity;
+                    } else {
+                        $ordinal = self::resolve_entity_ordinal_from_manifest($user_msg_clean, $project_id, $history);
+                        if ($ordinal !== '') {
+                            $named_entity = $ordinal;
+                        }
+                    }
+                }
+            }
+            $search_source = $user_msg_clean;
+            if ($named_entity !== '') {
+                $search_source = self::sanitize_rag_search_term($named_entity);
+            } elseif ($is_continue_request && $last_search !== '') {
+                $search_source = $last_search;
+            } elseif ($utility_request && $last_search !== '' && !self::query_implies_entity_utility_request($last_search)) {
+                $search_source = $last_search;
+            }
+            $search_term = self::sanitize_rag_search_term(
+                self::augment_rag_search_term($search_source, $last_search)
+            );
+            $entity_anchor = self::resolve_entity_anchor_from_history($user_msg_clean, $history, $last_entity, $project_id);
+            if ($entity_anchor === '' && $utility_request) {
+                $entity_anchor = $named_entity !== ''
+                    ? $named_entity
+                    : self::resolve_entity_from_conversation_history($history, $project_id);
+            }
+            $entity_anchor = self::sanitize_persisted_entity_reference($entity_anchor, $project_id, $history);
+            $named_entity = self::sanitize_persisted_entity_reference($named_entity, $project_id, $history);
+            if ($entity_anchor !== '') {
+                $search_term = self::sanitize_rag_search_term($entity_anchor);
+            } elseif ($named_entity !== '') {
+                $search_term = self::sanitize_rag_search_term($named_entity);
+            }
+            if (!session_id() && !headers_sent()) session_start();
+            $_SESSION['xabia_last_search'][$project_id] = $search_term;
+            $session_entity = $named_entity !== '' ? $named_entity : $entity_anchor;
+            $session_entity = self::sanitize_persisted_entity_reference($session_entity, $project_id, $history);
+            if ($session_entity !== '') {
+                $_SESSION['xabia_last_entity'][$project_id] = $session_entity;
+                $_SESSION['xabia_last_search'][$project_id] = $session_entity;
+            }
+            session_write_close();
+
+            if (class_exists('Xabia_Digixop_Client') && Xabia_Digixop_Client::was_insufficient_balance()) {
+                $bal = Xabia_Digixop_Client::get_insufficient_balance_user_message();
+                self::log_early_exit('digixop_insufficient_balance_pre_retrieve', $classified_route, $user_msg, $bal);
+                self::send_chat_json_error([
+                    'message'              => $bal,
+                    'digixop_insufficient' => true,
+                ]);
+                return;
+            }
+
+            
+            if (!class_exists('Xabia_Brain')) {
+                $brain_path = (defined('XABIA_PATH') ? XABIA_PATH : plugin_dir_path(dirname(dirname(__FILE__)))) . 'core/class-xabia-brain.php';
+                if (file_exists($brain_path)) {
+                    require_once $brain_path;
+                }
+            }
+
+            
+            $strict_ente = false;
+            $ente_scope = $scope;
+            if (!empty($ente_id_param_raw)) {
+                $strict_ente = true;
+                $ente_scope = sanitize_title($ente_id_param_raw);
+                if (empty($ente_scope)) $ente_scope = $scope;
+            }
+
+            // Listado nativo WP (taxonomía/CPT): completo y determinista. El Hub top-K
+            // puede omitir fichas válidas del catálogo en preguntas de listado.
+            $catalog_activity_profile = self::resolve_catalog_activity_profile($search_term, $user_msg_clean);
+            $catalog_first_turn = class_exists('Xabia_Rag_Query_Rewriter', false)
+                ? !Xabia_Rag_Query_Rewriter::history_has_prior_turns(is_array($history) ? $history : [])
+                : false;
+            $catalog_intent_early = self::resolve_catalog_list_intent(
+                $user_msg_clean !== '' ? $user_msg_clean : $search_term,
+                (string) $project_id,
+                is_array($config) ? $config : [],
+                $catalog_first_turn
+            );
+            $wants_native_catalog = $entity_anchor === ''
+                && $named_entity === ''
+                && !$utility_request
+                && !$is_continue_request
+                && !$strict_ente
+                && !self::query_implies_single_item_depth($user_msg_clean)
+                // Listado SQL broad-match (LIKE por tokens): puede mezclar verticales si el título
+                // contiene palabras genéricas («montar», etc.). Forzar RAG+LLM para señales inequívocas
+                // de otro vertical (p. ej. hípica / caballo).
+                && !self::rag_query_signals_distinct_catalog_activity($user_msg_clean)
+                && (
+                    !empty($catalog_intent_early['hit'])
+                    || self::query_implies_catalog_listing($user_msg_clean)
+                    || self::query_implies_catalog_listing($search_term)
+                    || self::query_expects_multiple_catalog_companies($user_msg_clean, $search_term)
+                );
+            if ($wants_native_catalog
+                && self::maybe_send_native_catalog_list_response(
+                    $project_id,
+                    is_array($config) ? $config : [],
+                    $user_msg,
+                    $user_msg_clean,
+                    $search_term,
+                    $catalog_activity_profile,
+                    $skip_response_cache,
+                    is_array($history) ? $history : []
+                )) {
+                return;
+            }
+
+            $max_chunks = class_exists('Xabia_Brain', false) ? Xabia_Brain::effective_rag_max_chunks_from_project_config($config) : 4;
+            $similarity_threshold = isset($config['rules']['similarity_threshold']) ? max(0, min(1, (float) $config['rules']['similarity_threshold'])) : 0.2;
+            $rag_fetch_limit = $max_chunks;
+            $hub_rag_opts = [];
+            $keyword_expansions = self::resolve_rag_keyword_expansions($config);
+            if ($keyword_expansions !== []) {
+                $hub_rag_opts['keyword_expansions'] = $keyword_expansions;
+            }
+            $priority_venues = self::resolve_rag_priority_venues(is_array($config) ? $config : []);
+            if ($priority_venues !== []) {
+                $hub_rag_opts['priority_venues'] = $priority_venues;
+            }
+            $rag_keyword_needles = self::extract_rag_keyword_needles(
+                $user_msg_clean !== '' ? $user_msg_clean : $search_term
+            );
+            if ($last_search !== '') {
+                $rag_keyword_needles = array_values(array_unique(array_merge(
+                    $rag_keyword_needles,
+                    self::extract_rag_keyword_needles($last_search)
+                )));
+            }
+            $criterion_needles = $rag_keyword_needles;
+            $rag_lexical_query = self::build_rag_lexical_query_text($user_msg_clean, $search_term);
+            if ($rag_lexical_query !== '') {
+                $hub_rag_opts['lexical_query_text'] = $rag_lexical_query;
+            }
+            // Listado amplio: en el turno 1 no hay micro-modelo. Top-K dentro de 5–10.
+            $catalog_intent = self::resolve_catalog_list_intent(
+                $user_msg_clean !== '' ? $user_msg_clean : $search_term,
+                (string) $project_id,
+                is_array($config) ? $config : [],
+                $catalog_first_turn
+            );
+            if (!empty($catalog_intent['hit'])) {
+                $hub_rag_opts['catalog_list'] = true;
+                $intent_source = (string) ($catalog_intent['source'] ?? 'regex');
+                $intent_kind = (string) ($catalog_intent['kind'] ?? '');
+                if ($intent_kind === 'temporal' || $intent_source === 'temporal') {
+                    $intent_source = 'temporal';
+                    $config['_xabia_temporal_catalog'] = true;
+                }
+                $rag_fetch_limit = class_exists('Xabia_Catalog_Intent', false)
+                    ? Xabia_Catalog_Intent::rag_chunk_limit((int) $rag_fetch_limit, $intent_source)
+                    : max((int) $rag_fetch_limit, 15);
+                if (class_exists('Xabia_Catalog_Intent', false)
+                    && method_exists('Xabia_Catalog_Intent', 'expand_lexical_query_text')
+                    && $rag_lexical_query !== ''
+                ) {
+                    $rag_lexical_query = Xabia_Catalog_Intent::expand_lexical_query_text($rag_lexical_query);
+                    $hub_rag_opts['lexical_query_text'] = $rag_lexical_query;
+                }
+            }
+            $catalogish_listing = ! empty($catalog_intent['hit'])
+                || self::query_implies_catalog_listing($user_msg_clean)
+                || self::query_implies_catalog_listing($search_term)
+                || self::query_expects_multiple_catalog_companies($user_msg_clean, $search_term);
+            if ($catalogish_listing) {
+                $rag_fetch_limit = max(5, (int) $rag_fetch_limit);
+            }
+            $retrieval_search_term = self::rag_retrieval_search_term($search_term, $user_msg_clean);
+
+            // Reescritura LLM solo con historial. El primer turno no espera otra llamada al modelo.
+            $rewrite_query = $user_msg_clean !== '' ? $user_msg_clean : $search_term;
+            $rewrite_followup = !$is_continue_request
+                && class_exists('Xabia_Rag_Query_Rewriter', false)
+                && Xabia_Rag_Query_Rewriter::should_invoke_llm(
+                    is_array($config) ? $config : [],
+                    Xabia_Rag_Query_Rewriter::history_has_prior_turns(is_array($history) ? $history : []),
+                    $rewrite_query
+                );
+            if ($rewrite_followup) {
+                $ymd = gmdate('Y-m-d');
+                $rewrite = Xabia_Rag_Query_Rewriter::prepare(
+                    $user_msg_clean !== '' ? $user_msg_clean : $search_term,
+                    $last_search,
+                    is_array($config) ? $config : [],
+                    static function ($msg, $prev) use ($ymd, $project_id, $config) {
+                        $raw = self::expand_user_query_generic($msg, $prev, $ymd, $project_id, $config);
+                        if (!is_string($raw)) {
+                            return '';
+                        }
+                        $raw = trim(wp_strip_all_tags($raw));
+                        // Descartar respuestas que parezcan prosa / negativa / error de API.
+                        if ($raw === '' || mb_strlen($raw, 'UTF-8') > 500) {
+                            return '';
+                        }
+                        if (preg_match('/[.!?].*[.!?]/u', $raw)) {
+                            return '';
+                        }
+                        if (self::looks_like_llm_transport_error($raw)) {
+                            return '';
+                        }
+
+                        return $raw;
+                    }
+                );
+                if (!empty($rewrite['embed_text'])) {
+                    $retrieval_search_term = (string) $rewrite['embed_text'];
+                }
+                if (!empty($rewrite['lexical_text'])) {
+                    $rag_lexical_query = (string) $rewrite['lexical_text'];
+                    $hub_rag_opts['lexical_query_text'] = $rag_lexical_query;
+                }
+                if (!empty($rewrite['needles']) && is_array($rewrite['needles'])) {
+                    $rag_keyword_needles = array_values(array_unique(array_merge(
+                        $rag_keyword_needles,
+                        array_map('strval', $rewrite['needles'])
+                    )));
+                }
+                if (!empty($rewrite['canonical_entities']) && is_array($rewrite['canonical_entities'])) {
+                    self::$last_rag_debug['canonical_entities'] = implode(',', array_map('strval', $rewrite['canonical_entities']));
+                }
+                self::$last_rag_debug['query_rewritten'] = !empty($rewrite['rewritten']) ? 'yes' : 'no';
+            } else {
+                $had_prior_turns = class_exists('Xabia_Rag_Query_Rewriter', false)
+                    && Xabia_Rag_Query_Rewriter::history_has_prior_turns(is_array($history) ? $history : []);
+                self::$last_rag_debug['query_rewritten'] = $had_prior_turns ? 'off' : 'skipped_first_turn';
+            }
+            if (class_exists('Xabia_Chat_Pipeline', false)) {
+                Xabia_Chat_Pipeline::mark('rewrite');
+            }
+
+            $relative_day_labels = self::relative_day_labels_for_rag($user_msg_clean);
+            if ($relative_day_labels !== []) {
+                $date_anchor = implode(' ', $relative_day_labels);
+                $retrieval_search_term = trim($retrieval_search_term . ' ' . $date_anchor);
+                $rag_lexical_query = trim(($rag_lexical_query !== '' ? $rag_lexical_query : $user_msg_clean) . ' ' . $date_anchor);
+                $hub_rag_opts['lexical_query_text'] = $rag_lexical_query;
+            }
+
+            if (is_array($config) && $config !== []) {
+                $retrieval_search_term = self::expand_rag_lexical_text_with_keyword_expansions(
+                    $retrieval_search_term,
+                    $config
+                );
+                $lexical_src = $rag_lexical_query !== '' ? $rag_lexical_query : $user_msg_clean;
+                $rag_lexical_expanded = self::expand_rag_lexical_text_with_keyword_expansions($lexical_src, $config);
+                if ($rag_lexical_expanded !== $rag_lexical_query) {
+                    $rag_lexical_query = $rag_lexical_expanded;
+                    $hub_rag_opts['lexical_query_text'] = $rag_lexical_query;
+                }
+                $expansion_needles = self::collect_keyword_expansion_needles_for_text(
+                    trim($user_msg_clean . ' ' . $search_term . ' ' . $retrieval_search_term),
+                    $config
+                );
+                if ($expansion_needles !== []) {
+                    $rag_keyword_needles = array_values(array_unique(array_merge($rag_keyword_needles, $expansion_needles)));
+                    if (isset($hub_rag_opts['keyword_needles']) && is_array($hub_rag_opts['keyword_needles'])) {
+                        $hub_rag_opts['keyword_needles'] = array_values(array_unique(array_merge(
+                            $hub_rag_opts['keyword_needles'],
+                            $expansion_needles
+                        )));
+                    } else {
+                        $hub_rag_opts['keyword_needles'] = $expansion_needles;
+                    }
+                }
+            }
+
+            self::$last_rag_debug = [
+                'chunk_count'            => 0,
+                'keyword_boost_status'   => 'not_evaluated',
+                'search_term'            => $search_term,
+                'retrieval_term'         => $retrieval_search_term,
+                'keyword_needles'        => $rag_keyword_needles,
+                'needles_csv'            => implode(',', $rag_keyword_needles),
+                'lexical_query'          => $rag_lexical_query,
+                'velero_in_raw_context'  => 'n/a',
+                'rescue_needle'          => '',
+                'rag_dev_mode'           => self::$rag_development_mode_active,
+                'query_rewritten'        => self::$last_rag_debug['query_rewritten'] ?? 'n/a',
+                'catalog_intent_hit'     => !empty($catalog_intent['hit']) ? 'yes' : 'no',
+                'catalog_intent_source'  => (string) ($catalog_intent['source'] ?? 'none'),
+                'catalog_intent_kind'    => (string) ($catalog_intent['kind'] ?? ''),
+                'temporal_catalog'       => !empty($config['_xabia_temporal_catalog']) ? 'yes' : 'no',
+            ];
+
+            $context = "";
+            $chunk_count = 0;
+            $had_knowledge_rows = false;
+            $rag_total_found = null;
+            $rag_vector_chunk_count = null;
+            $knowledge_query = $user_msg_clean !== '' ? $user_msg_clean : $search_term;
+            $history_count = self::conversation_turn_count(is_array($history) ? $history : []);
+            $knowledge_free = self::is_knowledge_free_utterance($knowledge_query, $history_count);
+            if ($knowledge_free) {
+                self::$last_rag_debug['knowledge_free'] = 'yes';
+                self::$last_rag_debug['chunk_count'] = 0;
+                self::$last_rag_debug['keyword_boost_status'] = 'skipped_no_knowledge_signal';
+            } elseif (class_exists('Xabia_Brain')) {
+                if ($use_vector && !$strict_ente) {
+                    $hub_rag = self::is_hub_rag_enabled_for_project($project_id);
+                    $query_vector = null;
+                    if ($hub_rag) {
+                        $query_vector = self::get_query_embedding($retrieval_search_term, $config, $project_id);
+                        self::digixop_absorb_query_embedding_usage($project_id, $config);
+                        if (class_exists('Xabia_Digixop_Client') && Xabia_Digixop_Client::was_insufficient_balance()) {
+                            $bal_emb = Xabia_Digixop_Client::get_insufficient_balance_user_message();
+                            self::log_early_exit('digixop_insufficient_balance_after_embedding', $classified_route, $user_msg, $bal_emb);
+                            self::send_chat_json_error([
+                                'message'              => $bal_emb,
+                                'digixop_insufficient' => true,
+                            ]);
+                            return;
+                        }
+                    }
+                    $out = Xabia_Brain::search_knowledge_vector($project_id, $retrieval_search_term, $ente_scope, false, $rag_fetch_limit, $similarity_threshold, $query_vector, $hub_rag_opts);
+                    $out = self::discard_subthreshold_vector_chunks($out, $similarity_threshold);
+                    if (!empty($out['_hub_meta']) && is_array($out['_hub_meta']) && empty($out['_hub_meta']['ok'])) {
+                        self::log_hub_rag_transport_failure(
+                            $project_id,
+                            'primary_search',
+                            [
+                                'ok'       => false,
+                                'code'     => (int) ($out['_hub_meta']['http_code'] ?? 0),
+                                'raw'      => (string) ($out['_hub_meta']['raw'] ?? ''),
+                                'wp_error' => isset($out['_hub_meta']['wp_error']) && is_array($out['_hub_meta']['wp_error'])
+                                    ? $out['_hub_meta']['wp_error']
+                                    : null,
+                                'body'     => $out['_hub_meta']['body'] ?? null,
+                            ],
+                            (string) ($out['_hub_meta']['url'] ?? '')
+                        );
+                    }
+                    $context = $out['context'] ?? '';
+                    $chunk_count = (int) ($out['chunk_count'] ?? 0);
+                    // Preferir chunks tipados: el context del Hub suele ser anónimo (solo CATEGORÍA…).
+                    // Reformatear antepone EMPRESA/ente desde ente_id o parent_title.
+                    if (!empty($out['chunks']) && is_array($out['chunks'])) {
+                        if (!empty($catalog_intent['hit'])
+                            && class_exists('Xabia_Rag_Hybrid_Ranker', false)
+                        ) {
+                            $out['chunks'] = Xabia_Rag_Hybrid_Ranker::apply_priority_boost(
+                                $out['chunks'],
+                                Xabia_Rag_Hybrid_Ranker::PRIORITY_SCORE_BOOST,
+                                $priority_venues
+                            );
+                            $max_per = class_exists('Xabia_Catalog_Intent', false)
+                                ? (int) Xabia_Catalog_Intent::CATALOG_MAX_CHUNKS_PER_ENTITY
+                                : 2;
+                            $out['chunks'] = Xabia_Rag_Hybrid_Ranker::diversify_catalog_top_k(
+                                $out['chunks'],
+                                max(1, min(Xabia_Brain::PROMPT_CHUNK_MAX, (int) $rag_fetch_limit)),
+                                $max_per
+                            );
+                            self::$last_rag_debug['priority_boost'] = 'hub';
+                        }
+                        $prompt_chunk_max = class_exists('Xabia_Brain', false) ? (int) Xabia_Brain::PROMPT_CHUNK_MAX : 10;
+                        if (count($out['chunks']) > $prompt_chunk_max) {
+                            $out['chunks'] = array_slice($out['chunks'], 0, $prompt_chunk_max);
+                        }
+                        $chunk_count = count($out['chunks']);
+                        $formatted_chunks = self::format_hub_rag_chunks_for_prompt($out['chunks'], $config);
+                        if (strlen(trim($formatted_chunks)) >= 10) {
+                            $context = $formatted_chunks;
+                        }
+                        $ente_ids = [];
+                        foreach ($out['chunks'] as $ch) {
+                            if (!is_array($ch)) {
+                                continue;
+                            }
+                            $eid = trim((string) ($ch['ente_id'] ?? ''));
+                            if ($eid !== '' && $eid !== 'global') {
+                                $ente_ids[$eid] = true;
+                            }
+                        }
+                        self::$last_rag_debug['ente_sample'] = $ente_ids === []
+                            ? '(none)'
+                            : implode(',', array_slice(array_keys($ente_ids), 0, 8));
+                    }
+                    // Sin Hub el resultado ya es FULLTEXT. No se fusiona un canal vectorial local.
+                    if (($out['retrieval'] ?? '') === 'lexical') {
+                        self::$last_rag_debug['hybrid_rrf'] = 'lexical_only';
+                    } elseif (!self::is_hub_rag_enabled_for_project($project_id)
+                        && class_exists('Xabia_Rag_Hybrid_Ranker', false)
+                        && Xabia_Rag_Hybrid_Ranker::is_enabled(is_array($config) ? $config : [])
+                        && method_exists('Xabia_Brain', 'search_knowledge_ranked')) {
+                        $vec_ranked = [];
+                        if (!empty($out['chunks']) && is_array($out['chunks'])) {
+                            foreach ($out['chunks'] as $ch) {
+                                if (!is_array($ch)) {
+                                    continue;
+                                }
+                                $content = trim((string) ($ch['content'] ?? $ch['chunk'] ?? ''));
+                                if ($content === '') {
+                                    continue;
+                                }
+                                $vec_ranked[] = [
+                                    'id'      => (string) ($ch['id'] ?? $ch['ente_id'] ?? ''),
+                                    'content' => $content,
+                                    'score'   => isset($ch['score']) ? (float) $ch['score'] : 0.0,
+                                ];
+                            }
+                        }
+                        $lex_q = $rag_lexical_query !== '' ? $rag_lexical_query : $retrieval_search_term;
+                        $lex_ranked = Xabia_Brain::search_knowledge_ranked(
+                            $project_id,
+                            $lex_q,
+                            $ente_scope,
+                            false,
+                            max($rag_fetch_limit, 8)
+                        );
+                        if ($vec_ranked !== [] || $lex_ranked !== []) {
+                            $fused = Xabia_Rag_Hybrid_Ranker::rrf_fuse_weighted(
+                                $vec_ranked,
+                                $lex_ranked,
+                                Xabia_Rag_Hybrid_Ranker::DEFAULT_K,
+                                max(1, (int) $rag_fetch_limit * 3),
+                                Xabia_Rag_Hybrid_Ranker::VECTOR_WEIGHT,
+                                Xabia_Rag_Hybrid_Ranker::LEXICAL_WEIGHT
+                            );
+                            if (!empty($catalog_intent['hit'])) {
+                                $fused = Xabia_Rag_Hybrid_Ranker::apply_priority_boost(
+                                    $fused,
+                                    Xabia_Rag_Hybrid_Ranker::PRIORITY_SCORE_BOOST,
+                                    $priority_venues
+                                );
+                                $max_per = class_exists('Xabia_Catalog_Intent', false)
+                                    ? (int) Xabia_Catalog_Intent::CATALOG_MAX_CHUNKS_PER_ENTITY
+                                    : 2;
+                                $fused = Xabia_Rag_Hybrid_Ranker::diversify_catalog_top_k(
+                                    $fused,
+                                    max(1, (int) $rag_fetch_limit),
+                                    $max_per
+                                );
+                            } else {
+                                $fused = array_slice($fused, 0, max(1, (int) $rag_fetch_limit));
+                            }
+                            $fused_ctx = Xabia_Rag_Hybrid_Ranker::format_context($fused);
+                            if (strlen(trim($fused_ctx)) >= 10) {
+                                $context = $fused_ctx;
+                                $chunk_count = count($fused);
+                                $out['chunks'] = $fused;
+                                self::$last_rag_debug['hybrid_rrf'] = 'local';
+                                if (!empty($catalog_intent['hit']) && $priority_venues !== []) {
+                                    self::$last_rag_debug['priority_venues'] = count($priority_venues);
+                                }
+                            }
+                        }
+                    }
+                    self::$last_rag_debug['velero_in_raw_context'] = mb_stripos((string) $context, 'velero') !== false ? 'yes' : 'no';
+                    if ($chunk_count > 0) {
+                        $rag_total_found = isset($out['total_found']) && $out['total_found'] !== null && $out['total_found'] !== '' ? (int) $out['total_found'] : null;
+                        $rag_vector_chunk_count = $chunk_count;
+                    }
+                    $had_knowledge_rows = ($chunk_count > 0);
+                    self::$last_rag_debug['chunk_count'] = $chunk_count;
+                    if (empty($context) || strlen(trim((string) $context)) < 10) {
+                        $local_rescue = self::fallback_local_rag_when_hub_empty(
+                            $project_id,
+                            $search_term,
+                            $ente_scope,
+                            $strict_ente,
+                            $rag_fetch_limit
+                        );
+                        if (strlen(trim($local_rescue)) >= 10) {
+                            $context = $local_rescue;
+                            $had_knowledge_rows = true;
+                            self::$last_rag_debug['keyword_boost_status'] = 'executed_local_hub_failover';
+                            if (function_exists('xabia_trace')) {
+                                xabia_trace('[XABIA_CORE] hub primary empty; local catalog failover', [
+                                    'project_id' => $project_id,
+                                    'term'       => substr($search_term, 0, 80),
+                                ]);
+                            }
+                        } elseif (!self::is_hub_rag_enabled_for_project($project_id)) {
+                            $context = self::safe_local_knowledge_search($project_id, $search_term, $ente_scope, $strict_ente, $rag_fetch_limit);
+                            $chunk_count = 0;
+                            $had_knowledge_rows = false;
+                            $rag_total_found = null;
+                            $rag_vector_chunk_count = null;
+                            if (strlen(trim($context)) >= 10) {
+                                $had_knowledge_rows = true;
+                            }
+                        }
+                    } elseif (!self::should_skip_local_lexical_rag($project_id, (string) $context, $chunk_count)
+                        && self::rag_context_misses_query_signal_terms($search_term, $context)) {
+                        $lex = self::safe_local_knowledge_search($project_id, $search_term, $ente_scope, $strict_ente, $max_chunks);
+                        if (strlen(trim($lex)) >= 10) {
+                            $context .= "\n\n### Búsqueda por palabras clave (refuerzo) ###\n" . $lex;
+                            $had_knowledge_rows = true;
+                        }
+                    }
+                    if ($criterion_needles !== []
+                        && self::context_misses_keyword_needles((string) $context, $criterion_needles)) {
+                        $rescue_needles = self::select_keyword_needles_for_boost($criterion_needles, (string) $context);
+                        self::$last_rag_debug['rescue_needle'] = $rescue_needles[0] ?? '';
+                        self::$last_rag_debug['keyword_boost_status'] = self::is_hub_rag_enabled_for_project($project_id)
+                            ? 'executing_hub'
+                            : 'executing_local';
+                        $keyword_boost = self::fetch_keyword_boost_context(
+                            $project_id,
+                            $criterion_needles,
+                            $ente_scope,
+                            $strict_ente,
+                            $max_chunks,
+                            $config,
+                            $similarity_threshold,
+                            (string) $context,
+                            null
+                        );
+                        if ($keyword_boost !== '') {
+                            $boost_status = (string) (self::$last_rag_debug['keyword_boost_status'] ?? '');
+                            if ($boost_status !== 'executed_local_rescue') {
+                                self::$last_rag_debug['keyword_boost_status'] = self::is_hub_rag_enabled_for_project($project_id)
+                                    ? 'executed_hub'
+                                    : 'executed_local';
+                            }
+                            $mark = '### Coincidencias exactas por palabra clave ###';
+                            if (mb_stripos((string) $context, $mark) === false) {
+                                $block = $mark . "\n" . $keyword_boost;
+                                $context = ($context !== '' && trim((string) $context) !== '')
+                                    ? ($block . "\n\n" . $context)
+                                    : $block;
+                                $had_knowledge_rows = true;
+                            }
+                        } else {
+                            self::$last_rag_debug['keyword_boost_status'] = self::is_hub_rag_enabled_for_project($project_id)
+                                ? 'executed_hub_empty'
+                                : 'executed_local_empty';
+                        }
+                    } elseif ($criterion_needles !== []) {
+                        self::$last_rag_debug['keyword_boost_status'] = 'cancelled_keyword_already_in_context';
+                    } else {
+                        self::$last_rag_debug['keyword_boost_status'] = 'cancelled_no_needles';
+                    }
+                } else {
+                    // Sin vectores: el catálogo vive en knowledge_vectors local (p. ej. MEC remoto tras «Sincronizar»).
+                    // No bloquear LIKE local aunque el Hub RAG esté activo — si no, cloud + vector off = cero contexto.
+                    $context = self::local_knowledge_rescue_like_search(
+                        $project_id,
+                        $search_term,
+                        $ente_scope,
+                        $strict_ente,
+                        $rag_fetch_limit
+                    );
+                    $had_knowledge_rows = strlen(trim($context)) >= 10;
+                }
+
+                if ($use_vector && !$strict_ente && !self::should_skip_local_lexical_rag($project_id, (string) $context, $chunk_count)
+                    && self::is_rag_topic_followup_utterance($user_msg_clean)
+                    && $last_search !== '' && strlen(trim((string) $context)) >= 10) {
+                    $wide_limit = min(Xabia_Brain::MAX_RAG_CHUNKS, max((int) $max_chunks, 12));
+                    $lex_wide_key = self::sanitize_rag_search_term($search_term);
+                    if ($lex_wide_key === '') {
+                        $lex_wide_key = $last_search;
+                    }
+                    $lex_wide = self::safe_local_knowledge_search($project_id, $lex_wide_key, $ente_scope, $strict_ente, $wide_limit);
+                    $lex_wide = trim((string) $lex_wide);
+                    if ($lex_wide !== '' && strlen($lex_wide) >= 10) {
+                        $mark = '### Búsqueda por palabras clave (seguimiento; más filas) ###';
+                        if (mb_stripos((string) $context, $mark) === false) {
+                            $probe = mb_substr($lex_wide, 0, 280);
+                            if ($probe !== '' && mb_stripos((string) $context, $probe) === false) {
+                                $context .= "\n\n" . $mark . "\n" . $lex_wide;
+                                $had_knowledge_rows = true;
+                            }
+                        }
+                    }
+                }
+            }
+
+            if ($entity_anchor !== '' && class_exists('Xabia_Brain', false)
+                && !self::is_hub_rag_enabled_for_project($project_id)) {
+                if (mb_stripos((string) $context, $entity_anchor) === false) {
+                    $entity_ctx = self::safe_local_knowledge_search(
+                        $project_id,
+                        $entity_anchor,
+                        $ente_scope,
+                        $strict_ente,
+                        3
+                    );
+                    if ($entity_ctx !== '') {
+                        $context = "### Ficha solicitada (seguimiento) ###\n" . $entity_ctx
+                            . ($context !== '' ? "\n\n" . $context : '');
+                        $had_knowledge_rows = true;
+                        $chunk_count = max($chunk_count, 1);
+                    }
+                }
+            }
+
+            $entity_focus = $named_entity !== '' ? $named_entity : $entity_anchor;
+            if ($entity_focus === '' && $utility_request && $last_entity !== '') {
+                $entity_focus = $last_entity;
+            }
+            if ($entity_focus !== '' && class_exists('Xabia_Catalog_List', false)) {
+                $native_entity_ctx = trim((string) Xabia_Catalog_List::fetch_entity_passport_context(
+                    $project_id,
+                    $config,
+                    $entity_focus
+                ));
+                if ($native_entity_ctx !== '') {
+                    $context = $native_entity_ctx . (trim((string) $context) !== '' ? "\n\n" . trim((string) $context) : '');
+                    $had_knowledge_rows = true;
+                    $chunk_count = max(1, (int) $chunk_count);
+                }
+            }
+
+            $discovery_blocks = $knowledge_free
+                ? []
+                : apply_filters('xabia_chat_addon_discovery_blocks', [], $project_id, $config, [
+                    'user_message'  => $knowledge_query,
+                    'catalog_broad' => !empty($catalog_intent['hit']),
+                ]);
+            if (is_array($discovery_blocks) && $discovery_blocks !== []) {
+                $disc_text = trim(implode("\n\n", array_filter(array_map('strval', $discovery_blocks))));
+                if ($disc_text !== '') {
+                    $context .= "\n\n### ADDON DISCOVERY ###\n" . $disc_text;
+                }
+            }
+
+            // Densificar/trocear ANTES del trim: Hub devuelve fichas ~10kB; substr byte-wise rompe UTF-8
+            // y densify posterior deja contexto vacío → el LLM dice «no hay resultados».
+            if (!empty($relative_day_labels) && class_exists('Xabia_Brain', false)) {
+                $topic = self::relative_day_topic_for_rag($user_msg_clean);
+                $date_rescue_parts = [];
+                foreach ($relative_day_labels as $label) {
+                    $term = trim($label . ($topic !== '' ? ' ' . $topic : ''));
+                    $piece = self::local_knowledge_rescue_like_search(
+                        $project_id,
+                        $term,
+                        $ente_scope,
+                        $strict_ente,
+                        max((int) $rag_fetch_limit, 24)
+                    );
+                    if (strlen(trim($piece)) >= 10) {
+                        $date_rescue_parts[] = $piece;
+                    }
+                    // También sin tema, por si el CSV no repite «concierto» en todas las filas.
+                    if ($topic !== '') {
+                        $piece2 = self::local_knowledge_rescue_like_search(
+                            $project_id,
+                            $label,
+                            $ente_scope,
+                            $strict_ente,
+                            max((int) $rag_fetch_limit, 24)
+                        );
+                        if (strlen(trim($piece2)) >= 10) {
+                            $date_rescue_parts[] = $piece2;
+                        }
+                    }
+                }
+                if ($date_rescue_parts !== []) {
+                    $date_ctx = trim(implode("\n\n", array_unique($date_rescue_parts)));
+                    $context = $date_ctx . (strlen(trim((string) $context)) >= 10 ? ("\n\n" . trim((string) $context)) : '');
+                    $had_knowledge_rows = true;
+                    self::$last_rag_debug['date_anchor_rescue'] = implode('|', $relative_day_labels);
+                    self::$last_rag_debug['date_anchor_rescue_len'] = strlen($date_ctx);
+                }
+            }
+
+            $temporal_agenda_digest = '';
+            if (!empty($config['_xabia_temporal_catalog'])
+                && !empty($relative_day_labels)
+                && class_exists('Xabia_Brain', false)
+                && method_exists('Xabia_Brain', 'build_temporal_agenda_digest')
+            ) {
+                $temporal_agenda_digest = Xabia_Brain::build_temporal_agenda_digest(
+                    (string) $context,
+                    $relative_day_labels,
+                    $priority_venues
+                );
+            }
+
+            if (class_exists('Xabia_Brain', false) && method_exists('Xabia_Brain', 'prepare_rag_context_for_prompt')) {
+                $context = Xabia_Brain::prepare_rag_context_for_prompt((string) $context);
+            } elseif (class_exists('Xabia_Brain', false) && method_exists('Xabia_Brain', 'densify_rag_context')) {
+                $context = Xabia_Brain::densify_rag_context((string) $context);
+            }
+
+            // Presupuesto elástico: Gemini Flash admite ventanas grandes; el límite solo acota coste/latencia.
+            $context_trim_limit = (int) apply_filters('xabia_chat_rag_context_trim_limit', 12000, $project_id, $config ?? []);
+            if (!empty($catalog_intent['hit'])) {
+                $context_trim_limit = (int) apply_filters('xabia_chat_rag_context_trim_limit_catalog', max($context_trim_limit, 18000), $project_id, $config ?? []);
+            }
+            if (!empty($config['_xabia_temporal_catalog'])) {
+                $context_trim_limit = (int) apply_filters(
+                    'xabia_chat_rag_context_trim_limit_temporal',
+                    max($context_trim_limit, 22000),
+                    $project_id,
+                    $config ?? []
+                );
+            }
+            if (strlen($context) > $context_trim_limit) {
+                $prefer = trim($named_entity !== '' ? $named_entity : ($entity_anchor !== '' ? $entity_anchor : $user_msg_clean));
+                if (!empty($relative_day_labels)) {
+                    $prefer = trim($prefer . ' ' . implode(' ', $relative_day_labels));
+                }
+                $prefer = self::expand_prefer_hint_with_keyword_expansions($prefer, is_array($config) ? $config : []);
+                $context = self::truncate_chat_rag_context($context, $context_trim_limit, $prefer);
+            }
+
+            // La agenda canónica se antepone DESPUÉS del densify/trim para no truncarla ni densificarla.
+            if ($temporal_agenda_digest !== '') {
+                $context = $temporal_agenda_digest . "\n\n" . trim((string) $context);
+                self::$last_rag_debug['temporal_agenda_digest'] = 'yes';
+                self::$last_rag_debug['temporal_agenda_len'] = strlen($temporal_agenda_digest);
+            }
+            $context = self::rewrite_remote_media_hosts_in_text((string) $context, $project_id);
+            
+            if ($knowledge_free) {
+                $context = '';
+                $had_knowledge_rows = false;
+            } elseif (empty($context) || strlen($context) < 10) {
+                $had_knowledge_rows = false;
+                $context = "SYSTEM_NOTE: La búsqueda de '$search_term' no arrojó resultados directos en la base de datos local.";
+            }
+
+            $date_context_parts = [];
+            $histForDates = [];
+            if (!empty($_POST['history'])) {
+                $raw_hist = json_decode(wp_unslash((string) $_POST['history']), true);
+                if (is_array($raw_hist)) {
+                    $histForDates = array_slice(array_filter($raw_hist, static function ($m) {
+                        return isset($m['role'], $m['content']) && in_array($m['role'], ['user', 'assistant'], true);
+                    }), -24);
+                }
+            }
+            if ($histForDates === []) {
+                $histForDates = $history;
+            }
+            foreach ($histForDates as $hist_msg) {
+                if (!is_array($hist_msg) || ($hist_msg['role'] ?? '') !== 'user') {
+                    continue;
+                }
+                $c = isset($hist_msg['content']) ? trim((string) $hist_msg['content']) : '';
+                if ($c !== '') {
+                    $date_context_parts[] = $c;
+                }
+            }
+            if ($user_msg !== '') {
+                $date_context_parts[] = $user_msg;
+            }
+            $date_context = trim(implode(' ', $date_context_parts));
+            if ($date_context === '' && $user_msg !== '') {
+                $date_context = $user_msg;
+            }
+            xabia_trace('[XABIA_CORE] date_context built', [
+                'date_context_len' => strlen($date_context),
+                'post_history'     => !empty($_POST['history']),
+                'session_msgs'     => is_array($history) ? count($history) : 0,
+            ]);
+
+            if (!$knowledge_free) {
+                $entity_intent = ($named_entity !== '' || $entity_anchor !== '' || !empty($utility_request));
+                $ambiguous_entity = ($named_entity !== '' || $entity_anchor !== '');
+                $context = apply_filters(
+                    'xabia_agent_context_injection',
+                    $context,
+                    $project_id,
+                    $config,
+                    [
+                        'user_message'      => $user_msg,
+                        'date_context'      => $date_context,
+                        'search_term'       => $search_term,
+                        'scope'             => $ente_scope,
+                        'lang_code'         => $lang_code,
+                        'user_lang'         => $user_lang,
+                        'knowledge_free'    => false,
+                        'chunk_count'       => (int) $chunk_count,
+                        'entity_intent'     => $entity_intent,
+                        'ambiguous_entity'  => $ambiguous_entity,
+                    ]
+                );
+            }
+            xabia_trace('[XABIA_CORE] after xabia_agent_context_injection', [
+                'context_len' => is_string($context) ? strlen($context) : 0,
+                'knowledge_free' => $knowledge_free ? 'yes' : 'no',
+            ]);
+            if (!$knowledge_free && (!is_string($context) || trim($context) === '')) {
+                $context = "SYSTEM_NOTE: El contexto modular no devolvió contenido util para '$search_term'.";
+                $had_knowledge_rows = false;
+            }
+            $pre_assembly_context = trim((string) $context);
+            $context = $knowledge_free
+                ? ''
+                : self::assemble_semantic_context_payload($project_id, $config, (string) $context);
+            if (trim($context) === '' && $pre_assembly_context !== '') {
+                $meta = self::default_semantic_source_meta($config);
+                $context = self::format_semantic_context_block(
+                    $meta['source'],
+                    $meta['description'],
+                    self::scrub_internal_secrets_in_text($pre_assembly_context)
+                );
+                if (function_exists('xabia_trace')) {
+                    xabia_trace('[XABIA_CORE] assemble_semantic_context empty; using pre-assembly fallback', [
+                        'project_id' => $project_id,
+                        'pre_len'    => strlen($pre_assembly_context),
+                    ]);
+                }
+            }
+
+            $response_mode = 'list';
+            if ($named_entity !== '' || self::query_implies_single_item_depth($user_msg_clean)) {
+                if ($entity_anchor !== ''
+                    || ($use_vector && $chunk_count > 0 && $chunk_count <= 2
+                        && ($rag_total_found === null || (int) $rag_total_found <= 1)
+                        && self::query_implies_single_item_depth($user_msg_clean))) {
+                    $response_mode = 'development';
+                }
+            }
+            // Pedidos de contacto/ficha: conservar anexo completo aunque no se haya resuelto aún el nombre.
+            if ($response_mode === 'list'
+                && self::query_implies_entity_utility_request($user_msg_clean)
+            ) {
+                $response_mode = 'development';
+            }
+
+            // En listados, no inyectar el anexo de atributos mapeados (bloque tras ---).
+            if ($response_mode === 'list') {
+                $context = self::strip_mapped_attributes_annex_from_context((string) $context);
+            }
+
+            
+            if (empty($config)) {
+                $projects = get_option('xabia_projects_config', []);
+                $config = $projects[$project_id] ?? [];
+            }
+            $config['_xabia_proxy_user_lang'] = $user_lang;
+            $temperature = isset($config['rules']['min_score']) ? floatval($config['rules']['min_score']) : 0.2;
+            $ai_driver = $config['ai_driver'] ?? 'openai';
+            $max_tokens = self::chat_max_tokens($config['rules']['max_output_tokens'] ?? 1200);
+            if (!empty($config['_xabia_temporal_catalog'])) {
+                $max_tokens = max($max_tokens, (int) apply_filters('xabia_temporal_catalog_max_output_tokens', 2500, $project_id, $config));
+            } else {
+                $max_tokens = min($max_tokens, 1200);
+            }
+
+            $ente_display = '';
+            if ($ente_scope !== 'global' && !empty($ente_scope)) {
+                $ente_display = self::get_ente_display_name($project_id, $ente_scope, $ente_id_param_raw);
+            }
+
+            $tunnel_ente_from_request = $ente_id_param_raw !== '';
+            $system_prompt = self::build_system_prompt(
+                $project_id,
+                $config,
+                $context,
+                $current_temporal,
+                $ente_display,
+                $strict_ente,
+                $response_mode,
+                $lang_code,
+                $tunnel_ente_from_request,
+                $ente_scope,
+                $had_knowledge_rows,
+                $rag_total_found,
+                $rag_vector_chunk_count,
+                $user_msg_clean,
+                is_array($rag_keyword_needles) ? $rag_keyword_needles : [],
+                self::conversation_turn_count(is_array($history) ? $history : [])
+            );
+            if (self::history_has_assistant_turn(is_array($history) ? $history : [])) {
+                $system_prompt .= "\n\nCONVERSACIÓN YA ABIERTA: No saludes, no digas hola, no te presentes y no repitas tu nombre. Empieza por la respuesta.";
+            }
+            
+            $history = self::maybe_summarize_history(is_array($history) ? $history : [], $project_id, $config);
+            if (!session_id() && !headers_sent()) {
+                session_start();
+            }
+            $qr_scan = function_exists('xabia_qr_scan_active_for_project') ? xabia_qr_scan_active_for_project($project_id) : null;
+            $qr_id_session = is_array($qr_scan) && !empty($qr_scan['qr_id']) ? (string) $qr_scan['qr_id'] : '';
+            $tunnel_pre = apply_filters('xabia_chat_tunnel_system_preamble', '', $project_id, [
+                'strict_ente'  => $strict_ente,
+                'ente_scope'   => $ente_scope,
+                'ente_display' => $ente_display,
+                'ente_id_raw'  => $ente_id_param_raw,
+                'qr_scan'      => is_array($qr_scan) ? $qr_scan : null,
+                'qr_id'        => $qr_id_session,
+            ]);
+            $system_prompt_final = $system_prompt;
+            $has_qr_scan_context = $qr_id_session !== '';
+            if (($strict_ente || $has_qr_scan_context) && is_string($tunnel_pre) && trim($tunnel_pre) !== '') {
+                $system_prompt_final = trim($tunnel_pre) . "\n\n" . $system_prompt;
+            }
+            if ($is_continue_request) {
+                if (!session_id() && !headers_sent()) {
+                    session_start();
+                }
+                $meta_cont = $_SESSION['xabia_last_response_meta'][$project_id] ?? [];
+                $prev_resp = trim((string) ($meta_cont['response'] ?? ''));
+                if ($prev_resp !== '') {
+                    $tail_source = preg_replace('/\[ACTION:[^\]]+\]/i', ' ', $prev_resp);
+                    $tail_source = trim((string) preg_replace('/\s+/u', ' ', (string) $tail_source));
+                    if ($tail_source === '') {
+                        $tail_source = $prev_resp;
+                    }
+                    $tail = mb_strlen($tail_source) > 700 ? mb_substr($tail_source, -700) : $tail_source;
+                    $system_prompt_final .= "\n\nCONTINUACIÓN OBLIGATORIA: La respuesta anterior quedó incompleta. Sigue EXACTAMENTE donde se cortó, sin repetir saludos ni párrafos ya escritos. Cierra la lista o la frase que quedó a medias. Fragmento final previo:\n---\n" . $tail . "\n---";
+                }
+            }
+            $messages = [['role' => 'system', 'content' => $system_prompt_final]];
+            foreach (self::asymmetric_history_slice_for_llm(is_array($history) ? $history : [], 24) as $msg) {
+                $messages[] = $msg;
+            }
+            $messages[] = ['role' => 'user', 'content' => $user_msg];
+            $messages = self::sanitize_llm_messages_for_external_api($messages, $project_id, $config);
+            xabia_trace('[XABIA_CORE] messages built for LLM', [
+                'history_count' => is_array($history) ? count($history) : 0,
+                'messages_count' => count($messages),
+                'max_tokens' => $max_tokens,
+            ]);
+
+            $user_turns_in_thread = 0;
+            foreach ($history as $hist_row) {
+                if (is_array($hist_row) && (($hist_row['role'] ?? '') === 'user')) {
+                    $user_turns_in_thread++;
+                }
+            }
+            $is_new_conversation = ($user_turns_in_thread === 0 && !$is_continue_request);
+            if (class_exists('Xabia_Chat_Pipeline', false)) {
+                Xabia_Chat_Pipeline::mark('retrieve');
+            }
+
+            $response = '';
+            $stream_armed = class_exists('Xabia_Chat_Stream', false) && Xabia_Chat_Stream::is_armed();
+            $vertex_local = $ai_driver === 'google_cloud' && class_exists('Xabia_Digixop_Client') && Xabia_Digixop_Client::should_use_local_vertex($config);
+            $diag_tools = self::merged_chat_tools($project_id);
+            $use_tool_loop = $diag_tools !== [];
+            self::log_llm_payload_diagnostics($system_prompt_final, (string) $context, $messages, $diag_tools);
+            $streamed = null;
+            if ($stream_armed && !$use_tool_loop) {
+                $streamed = $vertex_local
+                    ? self::try_stream_vertex($messages, $max_tokens, $config, $temperature)
+                    : self::try_stream_openai($messages, $max_tokens, self::resolve_openai_chat_model($config), $temperature, $project_id, $config);
+            }
+            if (is_string($streamed)) {
+                $response = $streamed;
+            } elseif ($vertex_local) {
+                $response = self::call_google_vertex($messages, $max_tokens, $config, $temperature, $project_id, $use_tool_loop);
+            } elseif ($use_tool_loop) {
+                $response = self::call_openai_with_federation_tools($messages, $max_tokens, self::resolve_openai_chat_model($config), $temperature, $project_id, $config);
+            } else {
+                $response = self::call_openai($messages, $max_tokens, self::resolve_openai_chat_model($config), $temperature, $project_id, $config);
+            }
+            $response = self::sanitizeTechnicalFailureForUser($response);
+            $finish_reason = strtolower(trim((string) self::$last_generation_finish_reason));
+            self::$last_generation_finish_reason = $finish_reason;
+            if (class_exists('Xabia_Chat_Pipeline', false)) {
+                Xabia_Chat_Pipeline::mark('generate');
+            }
+
+            if (class_exists('Xabia_Digixop_Client') && Xabia_Digixop_Client::was_insufficient_balance()) {
+                $balance_message = Xabia_Digixop_Client::get_insufficient_balance_user_message();
+                if (class_exists('Xabia_Chat_Stream', false) && Xabia_Chat_Stream::is_open()) {
+                    Xabia_Chat_Stream::fail($balance_message);
+                }
+                self::send_chat_json_error([
+                    'message'              => $balance_message,
+                    'digixop_insufficient' => true,
+                ]);
+                return;
+            }
+
+            $response = self::restore_literal_escaped_newlines((string) $response);
+            $response = self::strip_llm_meta_reasoning_leaks((string) $response);
+            $response = self::resolve_action_img_ids_in_response($response, $project_id);
+            $response = self::resolve_action_book_tags_in_response($response, $project_id);
+            $response = self::promote_plain_urls_to_action_url_tags($response);
+            $response = self::repair_truncated_action_urls_from_context($response, $context);
+            $response = self::scrub_action_urls_absent_from_context($response, $context);
+            $response = self::resolve_action_url_tags_in_response($response, $project_id);
+            $response = self::rewrite_mec_remote_hosts_in_response($response, $project_id);
+            $response = self::maybe_append_photo_from_context(
+                $response,
+                $context,
+                $user_msg,
+                $search_term,
+                $project_id,
+                is_array($history) ? $history : []
+            );
+            $response = self::maybe_append_entity_card_from_context(
+                $response,
+                $context,
+                $user_msg,
+                $search_term,
+                is_array($history) ? $history : [],
+                $project_id,
+                is_array($config) ? $config : []
+            );
+            $response = self::maybe_append_contact_actions_from_context($response, $context, $user_msg, $search_term);
+            /**
+             * Post-proceso de respuesta (addons): p. ej. Woo añade [ACTION:CART:ID] cuando se ofrecen productos.
+             *
+             * @param string               $response Texto del asistente.
+             * @param array<string, mixed> $args     context, project_id, config, user_message, search_term.
+             */
+            if (self::history_has_assistant_turn(is_array($history) ? $history : [])) {
+                $response = self::strip_followup_greeting((string) $response);
+            }
+            $response = (string) apply_filters('xabia_chat_response_postprocess', (string) $response, [
+                'context'      => (string) $context,
+                'project_id'   => (string) $project_id,
+                'config'       => is_array($config) ? $config : [],
+                'user_message' => (string) $user_msg,
+                'search_term'  => (string) $search_term,
+                'history'      => is_array($history) ? $history : [],
+            ]);
+            $response = self::maybe_append_lodging_recommendation_cards_from_context(
+                (string) $response,
+                (string) $context,
+                (string) $project_id,
+                is_array($config) ? $config : []
+            );
+            if (class_exists('Xabia_Action_Card', false)) {
+                $response = Xabia_Action_Card::enrich_response_cards((string) $response, (string) $context);
+            }
+            $response = self::rewrite_remote_media_hosts_in_response($response, $project_id);
+            $response = self::format_chat_markdown_for_display((string) $response);
+            $finish_reason = strtolower(trim((string) self::$last_generation_finish_reason));
+            self::$last_generation_finish_reason = $finish_reason;
+            self::$last_rag_debug['finish_reason'] = $finish_reason;
+            $metrics = is_array(self::$last_generation_metrics) ? self::$last_generation_metrics : null;
+            $truncated = self::should_mark_response_truncated(
+                $finish_reason,
+                (string) $response,
+                $max_tokens,
+                $metrics
+            );
+            if (self::should_log_rag_context_chivato($config)) {
+                error_log(
+                    '[XABIA RAG CHIVATO LLM] project=' . $project_id
+                    . ' finish_reason=' . $finish_reason
+                    . ' truncated=' . ($truncated ? 'yes' : 'no')
+                    . ' max_output_tokens=' . (int) $max_tokens
+                    . ' completion_tokens=' . (int) ($metrics['completion_tokens'] ?? 0)
+                    . ' auto_continue=no'
+                );
+            }
+
+            
+            if (!session_id() && !headers_sent()) session_start();
+            if (!$is_continue_request) {
+                $_SESSION['xabia_chat_history'][$project_id][] = ['role' => 'user', 'content' => $user_msg];
+                $_SESSION['xabia_chat_history'][$project_id][] = ['role' => 'assistant', 'content' => $response];
+            } else {
+                $hist = isset($_SESSION['xabia_chat_history'][$project_id]) && is_array($_SESSION['xabia_chat_history'][$project_id])
+                    ? $_SESSION['xabia_chat_history'][$project_id]
+                    : [];
+                $merged_response = $response;
+                if ($hist !== []) {
+                    $last_idx = count($hist) - 1;
+                    $last = $hist[$last_idx];
+                    if (is_array($last) && ($last['role'] ?? '') === 'assistant') {
+                        $prev = trim((string) ($last['content'] ?? ''));
+                        $merged_response = $prev !== '' ? ($prev . "\n\n" . $response) : $response;
+                        $hist[$last_idx] = ['role' => 'assistant', 'content' => $merged_response];
+                        $_SESSION['xabia_chat_history'][$project_id] = $hist;
+                    } else {
+                        $_SESSION['xabia_chat_history'][$project_id][] = ['role' => 'assistant', 'content' => $response];
+                    }
+                } else {
+                    $_SESSION['xabia_chat_history'][$project_id][] = ['role' => 'assistant', 'content' => $response];
+                }
+                $response = $merged_response;
+            }
+            $_SESSION['xabia_chat_history'][$project_id] = array_slice($_SESSION['xabia_chat_history'][$project_id], -24);
+            $_SESSION['xabia_last_response_meta'][$project_id] = [
+                'truncated' => $truncated,
+                'finish_reason' => $finish_reason,
+                'response' => $response,
+            ];
+            $mentioned_entity = self::extract_primary_entity_name_from_assistant_text($response);
+            $mentioned_entity = self::sanitize_persisted_entity_reference($mentioned_entity, $project_id, is_array($history ?? null) ? $history : []);
+            if ($mentioned_entity !== '' && self::$last_generation_finish_reason !== 'native_catalog') {
+                $_SESSION['xabia_last_entity'][$project_id] = $mentioned_entity;
+            }
+            session_write_close();
+
+            
+            if (!empty($response)) {
+                global $wpdb;
+                $table_logs = Xabia_DB::table('logs');
+                if ($wpdb->get_var("SHOW TABLES LIKE '$table_logs'") === $table_logs) {
+                    $wpdb->insert($table_logs, [
+                        'project_id'    => $project_id, 
+                        'ente_id'       => $ente_scope, 
+                        'user_question' => $user_msg,
+                        'ai_response'   => $response, 
+                        'timestamp'     => current_time('mysql')
+                    ]);
+                }
+            }
+
+            self::digixop_report_chat_session_if_needed($project_id);
+            self::log_usage_metrics($project_id, $user_msg);
+            if (class_exists('Xabia_Analytics', false)) {
+                $ch = Xabia_Analytics::detect_channel($project_id, $ente_id_param_raw);
+                $tokens_used = 0;
+                if (is_array(self::$last_generation_metrics)) {
+                    $tokens_used = (int) (self::$last_generation_metrics['prompt_tokens'] ?? 0)
+                        + (int) (self::$last_generation_metrics['completion_tokens'] ?? 0);
+                }
+                $visitor_key = Xabia_Analytics::visitor_key_for_request($project_id);
+                $analytics_lang = is_string($user_lang) && $user_lang !== '' ? $user_lang : $lang_code;
+                if ($is_new_conversation) {
+                    Xabia_Analytics::record_chat_event($project_id, [
+                        'event_type'  => 'conversation_start',
+                        'source'      => $ch['source'],
+                        'qr_id'       => $ch['qr_id'],
+                        'tokens_used' => 0,
+                        'lang'        => $analytics_lang,
+                        'visitor_key' => $visitor_key,
+                    ]);
+                }
+                $outcome = Xabia_Analytics::classify_outcome(
+                    is_string($response) ? $response : '',
+                    !empty($had_knowledge_rows),
+                    is_string($context) ? $context : ''
+                );
+                Xabia_Analytics::record_chat_event($project_id, [
+                    'event_type'    => 'message',
+                    'source'        => $ch['source'],
+                    'qr_id'         => $ch['qr_id'],
+                    'rag_source'    => Xabia_Analytics::infer_rag_source($config),
+                    'rag_hit'       => $had_knowledge_rows,
+                    'tokens_used'   => $tokens_used,
+                    'lang'          => $analytics_lang,
+                    'visitor_key'   => $visitor_key,
+                    'outcome'       => $outcome,
+                    'user_question' => $user_msg,
+                ]);
+            }
+            if (!$skip_response_cache && $cache_hash !== '' && class_exists('Xabia_Router') && in_array($route, ['ROUTE_KNOWLEDGE', 'ROUTE_GENERAL'], true)
+                && !self::$rag_development_mode_active) {
+                $cacheable = is_string($response) && trim($response) !== ''
+                    && $response !== self::friendlyTemporaryFailureMessage()
+                    && !self::responseLooksLikeTechnicalFailure($response);
+                if ($cacheable) {
+                    Xabia_Router::put_cached_response($project_id, $cache_hash, (string) $response, $route);
+                }
+            }
+
+            $stream_meta = class_exists('Xabia_Chat_Stream', false)
+                ? Xabia_Chat_Stream::response_meta($truncated, $finish_reason, (int) $max_tokens, Xabia_Chat_Stream::is_open())
+                : [
+                    'protocol'      => 'sse',
+                    'enabled'       => false,
+                    'route'         => '/wp-json/xabia/v1/ask',
+                    'truncated'     => $truncated,
+                    'finish_reason' => $finish_reason,
+                    'max_tokens'    => (int) $max_tokens,
+                ];
+            self::deliver_chat_success([
+                'response' => $response,
+                'finish_reason' => $finish_reason,
+                'truncated' => $truncated,
+                'stream' => $stream_meta,
+                'pipeline' => class_exists('Xabia_Chat_Pipeline', false) ? Xabia_Chat_Pipeline::phase_ms() : [],
+            ]);
+        }
+
+        /**
+         * Texto base del Intérprete (router), neutro y compacto. Ampliable vía filtro xabia_system_prompt_rules (contexto 'interpreter').
+         */
+        private static function get_default_interpreter_rules($current_ymd) {
+            return 'Eres el Intérprete. Tu salida son palabras clave separadas por espacios para buscar en la base de conocimiento: términos que puedan aparecer en los datos indexados (etiquetas, valores, categorías, formas flexivas y conceptos afines). No repitas la pregunta del usuario de forma literal. Incluye variantes de género/número del criterio pedido y, si preguntan por un tipo o ambiente, hiperónimos/hipónimos habituales en fichas sin inventar nombres de entidades. Si el usuario nombra una actividad en lenguaje cotidiano, añade etiquetas de catálogo equivalentes (nombres de categoría o tipo) que podrían figurar en los datos. TOPÓNIMOS: si la consulta menciona un municipio, localidad o lugar (incl. erratas tipográficas, grafías históricas o formas en euskera como -ko/-tik/-dan/-n), infiere la forma canónica del nombre tal como podría figurar en los datos indexados. Corrige erratas evidentes (p. ej. letras omitidas o transposiciones). Al final de tu respuesta, en la misma línea, añade: entidad_normalizada: NombreCanónico (varias separadas por coma). Si no hay topónimo claro, omite entidad_normalizada. Para fechas relativas, usa como referencia HOY: ' . $current_ymd . '.';
+        }
+
+        /**
+         * Presets base de comportamiento RAG (marca blanca). Ampliable vía filtro xabia_rag_behavior_presets.
+         *
+         * @return array{neutral: string, compact: string}
+         */
+        private static function get_rag_behavior_presets(): array {
+            $presets = [
+                'neutral' => "REGLAS RAG: Solo datos literales del CONTEXTO. Si falta el dato, una frase; no inventes ni uses conocimiento externo. Cero resultados: no afirmes que no existen. Misma prioridad a todas las entidades, sin disculpas de marca. Listados: una entidad por línea, sin el anexo tras «---». Historial solo para pronombres. Sin razonamiento interno.\n",
+                'compact' => "REGLAS RAG: Solo CONTEXTO. Sin inventar. Misma prioridad a las entidades recuperadas. Si falta el dato, indícalo en una frase. Sin razonamiento interno.\n",
+            ];
+
+            $filtered = apply_filters('xabia_rag_behavior_presets', $presets);
+            if (!is_array($filtered)) {
+                return $presets;
+            }
+            foreach (['neutral', 'compact'] as $key) {
+                if (isset($filtered[$key]) && is_string($filtered[$key]) && trim($filtered[$key]) !== '') {
+                    $presets[$key] = $filtered[$key];
+                }
+            }
+
+            return $presets;
+        }
+
+        /**
+         * Resuelve el bloque RAG desde rules.rag_behavior_preset / rules.rag_custom_behavior.
+         */
+        private static function resolve_rag_behavior_from_config(array $config): string {
+            $rules = is_array($config['rules'] ?? null) ? $config['rules'] : [];
+            $preset = sanitize_key((string) ($rules['rag_behavior_preset'] ?? ''));
+            $custom = isset($rules['rag_custom_behavior']) ? trim((string) $rules['rag_custom_behavior']) : '';
+
+            if ($preset === 'custom' && $custom !== '') {
+                $block = $custom;
+            } else {
+                $presets = self::get_rag_behavior_presets();
+                if ($preset === 'compact') {
+                    $block = $presets['compact'];
+                } else {
+                    $block = $presets['neutral'];
+                }
+            }
+
+            if ($preset === 'custom') {
+                $block = rtrim($block) . "\n"
+                    . "Solo datos del CONTEXTO. Misma prioridad a las entidades recuperadas, sin disculpas de marca. Sin razonamiento interno.\n";
+            }
+
+            return rtrim($block);
+        }
+
+        /**
+         * Detecta respuestas de transporte/API que no deben usarse como expansión RAG.
+         */
+        private static function looks_like_llm_transport_error(string $raw): bool {
+            $raw = trim($raw);
+            if ($raw === '') {
+                return false;
+            }
+            if (preg_match('/\b(error\s*api|wp_error|exception|traceback|curl error|http\s*[45]\d\d)\b/iu', $raw)) {
+                return true;
+            }
+            if (preg_match('/\b(sin mensajes|user\/assistant|válidos para gemini|insufficient[_ ]balance|rate limit)\b/iu', $raw)) {
+                return true;
+            }
+            if (preg_match('/^(error|failed|failure)\b/iu', $raw)) {
+                return true;
+            }
+
+            return false;
+        }
+
+        /**
+         * Router semántico (Intérprete): traduce la intención del usuario a términos de búsqueda.
+         * Texto del intérprete: filtro {@see 'xabia_system_prompt_rules'} con contexto 'interpreter'.
+         * Usa el mismo proveedor que el chat (OpenAI o Google Vertex) según $config['ai_driver'].
+         */
+        private static function expand_user_query_generic($user_msg, $last_search, $current_ymd, $project_id, $config = []) {
+            $base = apply_filters(
+                'xabia_system_prompt_rules',
+                self::get_default_interpreter_rules($current_ymd),
+                'interpreter',
+                [
+                    'project_id'  => $project_id,
+                    'config'      => $config,
+                    'current_ymd' => $current_ymd,
+                    'user_msg'    => $user_msg,
+                    'last_search' => $last_search,
+                ]
+            );
+            $base = is_string($base) ? $base : self::get_default_interpreter_rules($current_ymd);
+            $addon = apply_filters('xabia_router_search_logic', '', $project_id, $current_ymd);
+            $system = "Intérprete (mapeo a ontología). $base $addon SALIDA: palabras clave separadas por espacios para que el Buscador encuentre las filas correctas. Si hay topónimo, termina con entidad_normalizada: NombreCanónico. Sin prosa ni explicaciones.";
+            $user = 'ENTRADA: "' . $user_msg . '". Búsqueda anterior: "' . $last_search . '".';
+            // Gemini (Hub/Vertex) exige al menos un mensaje user/assistant; system-only → 400.
+            $messages = self::sanitize_llm_messages_for_external_api(
+                [
+                    ['role' => 'system', 'content' => $system],
+                    ['role' => 'user', 'content' => $user],
+                ],
+                (string) $project_id,
+                is_array($config) ? $config : []
+            );
+            if (($config['ai_driver'] ?? '') === 'google_cloud' && class_exists('Xabia_Digixop_Client') && Xabia_Digixop_Client::should_use_local_vertex($config)) {
+                return self::call_google_vertex($messages, 200, $config, 0.0, $project_id, false);
+            }
+            return self::call_openai($messages, 200, self::resolve_openai_chat_model($config), 0.0, $project_id, $config);
+        }
+
+        private static function get_ente_display_name($project_id, $ente_scope, $fallback_raw = '') {
+            global $wpdb;
+            $table = Xabia_DB::table('knowledge_vectors');
+
+            
+            $meta = $wpdb->get_var($wpdb->prepare(
+                "SELECT meta_data FROM $table WHERE project_id = %s AND ente_id = %s ORDER BY id DESC LIMIT 1",
+                $project_id,
+                $ente_scope
+            ));
+
+            if (!empty($meta)) {
+                $decoded = json_decode($meta, true);
+                if (is_array($decoded) && !empty($decoded['__ente_display'])) {
+                    return (string)$decoded['__ente_display'];
+                }
+            }
+
+            
+            if (!empty($fallback_raw)) return (string)$fallback_raw;
+            return (string)$ente_scope;
+        }
+
+        /**
+         * Bloque políglota alineado con central-api VertexForwarder (hub).
+         * $origin_lang = user_lang / lang del sitio; solo fallback, no fuerza idioma de respuesta.
+         */
+        private static function xabia_polyglot_language_rule($origin_lang = null): string {
+            $block = 'IDIOMA: Responde en el idioma del último mensaje del usuario. Si el CONTEXTO está en otro idioma, tradúcelo. El idioma de origen solo es fallback si el mensaje es ambiguo.';
+
+            if (!is_string($origin_lang)) {
+                return $block;
+            }
+            $tag = trim($origin_lang);
+            $tag = preg_replace('/[^a-zA-Z0-9\-]/', '', $tag) ?? '';
+            $tag = substr(strtolower($tag), 0, 35);
+            if ($tag === '') {
+                return $block;
+            }
+
+            return $block . "\n- Idioma de origen (fallback del sitio/shortcode): " . $tag . '.';
+        }
+
+        /**
+         * Bloque auto-descriptivo para una fuente de datos (meta-schema).
+         */
+        private static function format_semantic_context_block(string $source_label, string $description, string $data): string
+        {
+            $data = trim($data);
+            if ($data === '') {
+                return '';
+            }
+            $source_label = trim($source_label) !== '' ? trim($source_label) : __('Fuente de datos', 'xabia-intelligence');
+            $description = trim($description) !== '' ? trim($description) : __('Datos estructurados disponibles para este agente.', 'xabia-intelligence');
+
+            return '[FUENTE: ' . $source_label . "]\n"
+                . '[DESCRIPCIÓN: ' . $description . "]\n"
+                . "[DATOS]:\n" . $data;
+        }
+
+        /**
+         * =============================================================================
+         * MURO DE PRIVACIDAD DE DATOS DE XABIA (PII Shield — OBLIGATORIO)
+         * =============================================================================
+         *
+         * Todo texto de contexto o historial que salga hacia APIs externas (Gemini, OpenAI,
+         * Vertex, etc.) DEBE pasar por apply_context_privacy_shield() antes del envío.
+         *
+         * Garantías:
+         * - Ofusca PII genérica (correo, teléfono en texto libre, tokens, rutas de servidor).
+         * - Elimina líneas de metadatos privados de comercio/reservas (WooCommerce, MEC,
+         *   Avirato, Amelia): clientes, facturación, envío, notas de pedido, transacciones.
+         * - Preserva contacto público de catálogo (fichas EMPRESA:, bloques [DATOS], Woo/MEC/Avirato).
+         * - Zonas de catálogo: solo secretos/servidor + líneas privadas de comercio; sin ofuscar tel/email públicos.
+         * - Texto libre del usuario: PII completa. Asistente/sistema: modo catálogo por bloques cuando aplica.
+         *
+         * @param array<string, mixed> $config
+         * @param array<string, mixed> $opts channel: context|user|assistant|system
+         */
+        private static function apply_context_privacy_shield(
+            string $text,
+            string $project_id = '',
+            array $config = [],
+            array $opts = []
+        ): string {
+            $text = (string) $text;
+            if ($text === '') {
+                return '';
+            }
+            $channel = isset($opts['channel']) ? (string) $opts['channel'] : 'context';
+            if (!in_array($channel, ['context', 'user', 'assistant', 'system'], true)) {
+                $channel = 'context';
+            }
+
+            $text = self::sanitize_privacy_shield_by_blocks($text, $project_id, $config, $channel);
+
+            $filtered = apply_filters('xabia_context_privacy_sanitize', $text, $project_id, $config, $channel);
+            if (!is_string($filtered)) {
+                return $text;
+            }
+
+            return $filtered;
+        }
+
+        /**
+         * @param array<string, mixed> $config
+         */
+        private static function sanitize_privacy_shield_by_blocks(
+            string $text,
+            string $project_id,
+            array $config,
+            string $channel
+        ): string {
+            $text = self::strip_commerce_private_context_lines($text);
+            if ($text === '') {
+                return '';
+            }
+
+            if ($channel === 'user') {
+                return self::scrub_pii_and_secrets_in_text($text);
+            }
+
+            if (self::context_block_is_public_catalog($text)) {
+                return self::scrub_internal_secrets_in_text($text);
+            }
+
+            if ($channel !== 'user' && !self::outbound_text_needs_pii_scrub($text)) {
+                return self::scrub_internal_secrets_in_text($text);
+            }
+
+            $blocks = preg_split('/\n\n+/u', $text);
+            if (!is_array($blocks) || count($blocks) <= 1) {
+                return self::scrub_privacy_shield_single_block($text, $project_id, $config, $channel);
+            }
+
+            $sanitized = [];
+            foreach ($blocks as $block) {
+                $block = trim((string) $block);
+                if ($block === '') {
+                    continue;
+                }
+                $sanitized[] = self::scrub_privacy_shield_single_block($block, $project_id, $config, $channel);
+            }
+
+            return implode("\n\n", $sanitized);
+        }
+
+        /**
+         * @param array<string, mixed> $config
+         */
+        private static function scrub_privacy_shield_single_block(
+            string $block,
+            string $project_id,
+            array $config,
+            string $channel
+        ): string {
+            unset($project_id, $config);
+            if (self::context_block_is_public_catalog($block)) {
+                return self::scrub_internal_secrets_in_text($block);
+            }
+            if ($channel === 'user') {
+                return self::scrub_pii_and_secrets_in_text($block);
+            }
+            if (!self::outbound_text_needs_pii_scrub($block)) {
+                return self::scrub_internal_secrets_in_text($block);
+            }
+
+            $lines = preg_split('/\R/u', $block);
+            if (!is_array($lines)) {
+                return self::scrub_pii_and_secrets_in_text($block);
+            }
+            $sanitized = [];
+            foreach ($lines as $line) {
+                $line = (string) $line;
+                if ($line === '') {
+                    $sanitized[] = '';
+                    continue;
+                }
+                if (self::context_line_allows_public_contact($line) || self::context_block_is_public_catalog($line)) {
+                    $sanitized[] = self::scrub_internal_secrets_in_text($line);
+                } else {
+                    $sanitized[] = self::scrub_pii_and_secrets_in_text($line);
+                }
+            }
+
+            return self::scrub_internal_secrets_in_text(implode("\n", $sanitized));
+        }
+
+        /**
+         * @param list<array{role?: string, content?: string}> $messages
+         *
+         * @return list<array{role: string, content: string}>
+         */
+        private static function sanitize_llm_messages_for_external_api(array $messages, string $project_id = '', array $config = []): array
+        {
+            $out = [];
+            foreach ($messages as $msg) {
+                if (!is_array($msg)) {
+                    continue;
+                }
+                $role = isset($msg['role']) ? (string) $msg['role'] : 'user';
+                $content = isset($msg['content']) ? (string) $msg['content'] : '';
+                $channel = $role === 'user' ? 'user' : ($role === 'assistant' ? 'assistant' : 'context');
+                $out[] = [
+                    'role'    => $role,
+                    'content' => self::apply_context_privacy_shield($content, $project_id, $config, ['channel' => $channel]),
+                ];
+            }
+
+            return $out;
+        }
+
+        /**
+         * Bloque indexado / catálogo público: datos de negocio, no PII de clientes.
+         */
+        private static function context_block_is_public_catalog(string $block): bool
+        {
+            $block = trim($block);
+            if ($block === '') {
+                return false;
+            }
+            if (preg_match('/\bEMPRESA\s*:/iu', $block)) {
+                return true;
+            }
+            if (preg_match('/\[(?:FUENTE|DESCRIPCIÓN|DATOS)\]/iu', $block)) {
+                return true;
+            }
+            if (preg_match('/\b(?:DESCRIPCI[ÓO]N GENERAL|EXPERIENCIAS|PROPUESTAS|PRODUCTO|SKU|PRECIO(?:_REGULAR|_OFERTA)?|STOCK|CATEGOR[IÍ]A)\s*:/iu', $block)) {
+                return true;
+            }
+            if (preg_match('/^###\s+(?:ADDON DISCOVERY|CARRITO CONVERSACIONAL|IMAGEN \(mapeo\))/imu', $block)) {
+                return true;
+            }
+
+            return (bool) apply_filters('xabia_context_privacy_is_catalog_block', false, $block);
+        }
+
+        /**
+         * Señales mínimas antes de ejecutar regex PII costosas (hosting compartido).
+         */
+        private static function outbound_text_needs_pii_scrub(string $text): bool
+        {
+            if ($text === '') {
+                return false;
+            }
+            if (strpos($text, '@') !== false) {
+                return true;
+            }
+            if (stripos($text, 'Bearer ') !== false || stripos($text, 'IBAN') !== false) {
+                return true;
+            }
+            if (preg_match('#/(?:var|home|usr|opt|tmp)/#i', $text)) {
+                return true;
+            }
+            if (preg_match('/\b(?:billing_|shipping_|customer_email|order_note|guest_email)\b/i', $text)) {
+                return true;
+            }
+            if (preg_match('/\beyJ[A-Za-z0-9\-_]+\./', $text)) {
+                return true;
+            }
+            if (preg_match('/\+?\d[\d\s.\-]{8,}\d/u', $text) && !preg_match('/\bEMPRESA\s*:/iu', $text)) {
+                return true;
+            }
+
+            return false;
+        }
+
+        /**
+         * Contacto público de catálogo (cualquier etiqueta habitual en CSV/WP/addons).
+         */
+        private static function context_line_allows_public_contact(string $line): bool
+        {
+            return (bool) preg_match(
+                '/\b(?:EMPRESA|ENTE|ORGANIZACI[ÓO]N|ASOCIACI[ÓO]N|'
+                . 'TEL(?:[EÉ]FONO|EFONO)?|TLF|TFNO|TF\.?|M[ÓO]VIL|MOVIL|FAX|WHATSAPP|WSP|WA|PHONE|'
+                . 'EMAIL|E-?MAIL|CORREO|MAIL|CONTACTO|WEB|SITIO|URL|LINK|'
+                . 'IMAGEN|LOGOTIPO|CATEGOR[IÍ]A|SUBCATEGOR[IÍ]AS|LOCALIDAD|UBICACI[ÓO]N|MUNICIPIO|ZONA|'
+                . 'PRECIO|STOCK|SKU|PRODUCTO|DESCRIPCI[ÓO]N)\s*:/iu',
+                $line
+            );
+        }
+
+        /**
+         * Elimina líneas con metadatos privados de pedidos/reservas (Woo, MEC, Avirato, Amelia…).
+         */
+        private static function strip_commerce_private_context_lines(string $text): string
+        {
+            $text = trim($text);
+            if ($text === '') {
+                return '';
+            }
+            $drop_patterns = apply_filters('xabia_context_privacy_commerce_line_patterns', [
+                '/^\s*(?:billing|shipping)_(?:first|last|last_)?name\b/im',
+                '/^\s*(?:billing|shipping)_(?:email|phone|postcode|zip|address|city|state|country)\b/im',
+                '/^\s*(?:customer|cliente)(?:_|\s)(?:name|nombre|email|correo|id|note|nota)\b/im',
+                '/^\s*(?:order|pedido)(?:_|\s)?(?:note|nota|customer|cliente)\b/im',
+                '/^\s*(?:nota\s+del\s+cliente|customer\s+note|private\s+note|order\s+note)\b/im',
+                '/^\s*direcci[oó]n\s+de\s+(?:facturaci[oó]n|env[ií]o)\b/im',
+                '/^\s*(?:billing|shipping)\s+address\b/im',
+                '/^\s*(?:_customer_user|customer_user_id|user_id\s*:\s*\d+)\b/im',
+                '/^\s*(?:transaction|transacci[oó]n)(?:_|\s)(?:id|ref|meta)\b/im',
+                '/^\s*(?:payment|pago)(?:_|\s)(?:method|token|card|last4)\b/im',
+                '/^\s*(?:guest|invitado)(?:_|\s)(?:email|name|datos)\b/im',
+                '/^\s*(?:reservation|reserva)(?:_|\s)(?:guest|cliente|customer|holder)\b/im',
+                '/^\s*###\s*(?:DATOS\s+(?:CLIENTE|PRIVADOS)|CLIENTE|FACTURACIÓN|BILLING)\s*###\s*$/im',
+            ]);
+            if (!is_array($drop_patterns)) {
+                $drop_patterns = [];
+            }
+
+            $lines = preg_split('/\R/u', $text);
+            if (!is_array($lines)) {
+                return $text;
+            }
+            $kept = [];
+            foreach ($lines as $line) {
+                $drop = false;
+                foreach ($drop_patterns as $pattern) {
+                    if (!is_string($pattern) || $pattern === '') {
+                        continue;
+                    }
+                    if (@preg_match($pattern, $line) === 1) {
+                        $drop = true;
+                        break;
+                    }
+                }
+                if (!$drop) {
+                    $kept[] = $line;
+                }
+            }
+
+            return implode("\n", $kept);
+        }
+
+        /**
+         * Ofusca PII y secretos en texto libre (no contacto público etiquetado).
+         */
+        private static function scrub_pii_and_secrets_in_text(string $text): string
+        {
+            $text = self::scrub_internal_secrets_in_text($text);
+
+            $text = (string) preg_replace(
+                '/\b[A-Z0-9._%+\-]+@[A-Z0-9.\-]+\.[A-Z]{2,63}\b/iu',
+                '[correo ofuscado]',
+                $text
+            );
+            $text = (string) preg_replace(
+                '/\+(?:\d[\s.\-]?){7,18}\d\b/u',
+                '[teléfono ofuscado]',
+                $text
+            );
+            $text = (string) preg_replace(
+                '/\b(?:\+34[\s.\-]?)?[6789]\d{2}[\s.\-]?\d{3}[\s.\-]?\d{3}\b/u',
+                '[teléfono ofuscado]',
+                $text
+            );
+            $text = (string) preg_replace(
+                '/\b(?:IBAN|iban)\s*[A-Z]{2}\d{2}[\s]?[\dA-Z]{4,30}\b/u',
+                '[iban ofuscado]',
+                $text
+            );
+            $text = (string) preg_replace(
+                '/\b(?:\d[ -]*?){13,19}\b/u',
+                '[tarjeta ofuscada]',
+                $text
+            );
+
+            return $text;
+        }
+
+        /**
+         * Rutas internas, tokens de sesión/API y credenciales embebidas.
+         */
+        private static function scrub_internal_secrets_in_text(string $text): string
+        {
+            if ($text === '') {
+                return '';
+            }
+
+            $text = (string) preg_replace(
+                '#(?:/var/www|/home/[\w.\-]+|/usr/(?:local/)?www|/opt/(?:bitnami|lampp)|/private/var|/tmp/[\w.\-/]+)[^\s\]\'"<>]*#iu',
+                '[ruta interna]',
+                $text
+            );
+            $text = (string) preg_replace(
+                '#[A-Za-z]:\\\\(?:[^\\\\\s\]\'"<>]+\\\\)*[^\\\\\s\]\'"<>]*#u',
+                '[ruta interna]',
+                $text
+            );
+            $text = (string) preg_replace(
+                '/\bBearer\s+[A-Za-z0-9\-._~+\/]+=*/u',
+                'Bearer [token ofuscado]',
+                $text
+            );
+            $text = (string) preg_replace(
+                '/\b(?:session[_-]?(?:id|token)|auth[_-]?token|api[_-]?key|nonce|secret|password)\s*[=:]\s*\S+/iu',
+                '[token ofuscado]',
+                $text
+            );
+            $text = (string) preg_replace(
+                '/\b[a-f0-9]{40,}\b/i',
+                '[token ofuscado]',
+                $text
+            );
+            $text = (string) preg_replace(
+                '/\beyJ[A-Za-z0-9\-_]+\.[A-Za-z0-9\-_]+\.[A-Za-z0-9\-_]+\b/',
+                '[token ofuscado]',
+                $text
+            );
+
+            return $text;
+        }
+
+        /**
+         * Descripción semántica del catálogo: primero rules.context_source_description (admin / wp_options).
+         *
+         * @param array<string, mixed> $config
+         */
+        private static function resolve_context_source_description(array $config): string
+        {
+            $rules = is_array($config['rules'] ?? null) ? $config['rules'] : [];
+            if (!isset($rules['context_source_description']) && $config !== []) {
+                $project_id = trim((string) ($config['project_id'] ?? ''));
+                if ($project_id === '' && isset($config['id'])) {
+                    $project_id = trim((string) $config['id']);
+                }
+                if ($project_id !== '' && function_exists('get_option')) {
+                    $projects = get_option('xabia_projects_config', []);
+                    if (is_array($projects[$project_id]['rules'] ?? null)) {
+                        $rules = $projects[$project_id]['rules'];
+                    }
+                }
+            }
+            $desc = isset($rules['context_source_description'])
+                ? trim((string) $rules['context_source_description'])
+                : '';
+
+            return $desc;
+        }
+
+        /**
+         * Resuelve etiqueta y descripción semántica por tipo de fuente del proyecto.
+         *
+         * @param array<string, mixed> $config
+         *
+         * @return array{source:string,description:string}
+         */
+        private static function default_semantic_source_meta(array $config): array
+        {
+            $custom_desc = self::resolve_context_source_description($config);
+            $source_type = trim((string) ($config['source_type'] ?? 'multi'));
+            $source_label = trim((string) ($config['name'] ?? ''));
+            if ($source_label === '') {
+                $source_label = __('Base de conocimientos del agente', 'xabia-intelligence');
+            }
+
+            $by_type = [
+                'csv'   => __('Catálogo CSV / fichas indexadas', 'xabia-intelligence'),
+                'sql'   => __('Datos en vivo (SQL / conector remoto)', 'xabia-intelligence'),
+                'multi' => __('Catálogo federado multi-fuente', 'xabia-intelligence'),
+            ];
+            if (isset($by_type[$source_type])) {
+                $source_label = $by_type[$source_type];
+            }
+
+            $description = $custom_desc !== ''
+                ? $custom_desc
+                : __('Contiene entidades, productos o servicios indexados para este agente. Solo datos públicos de catálogo (nombre, precio, stock, descripción, disponibilidad). Nunca datos de clientes, facturación ni transacciones privadas.', 'xabia-intelligence');
+
+            return [
+                'source'      => $source_label,
+                'description' => $description,
+            ];
+        }
+
+        /**
+         * Ensambla el contexto RAG/conectores en bloques [FUENTE]/[DESCRIPCIÓN]/[DATOS].
+         *
+         * Punto de control del Muro de Privacidad: ningún bloque sale sin sanitizar.
+         *
+         * @param array<string, mixed> $config
+         */
+        private static function assemble_semantic_context_payload(string $project_id, array $config, string $raw_context): string
+        {
+            $raw_context = trim($raw_context);
+            if ($raw_context === '') {
+                return '';
+            }
+            $raw_backup = $raw_context;
+            $raw_context = self::apply_context_privacy_shield($raw_context, $project_id, $config);
+
+            $meta = self::default_semantic_source_meta($config);
+            $schemas = apply_filters('xabia_context_source_schemas', [
+                [
+                    'source'      => $meta['source'],
+                    'description' => $meta['description'],
+                    'context'     => $raw_context,
+                ],
+            ], $project_id, $config, $raw_context);
+
+            if (!is_array($schemas)) {
+                $schemas = [[
+                    'source'      => $meta['source'],
+                    'description' => $meta['description'],
+                    'context'     => $raw_context,
+                ]];
+            }
+
+            $ui_description = self::resolve_context_source_description($config);
+            if ($ui_description !== '') {
+                foreach ($schemas as $idx => $schema) {
+                    if (!is_array($schema) || !empty($schema['xabia_dev_lock'])) {
+                        continue;
+                    }
+                    $schemas[$idx]['description'] = $ui_description;
+                }
+            }
+
+            $blocks = [];
+            foreach ($schemas as $schema) {
+                if (!is_array($schema)) {
+                    continue;
+                }
+                $source = self::apply_context_privacy_shield(
+                    (string) ($schema['source'] ?? $meta['source']),
+                    $project_id,
+                    $config
+                );
+                $description = self::apply_context_privacy_shield(
+                    (string) ($schema['description'] ?? $meta['description']),
+                    $project_id,
+                    $config
+                );
+                $data = self::apply_context_privacy_shield(
+                    (string) ($schema['context'] ?? ''),
+                    $project_id,
+                    $config
+                );
+                $block = self::format_semantic_context_block($source, $description, $data);
+                if ($block !== '') {
+                    $blocks[] = $block;
+                }
+            }
+
+            $extra = apply_filters('xabia_semantic_context_data_blocks', [], $project_id, $config, $raw_context);
+            if (is_array($extra)) {
+                foreach ($extra as $extra_block) {
+                    if (is_string($extra_block) && trim($extra_block) !== '') {
+                        $blocks[] = self::apply_context_privacy_shield(trim($extra_block), $project_id, $config);
+                    }
+                }
+            }
+
+            if ($blocks === []) {
+                $assembled = self::format_semantic_context_block(
+                    $meta['source'],
+                    $meta['description'],
+                    $raw_context
+                );
+            } else {
+                $assembled = self::apply_context_privacy_shield(implode("\n\n", $blocks), $project_id, $config);
+            }
+
+            if (trim($assembled) === '' && trim($raw_backup) !== '') {
+                $assembled = self::format_semantic_context_block(
+                    $meta['source'],
+                    $meta['description'],
+                    self::scrub_internal_secrets_in_text($raw_backup)
+                );
+            }
+
+            self::log_rag_context_chivato($project_id, $assembled, $config);
+
+            return $assembled;
+        }
+
+        /**
+         * Consigna de navegación semántica delegada al LLM (sin reglas procedimentales PHP).
+         */
+        private static function semantic_navigation_system_rule(): string
+        {
+            return 'NAVEGACIÓN: Usa los bloques [FUENTE], [DESCRIPCIÓN] y [DATOS]. Cita el nombre si la ficha lo trae. No inventes marcas ni plataformas que no estén en el CONTEXTO.';
+        }
+
+        /**
+         * @param string $response_mode 'list' = varios resultados, formato lista comparativa; 'development' = 1-2 entes, respuesta narrativa en profundidad.
+         * @param string $lang_code      ISO 639-1 (p. ej. es, eu); interfaz/voz/fallback — no fuerza idioma de respuesta del modelo.
+         * @param bool   $tunnel_ente_active Si viene POST `ente_id` (modo estricto / Smart QR): primera persona obligatoria con prioridad sobre instrucciones del proyecto.
+         * @param string $ente_scope     Scope de búsqueda (slug del ente); fallback para nombre en modo túnel.
+         * @param string     $user_query           Mensaje del usuario (criterios dinámicos de consistencia).
+         * @param list<string> $criteria_needles   Agujas léxicas del turno (ya expandidas si aplica).
+         * @param int          $history_count      Turnos previos. El atajo de saludo solo vale en el primero.
+         */
+        private static function build_system_prompt($project_id, $config, $context, $current_date, $ente_display = '', $strict_ente = false, $response_mode = 'list', $lang_code = 'es', $tunnel_ente_active = false, $ente_scope = 'global', $has_catalog_rows = true, $rag_total_found = null, $rag_chunks_returned = null, string $user_query = '', array $criteria_needles = [], int $history_count = 0) {
+            $instructions = $config['rules']['instructions'] ?? 'Eres un asistente inteligente.';
+            $assistant_name = trim((string) ($config['design']['avatar_name'] ?? ''));
+            $identity_rule = $assistant_name !== ''
+                ? 'IDENTIDAD DEL ASISTENTE: Tu nombre visible y persona de conversación es "' . $assistant_name . '". Si saludas o te presentas, usa exactamente ese nombre y no otro.'
+                : '';
+            $origin_lang = isset($config['_xabia_proxy_user_lang']) ? (string) $config['_xabia_proxy_user_lang'] : $lang_code;
+            $language_rule = self::xabia_polyglot_language_rule($origin_lang);
+            if (self::is_knowledge_free_utterance($user_query, $history_count)) {
+                $greeting_rule = 'El mensaje es un saludo o una cortesía, sin consulta de catálogo. Responde en una frase, en el idioma del usuario. No cites productos, precios, stock ni entidades.';
+                $prompt = trim((string) $instructions) . "\n\n" . trim($identity_rule . "\n\n" . $language_rule . "\n\n" . $greeting_rule);
+                self::$last_prompt_parts = [
+                    'instructions' => strlen((string) $instructions),
+                    'skeleton'     => strlen($prompt) - strlen((string) $instructions),
+                    'context'      => 0,
+                ];
+
+                return $prompt;
+            }
+            $spoken_format_rule = class_exists('Xabia_Voice', false)
+                ? Xabia_Voice::spoken_format_directive()
+                : '';
+            $current_server_time = function_exists('date_i18n')
+                ? date_i18n('l, j \d\e F \d\e Y (H:i T)')
+                : date('l, j F Y (H:i T)');
+            $time_awareness = '[ENTORNO: ' . $current_server_time . ']. Hoy es ' . strtoupper((string) $current_date)
+                . '. Ancla «hoy», «mañana», «esta semana» y «próximos» a esa fecha. Texto y AAAA-MM-DD son la misma fecha. Futuro = Fecha >= hoy.';
+            if (!empty($config['_xabia_temporal_catalog'])) {
+                $time_awareness .= ' «Esta noche» = hoy desde ~18:00. Lista todos los ítems del CONTEXTO de ese día, por hora. No presentes fechas pasadas como disponibles.';
+            }
+            $time_awareness = (string) apply_filters(
+                'xabia_system_time_awareness',
+                $time_awareness,
+                $project_id,
+                $config,
+                $current_date
+            );
+            $visual_protocols = 'ACCIONES: [ACTION:URL:https://…] [ACTION:CALL:tel] [ACTION:MAP:consulta] [ACTION:IMG:URL] solo con datos del CONTEXTO. IMG solo si hay «[Imagen disponible: https://…]». Prohibido markdown [texto](url) y fotos o empresas inventadas.';
+
+            $scope_str = (string) $ente_scope;
+            $persona = '';
+            if ($tunnel_ente_active) {
+                $dn = !empty($ente_display) ? $ente_display : '';
+                if ($dn === '' && $scope_str !== '' && $scope_str !== 'global') {
+                    $dn = ucwords(str_replace(['-', '_'], ' ', $scope_str));
+                }
+                if ($dn === '') {
+                    $dn = __('este ente', 'xabia-intelligence');
+                }
+                $persona = 'OBLIGATORIO — RESPUESTA EN PRIMERA PERSONA: Respondes exclusivamente en primera persona como si fueras "' . $dn . '". Saluda y desenvuelve el discurso como el objeto, obra o ente representado. Esta regla tiene PRIORIDAD ABSOLUTA sobre las instrucciones generales del proyecto si contradijeran el uso de primera persona para este acceso.' . "\n\n";
+            } elseif (!empty($ente_display)) {
+                $persona = "PERSONA (MUSEO): A partir de ahora respondes en PRIMERA PERSONA como si fueras \"$ente_display\". Saluda y habla como el objeto/obra/ente. Ejemplo: \"Hola, soy $ente_display...\".\n";
+            }
+
+            $qr_label = !empty($ente_display) ? $ente_display : '';
+            if ($qr_label === '' && $scope_str !== '' && $scope_str !== 'global') {
+                $qr_label = ucwords(str_replace(['-', '_'], ' ', $scope_str));
+            }
+
+            $qr_rules = '';
+            if ($strict_ente && $qr_label !== '') {
+                $qr_rules = "MODO QR (FILTRO ESTRICTO): Solo puedes usar la información del CONTEXTO de \"$qr_label\". Si te preguntan por otra pieza u otra entidad, di que no tienes acceso a esa información en este modo.\n";
+            } elseif ($strict_ente) {
+                $qr_rules = "MODO QR (FILTRO ESTRICTO): Solo puedes usar la información del CONTEXTO disponible. Si te preguntan por otra entidad, indica que no tienes acceso a esa información en este modo.\n";
+            }
+
+            $format_instruction = "";
+            $temporal_catalog = !empty($config['_xabia_temporal_catalog']);
+            if ($temporal_catalog) {
+                $format_instruction = "FORMATO LISTADO TEMPORAL (TEMPORAL_CATALOG): Si el CONTEXTO incluye un bloque «### AGENDA TEMPORAL», "
+                    . "reproduce TODOS sus ítems sin omitir ninguno (es la lista canónica del día). "
+                    . "Formato por línea: [Hora] - [Nombre] en [Lugar]. "
+                    . "Incluye siempre prioritariamente los conciertos y eventos de los escenarios principales "
+                    . "(marcados [Prioridad: Alta] / [Tipo: Escenario Principal] o encabezando la agenda) "
+                    . "antes de listar actividades secundarias o de espacios menores. "
+                    . "No añadas párrafos descriptivos largos por cada elemento. Ordena por hora dentro de cada grupo si aún no lo está. "
+                    . "PROHIBIDO quedarte en un subconjunto o en un solo ejemplo cuando la agenda trae varios.\n";
+            } elseif ($response_mode === 'list') {
+                $format_instruction = "FORMATO LISTA: viñetas, una entidad por línea, sin el anexo tras «---». Cierra invitando a elegir.\n"
+                    . "[POLÍTICA DE RECOMENDACIÓN DE CATÁLOGO / DIRECTORIO]:\n"
+                    . "- Aunque el usuario pregunte en singular (ej. «¿hay alguna empresa…?», «¿conoces algún sitio…?»), si en el CONTEXTO dispones de 2 o más entidades que ofrecen la actividad solicitada, debes mencionar y emitir la tarjeta [ACTION:CARD] de TODAS las opciones disponibles (hasta un máximo de 3-4 fichas).\n"
+                    . "- NUNCA limites la respuesta a una sola empresa si el catálogo ofrece más alternativas válidas para esa búsqueda.\n";
+            } elseif ($response_mode === 'development') {
+                $format_instruction = "FORMATO DESARROLLO: El usuario quiere profundizar en uno o muy pocos ítems. Responde en 1-2 párrafos cortos, con empatía y sin repetir datos ya dichos. Si pide datos de ficha/contacto y están en el CONTEXTO, úsalos. Objetivo: resolver dudas y conversión.\n";
+            }
+            if (!$temporal_catalog) {
+                $format_instruction .= "SÍNTESIS: Respuesta breve y estructurada sobre los atributos del ente que aparecen en el contexto. Tope orientativo: 300 tokens.\n";
+            }
+
+            $semantic_navigation = self::semantic_navigation_system_rule();
+
+            $rag_behavior = self::resolve_rag_behavior_from_config($config);
+
+            $rag_behavior = apply_filters(
+                'xabia_system_prompt_rules',
+                $rag_behavior,
+                'rag_behavior',
+                [
+                    'project_id'     => $project_id,
+                    'config'         => $config,
+                    'response_mode'  => $response_mode,
+                    'strict_ente'    => $strict_ente,
+                    'ente_display'   => $ente_display,
+                    'context'        => $context,
+                ]
+            );
+            if (!is_string($rag_behavior)) {
+                $rag_behavior = self::resolve_rag_behavior_from_config($config);
+            }
+
+            $rag_behavior = apply_filters(
+                'xabia_system_rag_behavior',
+                $rag_behavior,
+                $project_id,
+                $config,
+                $response_mode
+            );
+            if (!is_string($rag_behavior)) {
+                $rag_behavior = '';
+            }
+            $rag_behavior = trim($rag_behavior);
+            if ($rag_behavior !== '') {
+                $rag_behavior .= "\n";
+            }
+
+            $more_available_rule = '';
+            if ($rag_total_found !== null && $rag_chunks_returned !== null
+                && (int) $rag_total_found > (int) $rag_chunks_returned) {
+                $more_available_rule = "Hay más filas de las incluidas. Si piden más, invita a afinar. No cites entidades que no estén en el CONTEXTO.\n";
+            }
+
+            $no_catalog_guard = '';
+            if (!$has_catalog_rows) {
+                $no_catalog_guard = "SIN DATOS: esta consulta no recuperó filas. No inventes nombres, URL ni teléfonos. Di que no aparece en el contexto y ofrece reformular.\n";
+            }
+
+            $precedence = '';
+            if ($tunnel_ente_active) {
+                $precedence = 'PRECEDENCIA DEL SISTEMA (ítem QR / modo estricto): Las reglas OBLIGATORIO — PRIMERA PERSONA y MODO QR de este prompt prevalecen sobre las instrucciones personalizadas del proyecto si entraran en conflicto.' . "\n\n";
+            }
+
+            // Precedencia: tono/marca del proyecto NO puede anular integridad RAG ni neutralidad de catálogo.
+            $matched_criteria = self::catalog_criteria_matched_in_context((string) $context, $user_query, $criteria_needles);
+            $consistency_rule = '';
+            if ($matched_criteria !== []) {
+                $quoted = array_map(static function (string $t): string {
+                    return '«' . $t . '»';
+                }, array_slice($matched_criteria, 0, 6));
+                $consistency_rule = 'El CONTEXTO sí cubre ' . implode(', ', $quoted) . '. No niegues ese criterio ni lo desvíes a otra categoría.' . "\n";
+            }
+
+            $hard_override = "PRECEDENCIA: Solo datos del CONTEXTO. Sin inventar URL, teléfono ni webs. Sin disculpas de marca. Solo el mensaje final.\n"
+                . $consistency_rule;
+
+            $safe_context = self::sanitize_rag_context_for_prompt((string) $context);
+            $prompt = $precedence . "$instructions\n\n$identity_rule\n\n$language_rule\n\n$spoken_format_rule\n\n$semantic_navigation\n\n$time_awareness\n\n$visual_protocols\n\n$persona$qr_rules\n$format_instruction\n$rag_behavior$more_available_rule$no_catalog_guard\n\nCONTEXTO:\n<retrieved_context>\n$safe_context\n</retrieved_context>\n\n$hard_override";
+            self::$last_prompt_parts = [
+                'instructions' => strlen((string) $instructions),
+                'skeleton'     => strlen($prompt) - strlen((string) $instructions) - strlen($safe_context),
+                'context'      => strlen($safe_context),
+            ];
+
+            return $prompt;
+        }
+
+        /**
+         * Neutraliza delimitadores y cabeceras que podrían romper el system prompt (inyección indirecta vía RAG).
+         */
+        private static function sanitize_rag_context_for_prompt(string $context): string
+        {
+            $context = str_replace(
+                [
+                    '</retrieved_context>',
+                    '<retrieved_context>',
+                    '###',
+                    'PRECEDENCIA DEL SISTEMA',
+                    'SYSTEM_NOTE:',
+                ],
+                [
+                    '[/context_tag]',
+                    '[context_tag]',
+                    '---',
+                    '[Cabecera neutralizada]',
+                    '[Nota:',
+                ],
+                $context
+            );
+
+            return trim($context);
+        }
+
+        /**
+         * Normaliza [ACTION:IMG:…]: solo URLs absolutas (resueltas en ingesta) o adjuntos locales WP.
+         * Sin lookup SQL remoto en chat: los IDs de medios remotos deben haberse convertido en sync.
+         */
+        private static function resolve_action_img_ids_in_response($response, string $project_id = '') {
+            if (!is_string($response) || strpos($response, '[ACTION:IMG:') === false) {
+                return $response;
+            }
+
+            return preg_replace_callback('/\[ACTION:IMG:([^\]]+)\]/', static function (array $m) {
+                $raw = trim($m[1]);
+                if ($raw === '') {
+                    return $m[0];
+                }
+                $raw = rtrim($raw, " \t\n\r.,;)]}\"'" . '”’');
+
+                if (preg_match('#^https?://#i', $raw)) {
+                    return '[ACTION:IMG:' . $raw . ']';
+                }
+                if (strpos($raw, '//') === 0 && strlen($raw) > 2) {
+                    return '[ACTION:IMG:https:' . $raw . ']';
+                }
+                if ($raw[0] === '/') {
+                    $abs = esc_url(home_url($raw));
+
+                    return $abs !== '' ? '[ACTION:IMG:' . $abs . ']' : $m[0];
+                }
+                if (ctype_digit($raw)) {
+                    $id = (int) $raw;
+                    if ($id < 1) {
+                        return $m[0];
+                    }
+                    // Solo medios de esta WordPress; IDs remotos se resuelven en ingesta.
+                    $url = wp_get_attachment_url($id);
+
+                    return $url ? '[ACTION:IMG:' . $url . ']' : '';
+                }
+
+                $url = apply_filters('xabia_resolve_img_hint', '', $raw);
+                if (!is_string($url) || $url === '') {
+                    $url = self::resolve_img_hint_to_url($raw);
+                }
+                if (is_string($url) && $url !== '') {
+                    return '[ACTION:IMG:' . $url . ']';
+                }
+
+                return $m[0];
+            }, $response);
+        }
+
+        /**
+         * Enriquece [ACTION:BOOK:ID] según motor del proyecto (permalink MEC en Base64 URL-safe; Amelia sin URL).
+         */
+        private static function resolve_action_book_tags_in_response($response, $project_id) {
+            if (!is_string($response) || strpos($response, '[ACTION:BOOK:') === false) {
+                return $response;
+            }
+            if (!class_exists('Xabia_Reservas_Handler', false)) {
+                return $response;
+            }
+            $engine = Xabia_Reservas_Handler::engine_for_project($project_id);
+            if ($engine === '') {
+                return $response;
+            }
+            $projects = get_option('xabia_projects_config', []);
+            $cfg = isset($projects[$project_id]) && is_array($projects[$project_id]) ? $projects[$project_id] : [];
+            $is_remote_mec = $engine === 'mec'
+                && class_exists('Xabia_MEC_Public_Link', false)
+                && Xabia_MEC_Public_Link::is_remote_catalog($cfg);
+
+            return preg_replace_callback('/\[ACTION:BOOK:(\d+)\]/', function ($m) use ($engine, $project_id, $cfg, $is_remote_mec) {
+                $id = (int) $m[1];
+                if ($id < 1) {
+                    return $m[0];
+                }
+                if ($engine === 'mec') {
+                    if ($is_remote_mec) {
+                        $url = Xabia_MEC_Public_Link::resolve_for_project((string) $project_id, $id);
+                        if ($url === '') {
+                            return $m[0];
+                        }
+                        $url = (string) apply_filters('xabia_mec_event_reservation_url', $url, $id);
+                        $b64 = rtrim(strtr(base64_encode($url), '+/', '-_'), '=');
+
+                        return '[ACTION:BOOK:mec:' . $id . ':' . $b64 . ']';
+                    }
+                    if (get_post_type($id) !== 'mec-events') {
+                        return $m[0];
+                    }
+                    if (function_exists('xabia_mec_is_booking_enabled') && !xabia_mec_is_booking_enabled($id)) {
+                        return '';
+                    }
+                    $url = get_permalink($id);
+                    if (!is_string($url) || $url === '') {
+                        return $m[0];
+                    }
+                    if (class_exists('Xabia_MEC_Public_Link', false)) {
+                        $url = Xabia_MEC_Public_Link::fix_url($url, $cfg);
+                    }
+                    $url = (string) apply_filters('xabia_mec_event_reservation_url', $url, $id);
+                    $b64 = rtrim(strtr(base64_encode($url), '+/', '-_'), '=');
+
+                    return '[ACTION:BOOK:mec:' . $id . ':' . $b64 . ']';
+                }
+                if ($engine === 'amelia') {
+                    return '[ACTION:BOOK:amelia:' . $id . ']';
+                }
+                return $m[0];
+            }, $response);
+        }
+
+        /**
+         * Reescribe hosts obsoletos en URLs de medios (contexto o [ACTION:IMG:…]).
+         */
+        private static function rewrite_remote_media_hosts_in_text(string $text, string $project_id): string {
+            if ($text === '' || $project_id === '') {
+                return $text;
+            }
+            $projects = get_option('xabia_projects_config', []);
+            $cfg = isset($projects[$project_id]) && is_array($projects[$project_id]) ? $projects[$project_id] : [];
+            $sql = is_array($cfg['sql_config'] ?? null) ? $cfg['sql_config'] : [];
+            $public = '';
+            $manual = trim((string) ($sql['public_site_url'] ?? $sql['media_base_url'] ?? ''));
+            if ($manual !== '') {
+                $public = untrailingslashit(esc_url_raw($manual));
+            }
+            if ($public === '') {
+                $mec = isset($cfg['rules']['mec_remote_site_url']) ? trim((string) $cfg['rules']['mec_remote_site_url']) : '';
+                if ($mec !== '') {
+                    $public = untrailingslashit(esc_url_raw($mec));
+                }
+            }
+            if ($public === '' || !class_exists('Xabia_SQL_Connector', false)) {
+                return $text;
+            }
+
+            return preg_replace_callback(
+                '#https?://[^\s\]<>"\']+/wp-content/uploads/[^\s\]<>"\']+#iu',
+                static function (array $m) use ($public): string {
+                    return Xabia_SQL_Connector::rewrite_media_url_to_public_base($m[0], $public);
+                },
+                $text
+            ) ?? $text;
+        }
+
+        /**
+         * Reescribe hosts obsoletos en [ACTION:IMG:…] hacia sql_config.public_site_url.
+         */
+        private static function rewrite_remote_media_hosts_in_response($response, string $project_id): string {
+            if (!is_string($response) || $response === '') {
+                return is_string($response) ? $response : '';
+            }
+
+            return self::rewrite_remote_media_hosts_in_text($response, $project_id);
+        }
+
+        /**
+         * Elimina fugas de razonamiento interno / autocorrección del modelo (no deben llegar al visitante).
+         */
+        private static function strip_llm_meta_reasoning_leaks(string $response): string {
+            if ($response === '') {
+                return $response;
+            }
+            // Paréntesis tipo: (Asumo que… Reviso la regla… Por lo tanto no la incluyo.)
+            $response = preg_replace(
+                '/\((?:[^()]{0,40})?(?:asumo que|supongo que|reviso la regla|si no está en el contexto|no debería ponerla|basad[oa] en el nombre|es una suposición|por lo tanto,? no la incluyo)[^)]*\)/iu',
+                '',
+                $response
+            ) ?? $response;
+            // Líneas o frases de metadiscusión sueltas
+            $response = preg_replace(
+                '/(?:^|\n)\s*(?:Asumo que|Supongo que|Reviso la regla|Si no está en el contexto)[^\n]*/iu',
+                "\n",
+                $response
+            ) ?? $response;
+            // Frases típicas de CoT en prosa
+            $response = preg_replace(
+                '/\s*(?:Asumo que la web es[^.]*\.)\s*/iu',
+                ' ',
+                $response
+            ) ?? $response;
+
+            return trim(preg_replace("/\n{3,}/", "\n\n", $response) ?? $response);
+        }
+
+        /**
+         * Si el LLM (o un truncate) dejó un [ACTION:URL:] cortado a mitad de path,
+         * lo sustituye por la URL completa del CONTEXTO que lo extiende.
+         */
+        private static function repair_truncated_action_urls_from_context(string $response, string $context): string {
+            if ($response === '' || $context === '' || strpos($response, '[ACTION:URL:') === false) {
+                return $response;
+            }
+            if (!preg_match_all('#https?://[^\s<>\[\]"\']+#u', $context, $ctx_urls) || empty($ctx_urls[0])) {
+                return $response;
+            }
+            $candidates = [];
+            foreach ($ctx_urls[0] as $raw) {
+                $u = rtrim((string) $raw, ".,;)… \t\n\r");
+                if ($u !== '' && preg_match('#^https?://#i', $u)) {
+                    $candidates[$u] = $u;
+                }
+            }
+            if ($candidates === []) {
+                return $response;
+            }
+
+            return preg_replace_callback(
+                '/\[ACTION:URL:([^\]]+)\]/u',
+                static function (array $m) use ($candidates): string {
+                    $url = rtrim(trim((string) ($m[1] ?? '')), ".,;)… \t\n\r");
+                    if ($url === '' || !preg_match('#^https?://#i', $url)) {
+                        return $m[0];
+                    }
+                    $best = $url;
+                    foreach ($candidates as $cand) {
+                        if ($cand === $url) {
+                            $best = $cand;
+                            break;
+                        }
+                        // Prefijo truncado → URL completa del contexto.
+                        if (strpos($cand, $url) === 0 && strlen($cand) > strlen($best)) {
+                            $best = $cand;
+                        }
+                    }
+
+                    return '[ACTION:URL:' . $best . ']';
+                },
+                $response
+            ) ?? $response;
+        }
+
+        /**
+         * Quita [ACTION:URL:…] cuya URL no aparece en el CONTEXTO RAG de este turno.
+         */
+        private static function scrub_action_urls_absent_from_context(string $response, string $context): string {
+            if ($response === '' || strpos($response, '[ACTION:URL:') === false) {
+                return $response;
+            }
+            $ctx = mb_strtolower($context, 'UTF-8');
+
+            return preg_replace_callback(
+                '/\[ACTION:URL:([^\]]+)\]/u',
+                static function (array $m) use ($ctx): string {
+                    $url = trim((string) ($m[1] ?? ''));
+                    if ($url === '') {
+                        return '';
+                    }
+                    $candidates = array_unique(array_filter([
+                        $url,
+                        rtrim($url, '/'),
+                        preg_replace('#^https?://#i', '', $url) ?? $url,
+                        preg_replace('#^https?://(www\.)?#i', '', rtrim($url, '/')) ?? $url,
+                    ]));
+                    foreach ($candidates as $c) {
+                        $c = trim((string) $c);
+                        if ($c !== '' && mb_stripos($ctx, mb_strtolower($c, 'UTF-8'), 0, 'UTF-8') !== false) {
+                            return $m[0];
+                        }
+                    }
+
+                    return '';
+                },
+                $response
+            ) ?? $response;
+        }
+
+        /**
+         * Convierte markdown [texto](https://…) y URLs sueltas en [ACTION:URL:…] (botón del chat).
+         * No toca URLs ya dentro de etiquetas ACTION.
+         */
+        private static function promote_plain_urls_to_action_url_tags($response) {
+            if (!is_string($response) || $response === '') {
+                return $response;
+            }
+
+            $protected = [];
+            $response = preg_replace_callback(
+                '/\[ACTION:[A-Z0-9_]+:[^\]]*\]/u',
+                static function ($m) use (&$protected) {
+                    $key = '[[XABIA_ACTION_' . count($protected) . ']]';
+                    $protected[$key] = $m[0];
+
+                    return $key;
+                },
+                $response
+            );
+            if (!is_string($response)) {
+                return '';
+            }
+
+            // Markdown [label](https://...) → ACTION:URL
+            $response = preg_replace_callback(
+                '/\[([^\]]*)\]\((https?:\/\/[^\s\)]+)\)/u',
+                static function ($m) {
+                    $url = rtrim(trim((string) ($m[2] ?? '')), '.,;)');
+                    if ($url === '' || !preg_match('#^https?://#i', $url)) {
+                        return $m[0];
+                    }
+
+                    return '[ACTION:URL:' . $url . ']';
+                },
+                $response
+            );
+            if (!is_string($response)) {
+                return '';
+            }
+
+            // URLs bare restantes
+            $response = preg_replace_callback(
+                '/(https?:\/\/[^\s<>\[\]"\']+)/u',
+                static function ($m) {
+                    $url = rtrim((string) ($m[1] ?? ''), '.,;)');
+                    if ($url === '' || !preg_match('#^https?://#i', $url)) {
+                        return $m[0];
+                    }
+
+                    return '[ACTION:URL:' . $url . ']';
+                },
+                $response
+            );
+            if (!is_string($response)) {
+                return '';
+            }
+
+            if ($protected !== []) {
+                $response = str_replace(array_keys($protected), array_values($protected), $response);
+            }
+
+            return $response;
+        }
+
+        /**
+         * Corrige [ACTION:URL:…] con enlaces MEC obsoletos (guid / ?p=ID / entidades HTML).
+         */
+        private static function resolve_action_url_tags_in_response($response, $project_id) {
+            if (!is_string($response) || strpos($response, '[ACTION:URL:') === false) {
+                return $response;
+            }
+            if (!class_exists('Xabia_MEC_Public_Link', false)) {
+                return $response;
+            }
+            $projects = get_option('xabia_projects_config', []);
+            $cfg = isset($projects[$project_id]) && is_array($projects[$project_id]) ? $projects[$project_id] : null;
+
+            return preg_replace_callback('/\[ACTION:URL:([^\]]+)\]/', static function ($m) use ($cfg) {
+                $raw = trim((string) ($m[1] ?? ''));
+                if ($raw === '') {
+                    return $m[0];
+                }
+                $fixed = Xabia_MEC_Public_Link::fix_url($raw, $cfg);
+                if ($fixed === '' || $fixed === $raw) {
+                    return $m[0];
+                }
+
+                return '[ACTION:URL:' . $fixed . ']';
+            }, $response);
+        }
+
+        /**
+         * Reescribe https://{agente}/actividades/... → sitio MEC remoto cuando aplica.
+         */
+        private static function rewrite_mec_remote_hosts_in_response($response, $project_id) {
+            if (!is_string($response) || $response === '' || !class_exists('Xabia_MEC_Public_Link', false)) {
+                return $response;
+            }
+            $projects = get_option('xabia_projects_config', []);
+            $cfg = isset($projects[$project_id]) && is_array($projects[$project_id]) ? $projects[$project_id] : null;
+            $remote = Xabia_MEC_Public_Link::configured_remote_site_url($cfg);
+            if ($remote === '') {
+                return $response;
+            }
+            $local_host = wp_parse_url(home_url('/'), PHP_URL_HOST);
+            if (!is_string($local_host) || $local_host === '') {
+                return $response;
+            }
+            $rewrite = preg_quote(Xabia_MEC_Public_Link::get_events_rewrite_slug($cfg), '/');
+            $host_re = preg_quote($local_host, '/');
+
+            return (string) preg_replace_callback(
+                '/https?:\/\/' . $host_re . '(\/' . $rewrite . '\/[^\s\]<"\']+)/i',
+                static function ($m) use ($cfg) {
+                    $full = (string) ($m[0] ?? '');
+
+                    return Xabia_MEC_Public_Link::fix_url($full, $cfg);
+                },
+                $response
+            );
+        }
+
+        private static function reset_digixop_session_counters(): void {
+            self::$digixop_session_usage = ['prompt' => 0, 'completion' => 0, 'total' => 0];
+            self::$digixop_session_proxy_used = false;
+            if (class_exists('Xabia_Digixop_Client')) {
+                Xabia_Digixop_Client::reset_session_flags();
+            }
+        }
+
+        /**
+         * @param array<string, int>|null $usage Respuesta usage de OpenAI.
+         */
+        private static function digixop_note_chat_usage(?array $usage, bool $via_proxy): void {
+            if ($usage === null || !is_array($usage)) {
+                return;
+            }
+            if ($via_proxy) {
+                self::$digixop_session_proxy_used = true;
+            }
+            self::$digixop_session_usage['prompt'] += (int) ($usage['prompt_tokens'] ?? 0);
+            self::$digixop_session_usage['completion'] += (int) ($usage['completion_tokens'] ?? 0);
+            $add = (int) ($usage['total_tokens'] ?? 0);
+            if ($add < 1) {
+                $add = (int) ($usage['prompt_tokens'] ?? 0) + (int) ($usage['completion_tokens'] ?? 0);
+            }
+            self::$digixop_session_usage['total'] += $add;
+        }
+
+        private static function digixop_report_chat_session_if_needed(string $project_id): void {
+            if (!class_exists('Xabia_Digixop_Client') || Xabia_Digixop_Client::was_insufficient_balance()) {
+                return;
+            }
+            if (self::$digixop_session_proxy_used) {
+                // Cada mensaje vía proxy ya descontó en el hub; un /usage agregado duplicaba el cargo.
+                return;
+            }
+            // Sin proxy (OpenAI/Vertex locales) esta ruta históricamente no llamaba a /usage.
+        }
+
+        public static function digixop_reset_session_for_federation(): void {
+            self::reset_digixop_session_counters();
+        }
+
+        public static function digixop_report_after_federation_bridge(string $project_id): void {
+            self::digixop_report_chat_session_if_needed($project_id);
+        }
+
+        /**
+         * Informe de tokens al hub con contexto distinto del chat (puente /federate).
+         */
+        public static function digixop_report_federation_session(string $project_id): void {
+            if (!class_exists('Xabia_Digixop_Client') || Xabia_Digixop_Client::was_insufficient_balance()) {
+                return;
+            }
+            if (self::$digixop_session_proxy_used) {
+                return;
+            }
+            // Sin proxy: no se consolidaba federación vía /usage en el flujo anterior.
+        }
+
+        public static function digixop_absorb_embedding_for_federation(string $project_id, array $config): void {
+            self::digixop_absorb_query_embedding_usage($project_id, $config);
+        }
+
+        /**
+         * Resumen para el endpoint REST /federate (máx. ~300 palabras + enlaces).
+         *
+         * @return array{summary:string, links:array<int, array{title:string, url:string}>}
+         */
+        public static function federation_summarize_context(string $q, string $raw_context, string $project_id, array $config): array {
+            $ctx = trim($raw_context);
+            if (strlen($ctx) < 20) {
+                return [
+                    'summary' => __('No hay datos indexados en este proyecto para esa consulta.', 'xabia-intelligence'),
+                    'links'   => [],
+                ];
+            }
+            if (strlen($ctx) > 14000) {
+                $ctx = substr($ctx, 0, 14000) . '...';
+            }
+            $sys = 'Eres un resumidor técnico para una API de federación entre sitios WordPress. '
+                . 'Produce como máximo 300 palabras de texto útil. Sé fiel al contexto: no inventes hechos. '
+                . 'Incluye al final una sección titulada exactamente "Enlaces de interés:" con viñetas (Markdown) solo con URLs que aparezcan en el contexto o en tu resumen.';
+            $user = "Consulta remota: {$q}\n\nContexto recuperado del índice local:\n{$ctx}";
+            $messages = [
+                ['role' => 'system', 'content' => $sys],
+                ['role' => 'user', 'content' => $user],
+            ];
+            $out = self::call_openai($messages, 900, self::resolve_openai_chat_model($config), 0.15, $project_id, $config);
+            $summary = is_string($out) ? $out : '';
+            $links = class_exists('Xabia_Federation_Nexus', false)
+                ? Xabia_Federation_Nexus::extract_urls_from_text($ctx . "\n" . $summary)
+                : [];
+            $plain = wp_strip_all_tags($summary);
+            $words = preg_split('/\s+/u', $plain, -1, PREG_SPLIT_NO_EMPTY);
+            if (is_array($words) && count($words) > 300) {
+                $summary = implode(' ', array_slice($words, 0, 300)) . '…';
+            }
+
+            return ['summary' => $summary, 'links' => $links];
+        }
+
+        /**
+         * Herramientas de chat: federación más las que registren los addons (Avirato, etc.).
+         *
+         * @return list<array<string, mixed>>
+         */
+        private static function merged_chat_tools(string $project_id): array {
+            $tools = [];
+            if (class_exists('Xabia_Federation_Nexus', false)) {
+                $fed = Xabia_Federation_Nexus::federation_tool_definitions();
+                if (is_array($fed)) {
+                    $tools = $fed;
+                }
+            }
+            $extra = apply_filters('xabia_chat_tool_definitions', [], $project_id);
+            if (is_array($extra)) {
+                foreach ($extra as $tool) {
+                    if (is_array($tool)) {
+                        $tools[] = $tool;
+                    }
+                }
+            }
+
+            return $tools;
+        }
+
+        /**
+         * @param array<string, mixed> $args
+         */
+        private static function dispatch_chat_tool(string $name, array $args, string $project_id, array $config): string {
+            if ($name === 'ask_federated_node') {
+                $node = sanitize_title((string) ($args['node'] ?? ''));
+                $q = sanitize_text_field((string) ($args['query'] ?? ''));
+                if ($node !== '' && $q !== '') {
+                    return function_exists('xabia_federation_ask_node')
+                        ? xabia_federation_ask_node($node, $q, $project_id)
+                        : (class_exists('Xabia_Federation_Nexus', false)
+                            ? Xabia_Federation_Nexus::ask_federated_node($node, $q, $project_id)
+                            : __('Federación no disponible.', 'xabia-intelligence'));
+                }
+
+                return __('Parámetros node o query vacíos en ask_federated_node.', 'xabia-intelligence');
+            }
+            $out = apply_filters('xabia_chat_tool_call', '', $name, $args, $project_id, $config);
+
+            return is_string($out) && $out !== '' ? $out : __('Función no reconocida.', 'xabia-intelligence');
+        }
+
+        private static function chat_tool_instruction_block(string $project_id): string {
+            $parts = [];
+            if (class_exists('Xabia_Federation_Nexus', false)) {
+                $fed = Xabia_Federation_Nexus::federation_tool_instruction_block();
+                if (is_string($fed) && trim($fed) !== '') {
+                    $parts[] = trim($fed);
+                }
+            }
+            $extra = apply_filters('xabia_chat_tool_instructions', '', $project_id);
+            if (is_string($extra) && trim($extra) !== '') {
+                $parts[] = trim($extra);
+            }
+
+            return implode("\n\n", $parts);
+        }
+
+        /**
+         * Si el modelo escribe la secuencia literal \n, conviértela en salto real
+         * antes de que un saneado de barras la deje como "nn".
+         */
+        private static function restore_literal_escaped_newlines(string $text): string {
+            if ($text === '' || strpos($text, '\\n') === false && strpos($text, '\\r') === false) {
+                return $text;
+            }
+
+            return str_replace(["\\r\\n", "\\n", "\\r"], ["\n", "\n", "\n"], $text);
+        }
+
+        /**
+         * Chat OpenAI con function calling (ask_federated_node y herramientas de addons).
+         */
+        private static function call_openai_with_federation_tools(array $messages, $max_tokens, $model, $temperature, $project_id, $config) {
+            $tools = self::merged_chat_tools((string) $project_id);
+            $extra = self::chat_tool_instruction_block((string) $project_id);
+            if ($extra !== '' && isset($messages[0]) && ($messages[0]['role'] ?? '') === 'system') {
+                $messages[0]['content'] = ($messages[0]['content'] ?? '') . "\n\n" . $extra;
+            } elseif ($extra !== '') {
+                array_unshift($messages, ['role' => 'system', 'content' => $extra]);
+            }
+            $max_steps = 3;
+            for ($step = 0; $step < $max_steps; $step++) {
+                $r = self::openai_chat_request($messages, $max_tokens, $model, (float) $temperature, $project_id, $config, $tools);
+                if (!empty($r['insufficient'])) {
+                    return Xabia_Digixop_Client::get_insufficient_balance_user_message();
+                }
+                if (!empty($r['error'])) {
+                    return (string) $r['error'];
+                }
+                $tool_calls = isset($r['tool_calls']) && is_array($r['tool_calls']) ? $r['tool_calls'] : null;
+                if (!empty($tool_calls)) {
+                    $assistant_row = [
+                        'role'         => 'assistant',
+                        'tool_calls'   => $tool_calls,
+                    ];
+                    if (isset($r['content']) && $r['content'] !== null && $r['content'] !== '') {
+                        $assistant_row['content'] = (string) $r['content'];
+                    }
+                    $messages[] = $assistant_row;
+                    foreach ($tool_calls as $tc) {
+                        if (!is_array($tc)) {
+                            continue;
+                        }
+                        $fn = $tc['function']['name'] ?? '';
+                        $args_raw = $tc['function']['arguments'] ?? '{}';
+                        $args = json_decode((string) $args_raw, true);
+                        $tid = $tc['id'] ?? '';
+                        $tool_text = self::dispatch_chat_tool(
+                            (string) $fn,
+                            is_array($args) ? $args : [],
+                            (string) $project_id,
+                            is_array($config) ? $config : []
+                        );
+                        $messages[] = [
+                            'role'         => 'tool',
+                            'tool_call_id' => (string) $tid,
+                            'content'      => $tool_text,
+                        ];
+                    }
+                    continue;
+                }
+                return (string) ($r['content'] ?? __('Sin respuesta del modelo.', 'xabia-intelligence'));
+            }
+
+            return __('Demasiadas rondas de herramientas federadas.', 'xabia-intelligence');
+        }
+
+        /**
+         * @param list<array<string, mixed>> $messages
+         * @param list<array<string, mixed>>|null $tools
+         * @return array{content:?string, tool_calls:?array, error:string, insufficient:bool}
+         */
+        private static function openai_chat_request(array $messages, int $max_tokens, string $model, float $temperature, string $project_id, array $config, ?array $tools): array {
+            self::$last_generation_metrics = null;
+            self::$last_generation_finish_reason = '';
+            $max_tokens = self::chat_max_tokens($max_tokens);
+            $err = '';
+            $insufficient = false;
+            if (!is_array($config)) {
+                $config = [];
+            }
+            if ($project_id !== '' && empty($config)) {
+                $projects = get_option('xabia_projects_config', []);
+                $config = $projects[$project_id] ?? [];
+            }
+
+            if (class_exists('Xabia_Digixop_Client') && Xabia_Digixop_Client::should_use_openai_proxy($project_id, $config)) {
+                $token_limits = self::openai_chat_token_limit_fields($max_tokens);
+                $payload = [
+                    'model'       => $model,
+                    'messages'    => $messages,
+                    'temperature' => $temperature,
+                    'max_tokens'  => $token_limits['max_tokens'],
+                    'max_completion_tokens' => $token_limits['max_completion_tokens'],
+                    'user'        => 'xabia_user_' . get_current_user_id(),
+                ];
+                if ($tools !== null) {
+                    $payload['tools'] = $tools;
+                    $payload['tool_choice'] = 'auto';
+                }
+                $ul = isset($config['_xabia_proxy_user_lang']) ? (string) $config['_xabia_proxy_user_lang'] : '';
+                if ($ul !== '') {
+                    $payload['user_lang'] = $ul;
+                }
+                $payload = apply_filters('xabia_digixop_proxy_payload', $payload, $project_id, $config, $messages);
+                if (!is_array($payload)) {
+                    $payload = [
+                        'model'       => $model,
+                        'messages'    => $messages,
+                        'temperature' => $temperature,
+                        'max_tokens'  => $token_limits['max_tokens'],
+                        'max_completion_tokens' => $token_limits['max_completion_tokens'],
+                        'user'        => 'xabia_user_' . get_current_user_id(),
+                    ];
+                } else {
+                    if (!isset($payload['max_tokens']) || (int) $payload['max_tokens'] < 1) {
+                        $payload['max_tokens'] = $token_limits['max_tokens'];
+                    }
+                    if (!isset($payload['max_completion_tokens']) || (int) $payload['max_completion_tokens'] < 1) {
+                        $payload['max_completion_tokens'] = $token_limits['max_completion_tokens'];
+                    }
+                }
+                $out = Xabia_Digixop_Client::proxy_openai_post($payload, $project_id, $config);
+                if (!empty($out['insufficient_balance'])) {
+                    return ['content' => null, 'tool_calls' => null, 'error' => '', 'insufficient' => true];
+                }
+                $parsed = self::parse_chat_completion_response_full($out['body']);
+                if ($parsed !== null) {
+                    self::$last_generation_finish_reason = strtolower(trim((string) ($parsed['finish_reason'] ?? '')));
+                    self::digixop_note_chat_usage($parsed['usage'], true);
+                    $pt = (int) ($parsed['usage']['prompt_tokens'] ?? 0);
+                    $ct = (int) ($parsed['usage']['completion_tokens'] ?? 0);
+                    self::$last_generation_metrics = [
+                        'prompt_tokens' => $pt,
+                        'completion_tokens' => $ct,
+                        'model' => (string) $model,
+                        'estimated_cost' => self::estimate_cost_usd((string) $model, $pt, $ct),
+                    ];
+
+                    return [
+                        'content'    => $parsed['content'],
+                        'tool_calls' => $parsed['tool_calls'],
+                        'error'      => '',
+                        'insufficient' => false,
+                    ];
+                }
+                if (self::isQuotaOrThrottleError($out)) {
+                    $retryTokens = self::chat_max_tokens((int) floor($max_tokens / 2));
+                    if ($retryTokens < $max_tokens) {
+                        usleep(500000);
+                        $payload['max_tokens'] = $retryTokens;
+                        $retry = Xabia_Digixop_Client::proxy_openai_post($payload, $project_id, $config);
+                        $retryParsed = self::parse_chat_completion_response_full($retry['body'] ?? null);
+                        if ($retryParsed !== null) {
+                            self::$last_generation_finish_reason = (string) ($retryParsed['finish_reason'] ?? '');
+                            self::digixop_note_chat_usage($retryParsed['usage'], true);
+                            $pt = (int) ($retryParsed['usage']['prompt_tokens'] ?? 0);
+                            $ct = (int) ($retryParsed['usage']['completion_tokens'] ?? 0);
+                            self::$last_generation_metrics = [
+                                'prompt_tokens' => $pt,
+                                'completion_tokens' => $ct,
+                                'model' => (string) $model,
+                                'estimated_cost' => self::estimate_cost_usd((string) $model, $pt, $ct),
+                            ];
+
+                            return [
+                                'content'    => $retryParsed['content'],
+                                'tool_calls' => $retryParsed['tool_calls'],
+                                'error'      => '',
+                                'insufficient' => false,
+                            ];
+                        }
+                        error_log('[XABIA_CORE] Proxy retry failed after 429. Code=' . (int) ($retry['code'] ?? 0) . ' Body=' . substr(wp_json_encode($retry['body']), 0, 1200));
+                    }
+
+                    return [
+                        'content' => null,
+                        'tool_calls' => null,
+                        'error' => self::friendlyTemporaryFailureMessage(),
+                        'insufficient' => false,
+                    ];
+                }
+                if (is_array($out['body']) && isset($out['body']['error']['message'])) {
+                    return ['content' => null, 'tool_calls' => null, 'error' => 'Error API (proxy): ' . (string) $out['body']['error']['message'], 'insufficient' => false];
+                }
+
+                return ['content' => null, 'tool_calls' => null, 'error' => 'Error de respuesta (proxy Xabia). Código HTTP ' . (int) $out['code'] . '.', 'insufficient' => false];
+            }
+
+            $api_key = Xabia_Digixop_Client::get_effective_openai_key($project_id, $config);
+            if ($api_key === '') {
+                return [
+                    'content'    => null,
+                    'tool_calls' => null,
+                    'error'      => __('Error: Falta la API Key de OpenAI (global o del agente) o una licencia Xabia activa.', 'xabia-intelligence'),
+                    'insufficient' => false,
+                ];
+            }
+
+            $token_limits = self::openai_chat_token_limit_fields($max_tokens);
+            $body_arr = [
+                'model'       => $model,
+                'messages'    => $messages,
+                'temperature' => $temperature,
+                'user'        => 'xabia_user_' . get_current_user_id(),
+            ];
+            // Algunos modelos rechazan enviar max_tokens y max_completion_tokens a la vez.
+            if (preg_match('/^(o1|o3|o4|gpt-5)/i', (string) $model)) {
+                $body_arr['max_completion_tokens'] = $token_limits['max_completion_tokens'];
+            } else {
+                $body_arr['max_tokens'] = $token_limits['max_tokens'];
+            }
+            if ($tools !== null) {
+                $body_arr['tools'] = $tools;
+                $body_arr['tool_choice'] = 'auto';
+            }
+            $body = json_encode($body_arr);
+            if ($body === false) {
+                return ['content' => null, 'tool_calls' => null, 'error' => 'Error: no se pudo preparar la petición (encoding).', 'insufficient' => false];
+            }
+
+            $args = [
+                'headers' => ['Authorization' => 'Bearer ' . $api_key, 'Content-Type' => 'application/json'],
+                'body'    => $body,
+                'timeout' => 60,
+            ];
+            $response = wp_remote_post('https://api.openai.com/v1/chat/completions', $args);
+            if (is_wp_error($response)) {
+                return ['content' => null, 'tool_calls' => null, 'error' => 'Error conexión: ' . $response->get_error_message(), 'insufficient' => false];
+            }
+            $httpCode = (int) wp_remote_retrieve_response_code($response);
+            $raw_body = (string) wp_remote_retrieve_body($response);
+            $decoded = json_decode($raw_body, true);
+            if ($httpCode === 429) {
+                $retryMax = self::chat_max_tokens((int) floor($max_tokens / 2));
+                usleep(500000);
+                $body_arr['max_tokens'] = $retryMax;
+                if (isset($body_arr['max_completion_tokens'])) {
+                    $body_arr['max_completion_tokens'] = $retryMax;
+                }
+                $retryBody = json_encode($body_arr);
+                if ($retryBody !== false) {
+                    $retryResponse = wp_remote_post('https://api.openai.com/v1/chat/completions', [
+                        'headers' => ['Authorization' => 'Bearer ' . $api_key, 'Content-Type' => 'application/json'],
+                        'body'    => $retryBody,
+                        'timeout' => 60,
+                    ]);
+                    if (!is_wp_error($retryResponse)) {
+                        $raw_body = (string) wp_remote_retrieve_body($retryResponse);
+                        $decoded = json_decode($raw_body, true);
+                        $httpCode = (int) wp_remote_retrieve_response_code($retryResponse);
+                    } else {
+                        error_log('[XABIA_CORE] OpenAI retry failed after 429: ' . $retryResponse->get_error_message());
+                    }
+                }
+            }
+            if (is_array($decoded) && isset($decoded['error']['message'])) {
+                $api_err = (string) $decoded['error']['message'];
+                error_log('[XABIA_CORE] OpenAI API error http=' . $httpCode . ' msg=' . substr($api_err, 0, 400));
+                return ['content' => null, 'tool_calls' => null, 'error' => 'Error API: ' . $api_err, 'insufficient' => false];
+            }
+            if (is_array($decoded) && isset($decoded['usage'])) {
+                self::digixop_note_chat_usage($decoded['usage'], false);
+            }
+            $parsed = is_array($decoded) ? self::parse_chat_completion_response_full($decoded) : null;
+            if ($parsed !== null && (($parsed['content'] ?? null) !== null || !empty($parsed['tool_calls']))) {
+                self::$last_generation_finish_reason = (string) ($parsed['finish_reason'] ?? '');
+                $pt = (int) ($parsed['usage']['prompt_tokens'] ?? 0);
+                $ct = (int) ($parsed['usage']['completion_tokens'] ?? 0);
+                self::$last_generation_metrics = [
+                    'prompt_tokens' => $pt,
+                    'completion_tokens' => $ct,
+                    'model' => (string) $model,
+                    'estimated_cost' => self::estimate_cost_usd((string) $model, $pt, $ct),
+                ];
+                return [
+                    'content'    => $parsed['content'],
+                    'tool_calls' => $parsed['tool_calls'],
+                    'error'      => '',
+                    'insufficient' => false,
+                ];
+            }
+
+            error_log('[XABIA_CORE] OpenAI unparseable http=' . $httpCode . ' body=' . substr($raw_body, 0, 500));
+            return ['content' => null, 'tool_calls' => null, 'error' => 'Error de respuesta.', 'insufficient' => false];
+        }
+
+        /**
+         * @param array<string, mixed> $out
+         */
+        private static function isQuotaOrThrottleError(array $out): bool {
+            $code = (int) ($out['code'] ?? 0);
+            if ($code === 429) {
+                return true;
+            }
+            $msg = '';
+            if (is_array($out['body']) && isset($out['body']['error']['message']) && is_string($out['body']['error']['message'])) {
+                $msg = strtolower($out['body']['error']['message']);
+            }
+
+            return str_contains($msg, 'resource exhausted')
+                || str_contains($msg, 'error-code-429')
+                || str_contains($msg, 'quota')
+                || str_contains($msg, 'too many requests');
+        }
+
+        private static function friendlyTemporaryFailureMessage(): string {
+            return '¡Ups! Parece que mi conexión está un poco lenta en este momento debido a que mucha gente me está consultando. Por favor, espera un segundito y vuelve a preguntarme, que estaré encantada de atenderte. Mila esker por tu paciencia. ✨';
+        }
+
+        private static function responseLooksLikeTechnicalFailure(string $response): bool {
+            $t = strtolower(trim($response));
+            if ($t === '') {
+                return true;
+            }
+            if ($response === self::friendlyTemporaryFailureMessage()) {
+                return true;
+            }
+            return str_contains($t, 'error api')
+                || str_contains($t, 'error de respuesta')
+                || str_contains($t, 'error conexión')
+                || str_contains($t, 'falta la api key')
+                || str_starts_with($t, 'error ');
+        }
+
+        /**
+         * Misma voz que el add-on Avirato: sin mencionar licencias ni errores técnicos al visitante.
+         */
+        private static function aviratoOrLicensePublicFallbackForUser(): string {
+            if (function_exists('xabia_avirato_public_availability_fallback_message')) {
+                return xabia_avirato_public_availability_fallback_message();
+            }
+
+            return (string) apply_filters(
+                'xabia_avirato_inactive_availability_message',
+                __('Puedo informarte sobre nuestras casas, aunque para ver calendarios exactos te recomiendo contactarnos directamente.', 'xabia-intelligence')
+            );
+        }
+
+        /**
+         * Detecta respuestas que no deben mostrarse al usuario final (licencia, add-on, Avirato técnico).
+         *
+         * @param string $t Mensaje en minúsculas
+         */
+        private static function responseIsAviratoOrLicenseLeak(string $t): bool {
+            if ($t === '') {
+                return false;
+            }
+            if (str_contains($t, 'missing_avirato')
+                || str_contains($t, 'avirato_missing')
+                || str_contains($t, 'configuración de avirato')
+                || str_contains($t, 'configuracion de avirato')
+                || str_contains($t, 'módulo de disponibilidad')
+                || str_contains($t, 'modulo de disponibilidad')
+                || str_contains($t, 'módulo avirato')
+                || str_contains($t, 'modulo avirato')
+                || str_contains($t, 'el módulo avirato')
+                || str_contains($t, 'el modulo avirato')
+                || str_contains($t, 'no está activo para esta licencia')
+                || str_contains($t, 'no esta activo para esta licencia')
+                || str_contains($t, 'avirato no está activo')
+                || str_contains($t, 'avirato no esta activo')) {
+                return true;
+            }
+            if (str_contains($t, 'avirato')
+                && (str_contains($t, 'licencia')
+                    || str_contains($t, 'license')
+                    || str_contains($t, 'add-on')
+                    || str_contains($t, 'addon')
+                    || str_contains($t, 'suscripci')
+                    || str_contains($t, 'no está activo')
+                    || str_contains($t, 'no esta activo'))) {
+                return true;
+            }
+            if ((str_contains($t, 'error api') || str_contains($t, 'proxy')) && str_contains($t, 'avirato')) {
+                return true;
+            }
+
+            return str_contains($t, 'polar.sh')
+                && (str_contains($t, 'error') || str_contains($t, 'licen'));
+        }
+
+        /**
+         * Intercepta errores técnicos antes de enviarlos al frontend.
+         *
+         * @param mixed $response
+         */
+        private static function sanitizeTechnicalFailureForUser($response): string {
+            if (!is_string($response) || trim($response) === '') {
+                error_log('[XABIA_CORE] Technical empty/non-string response intercepted.');
+                return self::friendlyTemporaryFailureMessage();
+            }
+            $raw = trim($response);
+            $t = strtolower($raw);
+            if (self::responseIsAviratoOrLicenseLeak($t)) {
+                error_log('[XABIA_CORE] Avirato/license content suppressed for visitor (detail in log only): ' . substr($raw, 0, 900));
+
+                return self::aviratoOrLicensePublicFallbackForUser();
+            }
+            $isTechnical = str_contains($t, 'resource exhausted')
+                || str_contains($t, 'rate limit')
+                || str_contains($t, '429')
+                || str_contains($t, 'cloudflare')
+                || str_contains($t, 'error api')
+                || str_contains($t, 'error de respuesta')
+                || str_contains($t, 'error conexión')
+                || str_contains($t, 'service unavailable')
+                || str_contains($t, 'bad gateway')
+                || str_contains($t, 'gateway timeout')
+                || str_contains($t, 'temporarily unavailable')
+                || str_contains($t, 'no está activo para esta licencia')
+                || str_contains($t, 'módulo de disponibilidad')
+                || str_contains($t, 'modulo de disponibilidad')
+                || str_contains($t, 'suscripci')
+                || str_contains($t, 'add-on')
+                || str_contains($t, 'license key')
+                || str_contains($t, 'clave de licencia')
+                || str_contains($t, 'polar.sh')
+                || str_starts_with($t, 'error ');
+            if ($isTechnical) {
+                error_log('[XABIA_CORE] Technical message intercepted for frontend: ' . substr($raw, 0, 1200));
+                return self::friendlyTemporaryFailureMessage();
+            }
+
+            return $raw;
+        }
+
+        /**
+         * @param array<string, mixed>|null $json
+         * @return array{content:?string, tool_calls:?array, usage:array<string, int>|null, finish_reason:string}|null
+         */
+        private static function parse_chat_completion_response_full(?array $json): ?array {
+            if ($json === null) {
+                return null;
+            }
+            $choice = $json['choices'][0] ?? null;
+            if (!is_array($choice)) {
+                return null;
+            }
+            $msg = $choice['message'] ?? null;
+            if (!is_array($msg)) {
+                return null;
+            }
+            $content = $msg['content'] ?? null;
+            if (is_array($content)) {
+                $parts = [];
+                foreach ($content as $part) {
+                    if (is_string($part)) {
+                        $parts[] = $part;
+                    } elseif (is_array($part) && isset($part['text']) && is_string($part['text'])) {
+                        $parts[] = $part['text'];
+                    }
+                }
+                $content = $parts !== [] ? implode('', $parts) : null;
+            } elseif ($content !== null && !is_string($content)) {
+                $content = null;
+            }
+            $tool_calls = $msg['tool_calls'] ?? null;
+            if (!is_array($tool_calls) || $tool_calls === []) {
+                $tool_calls = null;
+            }
+            $usage = isset($json['usage']) && is_array($json['usage']) ? $json['usage'] : null;
+            $finish_reason = isset($choice['finish_reason']) ? (string) $choice['finish_reason'] : '';
+
+            return ['content' => $content, 'tool_calls' => $tool_calls, 'usage' => $usage, 'finish_reason' => $finish_reason];
+        }
+
+        /**
+         * Elimina residuos de marcadores de acción vacíos o rotos (p. ej. `(ACTION: )`, `{ACTION:}`).
+         */
+        /**
+         * Expuesto para filtros (p. ej. xabia_chat_response_postprocess).
+         */
+        public static function strip_leaked_empty_action_tags(string $text): string
+        {
+            return self::strip_empty_action_markers($text);
+        }
+
+        private static function strip_empty_action_markers(string $text): string
+        {
+            if ($text === '') {
+                return $text;
+            }
+            $out = $text;
+            // Solo marcadores ACTION vacíos con delimitadores reales; nunca [ACTION:CARD:…] ni CART.
+            $out = (string) preg_replace(
+                '/(?:\(|\{|\[)\s*ACTION:\s*(?!CARD|CART)[^\)\]\}]*?(?:\)|\]|\})/iu',
+                '',
+                $out
+            );
+            $patterns = [
+                '/\(\s*ACTION\s*:\s*\)/iu',
+                '/\{\s*ACTION\s*:\s*\}/iu',
+                '/\[\s*ACTION\s*:\s*\]/iu',
+                '/\[\s*ACTION\s*:\s*URL\s*:\s*\]/iu',
+                '/\[\s*ACTION\s*:\s*BOOK\s*:\s*\]/iu',
+                '/\[\s*ACTION\s*:\s*CALL\s*:\s*\]/iu',
+                '/\[\s*ACTION\s*:\s*MAP\s*:\s*\]/iu',
+                '/\[\s*ACTION\s*:\s*CART\s*:\s*\]/iu',
+                '/\[\s*ACTION\s*:\s*IMG\s*:\s*\]/iu',
+            ];
+            foreach ($patterns as $re) {
+                $out = (string) preg_replace($re, '', $out);
+            }
+            $out = (string) preg_replace('/\[\s*ACTION\s*:\s*[A-Z0-9_]*\s*:\s*\]/iu', '', $out);
+            $out = (string) preg_replace('/ {2,}/u', ' ', $out);
+            $out = (string) preg_replace("/\n{3,}/u", "\n\n", $out);
+
+            return trim($out);
+        }
+
+        /**
+         * Sanitiza texto de salida del chat (acciones vacías + markdown mínimo).
+         */
+        public static function sanitize_chat_response_for_output(string $text): string
+        {
+            $text = self::strip_empty_action_markers($text);
+
+            return self::format_chat_markdown_for_display($text);
+        }
+
+        /**
+         * Convierte negritas Markdown (**texto**) a <strong> para el widget y el playground.
+         */
+        private static function format_chat_markdown_for_display(string $text): string
+        {
+            if ($text === '' || strpos($text, '**') === false) {
+                return $text;
+            }
+            if (stripos($text, '<strong>') !== false) {
+                return $text;
+            }
+
+            $out = (string) preg_replace('/\*\*([^*]+)\*\*/u', '<strong>$1</strong>', $text);
+            if (substr_count($out, '**') % 2 !== 0) {
+                $out = (string) preg_replace('/\*\*[^*]*$/u', '', $out);
+            }
+
+            return rtrim($out);
+        }
+
+        /**
+         * Trunca por tamaño sin borrar refuerzos RAG al final (substr(0,N) cortaba el bloque ecuestre).
+         */
+        private static function truncate_chat_rag_context(string $context, int $limit, string $prefer_hint = ''): string
+        {
+            if (class_exists('Xabia_Brain', false) && method_exists('Xabia_Brain', 'ensure_valid_utf8')) {
+                $context = Xabia_Brain::ensure_valid_utf8($context);
+            }
+            if ($limit < 200 || strlen($context) <= $limit) {
+                return $context;
+            }
+
+            $imagen_pool = [];
+            if (preg_match_all('/\[Imagen disponible:\s*https?:\/\/[^\s\]]+\s*\]/iu', $context, $im)) {
+                $imagen_pool = array_values(array_unique($im[0]));
+            }
+
+            $parts = preg_split('/\n\n+/u', $context) ?: [];
+            $parts = array_values(array_filter(array_map('trim', $parts)));
+            if ($parts === []) {
+                $safe = class_exists('Xabia_Brain', false) && method_exists('Xabia_Brain', 'truncate_chunk_preserving_imagen')
+                    ? Xabia_Brain::truncate_chunk_preserving_imagen($context, $limit)
+                    : (mb_substr($context, 0, max(1, $limit - 3), 'UTF-8') . '…');
+
+                return $safe . '... [CORTADO POR LÍMITE]';
+            }
+
+            $hint = mb_strtolower(trim(remove_accents($prefer_hint)), 'UTF-8');
+            $hint_tokens = array_values(array_filter(preg_split('/\s+/u', $hint) ?: [], static function ($t) {
+                return is_string($t) && strlen($t) >= 4;
+            }));
+            if ($hint_tokens !== [] && class_exists('Xabia_Rag_Language_Bridge', false)) {
+                $hint_tokens = Xabia_Rag_Language_Bridge::expand_keyword_needles($hint_tokens, $prefer_hint);
+            }
+            // Stop-words genéricas que no deben priorizar chunks.
+            $hint_stop = ['actividades', 'actividad', 'opciones', 'empresa', 'empresas', 'hay', 'alguna', 'algunas', 'entorno', 'entornos'];
+            $hint_tokens = array_values(array_filter($hint_tokens, static function ($t) use ($hint_stop) {
+                return $t !== '' && !in_array($t, $hint_stop, true);
+            }));
+
+            if ($hint_tokens !== []) {
+                usort($parts, static function (string $a, string $b) use ($hint_tokens): int {
+                    $score = static function (string $p) use ($hint_tokens): int {
+                        $hay = mb_strtolower(remove_accents($p), 'UTF-8');
+                        $s = 0;
+                        foreach ($hint_tokens as $tok) {
+                            $tok = mb_strtolower(trim((string) $tok), 'UTF-8');
+                            if ($tok === '' || strlen($tok) < 4) {
+                                continue;
+                            }
+                            if (strpos($hay, $tok) !== false) {
+                                $s += 12;
+                                continue;
+                            }
+                            if (class_exists('Xabia_Rag_Language_Bridge', false)
+                                && Xabia_Rag_Language_Bridge::tokens_soft_match($tok, $hay)) {
+                                $s += 10;
+                            }
+                        }
+                        if (stripos($p, '[Imagen disponible:') !== false) {
+                            $s += 2;
+                        }
+
+                        return $s;
+                    };
+
+                    return $score($b) <=> $score($a);
+                });
+            }
+
+            $cut = "\n\n... [MÁS RESULTADOS DISPONIBLES EN ÍNDICE]";
+            $out = [];
+            $used = 0;
+            $effective_limit = max(200, $limit - strlen($cut));
+            // Distribución elástica: caben N fichas mientras haya presupuesto de caracteres (sin hard-cap de 3).
+            foreach ($parts as $part) {
+                $part_len = strlen($part);
+                if ($used + $part_len + 2 <= $effective_limit) {
+                    $out[] = $part;
+                    $used += $part_len + 2;
+                    continue;
+                }
+                $remaining = $effective_limit - $used - 2;
+                if ($remaining > 150) {
+                    if (class_exists('Xabia_Brain', false) && method_exists('Xabia_Brain', 'truncate_chunk_preserving_imagen')) {
+                        $out[] = Xabia_Brain::truncate_chunk_preserving_imagen($part, $remaining);
+                    } else {
+                        $out[] = substr($part, 0, $remaining) . '…';
+                    }
+                }
+                break;
+            }
+
+            $joined = implode("\n\n", $out);
+            if (count($out) < count($parts) && $joined !== '') {
+                $joined .= $cut;
+            }
+            // Garantizar marcadores de imagen de la entidad preferida si caben.
+            if ($imagen_pool !== [] && $hint_tokens !== []) {
+                foreach ($imagen_pool as $marker) {
+                    if (stripos($joined, $marker) !== false) {
+                        continue;
+                    }
+                    // Solo anexar marcadores cuyo chunk original mencionaba la pista.
+                    $owner = '';
+                    foreach ($parts as $p) {
+                        if (stripos($p, $marker) !== false) {
+                            $owner = $p;
+                            break;
+                        }
+                    }
+                    $owner_l = mb_strtolower(remove_accents($owner), 'UTF-8');
+                    $match = false;
+                    foreach ($hint_tokens as $tok) {
+                        if ($tok !== '' && strpos($owner_l, $tok) !== false) {
+                            $match = true;
+                            break;
+                        }
+                    }
+                    if (!$match) {
+                        continue;
+                    }
+                    if (strlen($joined) + strlen($marker) + 2 <= $limit) {
+                        $joined = rtrim($joined) . "\n" . $marker;
+                    }
+                }
+            }
+
+            if (strlen($joined) > $limit) {
+                if (class_exists('Xabia_Brain', false) && method_exists('Xabia_Brain', 'truncate_chunk_preserving_imagen')) {
+                    return Xabia_Brain::truncate_chunk_preserving_imagen($joined, $limit);
+                }
+
+                return mb_substr($joined, 0, max(1, $limit - mb_strlen($cut, 'UTF-8')), 'UTF-8') . $cut;
+            }
+
+            return $joined;
+        }
+
+        /**
+         * Quita anexos estructurales «---» + líneas «- Label: value» del contexto en modo listado.
+         * Agnóstico: no depende de textos de dominio ni de un cliente concreto.
+         */
+        private static function strip_mapped_attributes_annex_from_context(string $context): string
+        {
+            if ($context === '' || strpos($context, '---') === false) {
+                return $context;
+            }
+            // Bloque: --- [título opcional] + líneas de viñeta "- …"
+            $stripped = preg_replace(
+                '/\n---\s*\n(?:[^\n-][^\n]*:\s*\n)?(?:-[^\n]*\n?)*/u',
+                "\n",
+                $context
+            );
+
+            return is_string($stripped) ? trim($stripped) : $context;
+        }
+
+        /** @deprecated Enrutamiento delegado al LLM; conservado por compatibilidad de API pública. */
+        public static function query_implies_catalog_listing(string $text): bool
+        {
+            unset($text);
+
+            return false;
+        }
+
+        /**
+         * Intención de listado de catálogo (híbrido: regex + micro-LLM).
+         * Firma ampliada opcional; sin $project_id/$config solo Capa 1 (regex).
+         */
+        public static function query_implies_catalog_filter_listing(string $text, string $project_id = '', array $config = []): bool
+        {
+            $resolved = self::resolve_catalog_list_intent($text, $project_id, $config);
+
+            return !empty($resolved['hit']);
+        }
+
+        /**
+         * @return array{hit: bool, source: string}
+         */
+        public static function resolve_catalog_list_intent(string $text, string $project_id = '', array $config = [], bool $first_turn = false): array
+        {
+            if (!class_exists('Xabia_Catalog_Intent', false)) {
+                $q = mb_strtolower(trim(wp_strip_all_tags((string) $text)), 'UTF-8');
+                if ($q === '') {
+                    return ['hit' => false, 'source' => 'none'];
+                }
+                $hit = (bool) preg_match(
+                    '/\b(hay|existen|teneis|tenéis|ofrec[eé]is|busco|quiero|alguna|algunas|qu[eé])\b.{0,100}\b(en|de|tipo|categor[ií]a|entorno|ambiente)\b/u',
+                    $q
+                ) || (bool) preg_match(
+                    '/\b(actividades?|opciones?|experiencias?|empresas?|servicios?)\b.{0,60}\b(en|de|tipo|categor[ií]a|entorno|ambiente)\b/u',
+                    $q
+                );
+
+                return ['hit' => $hit, 'source' => $hit ? 'regex' : 'none'];
+            }
+
+            $ctx = [
+                'project_id' => $project_id,
+                'config'     => $config,
+                'first_turn' => $first_turn,
+            ];
+            if ($project_id !== '' || $config !== []) {
+                $ctx['llm_classify'] = static function (string $msg) use ($project_id, $config): string {
+                    return self::classify_catalog_intent_micro($msg, $project_id, $config);
+                };
+            }
+
+            return Xabia_Catalog_Intent::resolve($text, $ctx);
+        }
+
+        /**
+         * Micro-enrutador CATALOG|GENERAL (max 5 tokens, temperature 0). Fail-open → GENERAL implícito.
+         */
+        private static function classify_catalog_intent_micro(string $user_msg, string $project_id, array $config): string
+        {
+            $user_msg = trim(wp_strip_all_tags($user_msg));
+            if ($user_msg === '') {
+                return Xabia_Catalog_Intent::LABEL_GENERAL;
+            }
+            // Prompt alineado al brief: la pregunta aparece en el mensaje de sistema + user turn limpio.
+            $system = Xabia_Catalog_Intent::micro_router_system_prompt()
+                . " El usuario dice: '" . mb_substr($user_msg, 0, 500, 'UTF-8') . "'.";
+            $messages = [
+                ['role' => 'system', 'content' => $system],
+                ['role' => 'user', 'content' => $user_msg],
+            ];
+            $messages = self::sanitize_llm_messages_for_external_api($messages, $project_id, $config);
+            $raw = self::call_auxiliary_llm($messages, 5, 0.0, $project_id, $config);
+            if (self::looks_like_llm_transport_error($raw)) {
+                return Xabia_Catalog_Intent::LABEL_GENERAL;
+            }
+            $label = Xabia_Catalog_Intent::parse_router_label($raw);
+
+            return $label !== null ? $label : Xabia_Catalog_Intent::LABEL_GENERAL;
+        }
+
+        /**
+         * El usuario pide profundizar en un ítem concreto (no un listado comparativo).
+         */
+        public static function query_implies_single_item_depth(string $text): bool
+        {
+            if (self::resolve_named_entity_from_user_message($text) !== '') {
+                return true;
+            }
+            $q = mb_strtolower(trim(wp_strip_all_tags((string) $text)), 'UTF-8');
+            if ($q === '') {
+                return false;
+            }
+            if (self::query_references_prior_entity($text)) {
+                return true;
+            }
+
+            return (bool) preg_match(
+                '/\b(cu[eé]ntame|m[aá]s\s+(informaci[oó]n|detalles?|sobre)|profundiza|detalla|esta\s+empresa|ese\s+alojamiento|esa\s+empresa|sobre\s+ell[ao])\b/u',
+                $q
+            );
+        }
+
+        /**
+         * Respuesta mínima de acuerdo («Sí», «Bai», «Vale»…) tras una oferta del asistente.
+         */
+        public static function query_implies_assent_followup(string $text): bool
+        {
+            $t = mb_strtolower(trim(wp_strip_all_tags((string) $text)), 'UTF-8');
+            if ($t === '') {
+                return false;
+            }
+
+            return (bool) preg_match(
+                '/^(si|sí|yes|bai|ba|au|vale|ok|okay|claro|perfecto|por\s+favor|please|hop|hala|nola)\.?!?$/u',
+                $t
+            );
+        }
+
+        /**
+         * @param list<array{role?: string, content?: string}> $history
+         */
+        public static function query_implies_assent_to_assistant_offer(string $text, array $history): bool
+        {
+            if (!self::query_implies_assent_followup($text)) {
+                return false;
+            }
+
+            return self::assistant_last_turn_invited_photos($history)
+                || self::assistant_last_turn_offered_availability($history);
+        }
+
+        /**
+         * @param list<array{role?: string, content?: string}> $history
+         */
+        private static function assistant_last_turn_invited_photos(array $history): bool
+        {
+            for ($i = count($history) - 1; $i >= 0; --$i) {
+                if (!is_array($history[$i]) || ($history[$i]['role'] ?? '') !== 'assistant') {
+                    continue;
+                }
+                $plain = mb_strtolower(trim(wp_strip_all_tags((string) ($history[$i]['content'] ?? ''))), 'UTF-8');
+                if ($plain === '') {
+                    return false;
+                }
+
+                return (bool) preg_match(
+                    '/\b(ver\s+(fotos?|im[aá]genes?)|fotos?\s+(de|de esta|de este)|te\s+gustar[ií]a\s+(ver\s+)?(fotos?|im[aá]genes?)|mostrar(te)?\s+fotos|ense[nñ]ar(te)?\s+fotos)\b/u',
+                    $plain
+                );
+            }
+
+            return false;
+        }
+
+        /**
+         * @param list<array{role?: string, content?: string}> $history
+         */
+        private static function assistant_last_turn_offered_availability(array $history): bool
+        {
+            for ($i = count($history) - 1; $i >= 0; --$i) {
+                if (!is_array($history[$i]) || ($history[$i]['role'] ?? '') !== 'assistant') {
+                    continue;
+                }
+                $plain = mb_strtolower(trim(wp_strip_all_tags((string) ($history[$i]['content'] ?? ''))), 'UTF-8');
+                if ($plain === '') {
+                    return false;
+                }
+
+                return (bool) preg_match(
+                    '/\b(mir(ar|e)\s+(si\s+)?(est[aá]|est[aá]n)\s+(libre|disponible)|comprobar\s+(disponibilidad|fechas)|fechas\s+(libres|disponibles))\b/u',
+                    $plain
+                );
+            }
+
+            return false;
+        }
+
+        /**
+         * El usuario se refiere a una entidad ya mencionada (ellos, esa empresa, más de ellos…).
+         */
+        public static function query_references_prior_entity(string $text): bool
+        {
+            $q = mb_strtolower(trim(wp_strip_all_tags((string) $text)), 'UTF-8');
+            if ($q === '') {
+                return false;
+            }
+
+            return (bool) preg_match(
+                '/\b(ellos|ellas)\b'
+                . '|\b(este|esta|ese|esa|esto|aquell[oa])\s+(empresa|club|alojamiento|opci[oó]n)?\b'
+                . '|\b(su|sus)\s+(contacto|tel[eé]fono|email|correo|web|foto|fotos|im[aá]gen|im[aá]genes)\b'
+                . '|\b(una|alguna|algunas|tienes|tienen|hay)\s+(foto|fotos|im[aá]gen|im[aá]genes)\b'
+                . '|\b(y\s+)?(foto|fotos|im[aá]gen|im[aá]genes)\s*\??$'
+                . '|\b(el|la|su|sus|una|alguna)\s+(tel[eé]fono|contacto|email|correo|web|foto|fotos|im[aá]gen|im[aá]genes)\s*\??$'
+                . '|\b(h[aá]bl(a|ame|arme)|cu[eé]nta(me)?|informaci[oó]n)\b[^.?!]{0,40}\b(ellos|ellas|eso|esta|ese)\b'
+                . '|\b(m[aá]s\s+de\s+(ellos|ellas|eso|esta|ese))\b'
+                . '|\b(sobre\s+ellos|de\s+ellos)\b/u',
+                $q
+            );
+        }
+
+        /**
+         * Disponibilidad, reservas y calendario no son listados informativos de catálogo.
+         */
+        public static function query_implies_availability_or_booking_intent(string $text): bool
+        {
+            $q = mb_strtolower(trim(wp_strip_all_tags((string) $text)), 'UTF-8');
+            if ($q === '') {
+                return false;
+            }
+            $needles = apply_filters('xabia_native_catalog_availability_keywords', [
+                'disponibilidad',
+                'disponible',
+                'libre',
+                'libres',
+                'fecha',
+                'fechas',
+                'calendario',
+                'reserva',
+                'reservar',
+                'reservas',
+                'ocupado',
+            ], $text);
+            if (!is_array($needles)) {
+                return false;
+            }
+            foreach ($needles as $word) {
+                $word = mb_strtolower(trim((string) $word), 'UTF-8');
+                if ($word === '') {
+                    continue;
+                }
+                if (preg_match('/\b' . preg_quote($word, '/') . '\b/u', $q)) {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        /**
+         * Criterios de la query que sí aparecen (o soft-match) en el CONTEXTO recuperado.
+         *
+         * @param list<string> $needles
+         * @return list<string>
+         */
+        private static function catalog_criteria_matched_in_context(string $context, string $user_query, array $needles = []): array {
+            $ctx = mb_strtolower(remove_accents(trim(wp_strip_all_tags($context))), 'UTF-8');
+            if ($ctx === '') {
+                return [];
+            }
+            $candidates = [];
+            foreach ($needles as $n) {
+                $n = mb_strtolower(trim(remove_accents((string) $n)), 'UTF-8');
+                if ($n !== '' && strlen($n) >= 4) {
+                    $candidates[] = $n;
+                }
+            }
+            if ($candidates === [] && $user_query !== '') {
+                $candidates = self::extract_rag_keyword_needles($user_query);
+            }
+            if ($candidates === [] && $user_query !== '') {
+                $parts = preg_split('/\s+/u', mb_strtolower(remove_accents(trim(wp_strip_all_tags($user_query))), 'UTF-8')) ?: [];
+                foreach ($parts as $p) {
+                    $p = trim((string) $p);
+                    if (strlen($p) >= 4) {
+                        $candidates[] = $p;
+                    }
+                }
+            }
+            $stop = [
+                'para', 'como', 'esta', 'este', 'estos', 'estas', 'hay', 'alguna', 'algunas', 'alguno', 'algunos',
+                'actividades', 'actividad', 'opciones', 'empresa', 'empresas', 'entorno', 'entornos', 'ambiente',
+                'tipo', 'tipos', 'categoria', 'categoría', 'quiero', 'busco', 'necesito', 'sobre', 'entre',
+            ];
+            $matched = [];
+            foreach (array_values(array_unique($candidates)) as $tok) {
+                if (in_array($tok, $stop, true)) {
+                    continue;
+                }
+                if (strpos($ctx, $tok) !== false) {
+                    $matched[] = $tok;
+                    continue;
+                }
+                if (class_exists('Xabia_Rag_Language_Bridge', false)
+                    && Xabia_Rag_Language_Bridge::tokens_soft_match($tok, $ctx)) {
+                    $matched[] = $tok;
+                }
+            }
+
+            return array_values(array_unique($matched));
+        }
+
+        /**
+         * Foto, contacto, teléfono, web… no son listados de catálogo.
+         */
+        public static function query_implies_entity_utility_request(string $text): bool
+        {
+            $q = mb_strtolower(trim(wp_strip_all_tags((string) $text)), 'UTF-8');
+            if ($q === '') {
+                return false;
+            }
+
+            return (bool) preg_match(
+                '/\b(foto|fotos|im[aá]gen|imagenes|imágenes|picture|pictures|contacto|contactar|contactarme|tel[eé]fono|telefono|email|correo|e-?mail|web|p[aá]gina\s+web|whatsapp|llamar|llamad)\b/u',
+                $q
+            );
+        }
+
+        /**
+         * Reconstruye el manifiesto de listado desde el historial POST (sesión PHP a menudo no persiste).
+         *
+         * @param list<array{role?: string, content?: string}> $history
+         *
+         * @return list<string>
+         */
+        public static function parse_catalog_manifest_lines_from_history(array $history): array
+        {
+            for ($i = count($history) - 1; $i >= 0; --$i) {
+                if (!is_array($history[$i]) || ($history[$i]['role'] ?? '') !== 'assistant') {
+                    continue;
+                }
+                $plain = html_entity_decode(trim(wp_strip_all_tags((string) ($history[$i]['content'] ?? ''))), ENT_QUOTES | ENT_HTML5, 'UTF-8');
+                if ($plain === '' || !preg_match('/^\s*•\s+/m', $plain)) {
+                    continue;
+                }
+                $lines = [];
+                foreach (preg_split('/\R/u', $plain) ?: [] as $row) {
+                    $row = trim((string) $row);
+                    if ($row === '' || !preg_match('/^\s*•\s+/u', $row)) {
+                        continue;
+                    }
+                    $row = trim((string) preg_replace('/^\s*•\s+/u', '', $row));
+                    $row = rtrim($row, '.');
+                    if ($row === '') {
+                        continue;
+                    }
+                    if (preg_match('/^\*\*([^*]+)\*\*\s*(.*)$/u', $row, $m)) {
+                        $name = trim((string) $m[1]);
+                        $tail = trim((string) ($m[2] ?? ''));
+                        if ($name !== '') {
+                            $lines[] = $tail !== '' && $tail[0] === '('
+                                ? ('**' . $name . '** ' . $tail)
+                                : ('**' . $name . '**' . ($tail !== '' ? ' (' . $tail . ')' : ''));
+                        }
+                        continue;
+                    }
+                    if (preg_match('/^(.+?)\s*\(([^)]+)\)\s*$/u', $row, $m)) {
+                        $name = trim((string) $m[1]);
+                        $loc = trim((string) $m[2]);
+                        if ($name !== '') {
+                            $lines[] = '**' . $name . '** (' . $loc . ')';
+                        }
+                        continue;
+                    }
+                    if (preg_match('/^(.+?)\s*[—–-]\s*(.+)$/u', $row, $m)) {
+                        $name = trim((string) $m[1]);
+                        $suffix = trim((string) $m[2]);
+                        if ($name !== '') {
+                            $lines[] = $suffix !== ''
+                                ? ('**' . $name . '** — ' . $suffix)
+                                : ('**' . $name . '**');
+                        }
+                    }
+                }
+                if (count($lines) >= 3) {
+                    return $lines;
+                }
+            }
+
+            return [];
+        }
+
+        /**
+         * @param list<array{role?: string, content?: string}> $history
+         */
+        public static function ensure_catalog_manifest_from_history(string $project_id, array $history): void
+        {
+            if ($project_id === '' || $history === []) {
+                return;
+            }
+            $lines = self::parse_catalog_manifest_lines_from_history($history);
+            if ($lines === []) {
+                return;
+            }
+            if (!session_id() && !headers_sent()) {
+                session_start();
+            }
+            $stored = $_SESSION['xabia_catalog_manifest'][$project_id] ?? null;
+            $existing = is_array($stored) && !empty($stored['manifest']) && is_array($stored['manifest'])
+                ? $stored['manifest']
+                : [];
+            if (count($lines) >= count($existing)) {
+                $_SESSION['xabia_catalog_manifest'][$project_id] = [
+                    'activity' => is_array($stored) ? (string) ($stored['activity'] ?? '') : '',
+                    'manifest' => $lines,
+                ];
+            }
+            session_write_close();
+        }
+
+        /**
+         * Líneas del manifiesto (sesión o historial POST del chatbox).
+         *
+         * @param list<array{role?: string, content?: string}> $history
+         *
+         * @return list<string>
+         */
+        public static function catalog_manifest_lines(string $project_id, array $history = []): array
+        {
+            if ($project_id === '') {
+                return self::parse_catalog_manifest_lines_from_history($history);
+            }
+            if (!session_id() && !headers_sent()) {
+                session_start();
+            }
+            $manifest = [];
+            $stored = $_SESSION['xabia_catalog_manifest'][$project_id] ?? null;
+            if (is_array($stored) && !empty($stored['manifest']) && is_array($stored['manifest'])) {
+                $manifest = $stored['manifest'];
+            }
+            session_write_close();
+            if ($manifest !== []) {
+                return $manifest;
+            }
+
+            return self::parse_catalog_manifest_lines_from_history($history);
+        }
+
+        /**
+         * Nombres de empresa del manifiesto de listado nativo reciente (sesión + historial POST).
+         *
+         * @param list<array{role?: string, content?: string}> $history
+         *
+         * @return list<string>
+         */
+        public static function catalog_manifest_entity_names(string $project_id, array $history = []): array
+        {
+            $names = [];
+            foreach (self::catalog_manifest_lines($project_id, $history) as $line) {
+                if (!preg_match('/\*\*([^*]+)\*\*/u', (string) $line, $m)) {
+                    continue;
+                }
+                $name = trim((string) $m[1]);
+                if ($name !== '') {
+                    $names[] = $name;
+                }
+            }
+
+            return $names;
+        }
+
+        /**
+         * «La última», «la úlrima», «primera empresa»… frente al manifiesto reciente.
+         */
+        public static function is_manifest_ordinal_phrase(string $text): bool
+        {
+            $t = self::normalize_ordinal_reference_text($text);
+            if ($t === '') {
+                return false;
+            }
+
+            return (bool) preg_match(
+                '/^(?:la|el|los|las|una|alguna)?\s*(?:empresa\s+)?(primera?|1ª|1a|segunda|tercera|cuarta|quinta|sexta|s[eé]ptima|octava|novena|d[eé]cima|penúltima|penultima|última?|ultimo|último)\s*[?¿!.]*$/u',
+                $t
+            ) || (bool) preg_match(
+                '/\b(la|el|una|alguna)\s+(primera?|segunda|tercera|cuarta|quinta|sexta|s[eé]ptima|octava|novena|d[eé]cima|penúltima|penultima|última?|ultimo|último)\b/u',
+                $t
+            );
+        }
+
+        public static function normalize_ordinal_reference_text(string $text): string
+        {
+            $t = mb_strtolower(trim(wp_strip_all_tags((string) $text)), 'UTF-8');
+            if ($t === '') {
+                return '';
+            }
+            $t = (string) preg_replace('/\búlrima\b/u', 'última', $t);
+            $t = (string) preg_replace('/\bulrima\b/u', 'ultima', $t);
+            $t = (string) preg_replace('/\bulimo\b/u', 'ultimo', $t);
+            $t = (string) preg_replace('/\bultima\b/u', 'última', $t);
+            $t = (string) preg_replace('/\bultimo\b/u', 'último', $t);
+            $t = (string) preg_replace('/\s+/u', ' ', $t);
+
+            return trim($t);
+        }
+
+        /**
+         * Resuelve referencias posicionales («la última», «la 3ª») contra el manifiesto de sesión.
+         *
+         * @param list<array{role?: string, content?: string}> $history
+         */
+        public static function resolve_entity_ordinal_from_manifest(string $user_msg, string $project_id, array $history = []): string
+        {
+            $t = self::normalize_ordinal_reference_text($user_msg);
+            if ($t === '' || $project_id === '') {
+                return '';
+            }
+            if (!preg_match(
+                '/\b(primera?|1ª|1a|segunda|tercera|cuarta|quinta|sexta|s[eé]ptima|octava|novena|d[eé]cima|penúltima|penultima|última?|ultimo|último)\b/u',
+                $t
+            )) {
+                return '';
+            }
+            $names = self::catalog_manifest_entity_names($project_id, $history);
+            $n = count($names);
+            if ($n === 0) {
+                return '';
+            }
+            $index = null;
+            if (preg_match('/\b(primera?|1ª|1a|primero)\b/u', $t)) {
+                $index = 0;
+            } elseif (preg_match('/\b(penúltima|penultima)\b/u', $t)) {
+                $index = max(0, $n - 2);
+            } elseif (preg_match('/\b(última?|ultimo|último)\b/u', $t)) {
+                $index = $n - 1;
+            } elseif (preg_match('/\bsegunda\b/u', $t)) {
+                $index = min(1, $n - 1);
+            } elseif (preg_match('/\btercera\b/u', $t)) {
+                $index = min(2, $n - 1);
+            } elseif (preg_match('/\bcuarta\b/u', $t)) {
+                $index = min(3, $n - 1);
+            } elseif (preg_match('/\bquinta\b/u', $t)) {
+                $index = min(4, $n - 1);
+            } elseif (preg_match('/\b(?:n[uú]mero?\s+)?(\d{1,2})\b/u', $t, $m)) {
+                $num = (int) ($m[1] ?? 0);
+                if ($num >= 1 && $num <= $n) {
+                    $index = $num - 1;
+                }
+            }
+            if ($index === null || !isset($names[$index])) {
+                return '';
+            }
+
+            return $names[$index];
+        }
+
+        /**
+         * Ordinal, nombre parcial o frase «contacto de la última» → empresa del manifiesto.
+         *
+         * @param list<array{role?: string, content?: string}> $history
+         */
+        public static function resolve_manifest_entity_reference(string $user_msg, string $project_id, string $named_candidate = '', array $history = []): string
+        {
+            $ordinal = self::resolve_entity_ordinal_from_manifest($user_msg, $project_id, $history);
+            if ($ordinal !== '') {
+                return $ordinal;
+            }
+            if ($named_candidate !== '' && self::is_manifest_ordinal_phrase($named_candidate)) {
+                $ordinal = self::resolve_entity_ordinal_from_manifest($named_candidate, $project_id, $history);
+                if ($ordinal !== '') {
+                    return $ordinal;
+                }
+            }
+
+            return self::resolve_entity_from_catalog_manifest($user_msg, $project_id, $history);
+        }
+
+        /**
+         * Evita persistir «la última» como entidad RAG cuando el manifiesto sí la resuelve.
+         *
+         * @param list<array{role?: string, content?: string}> $history
+         */
+        public static function sanitize_persisted_entity_reference(string $entity, string $project_id, array $history = []): string
+        {
+            $entity = trim(self::sanitize_rag_search_term($entity));
+            if ($entity === '') {
+                return '';
+            }
+            if (self::is_manifest_ordinal_phrase($entity)) {
+                $resolved = self::resolve_entity_ordinal_from_manifest($entity, $project_id, $history);
+
+                return $resolved !== '' ? $resolved : '';
+            }
+
+            return $entity;
+        }
+
+        /**
+         * Empresa citada en el mensaje frente al manifiesto de listado nativo reciente.
+         *
+         * @param list<array{role?: string, content?: string}> $history
+         */
+        public static function resolve_entity_from_catalog_manifest(string $user_msg, string $project_id, array $history = []): string
+        {
+            $blob = mb_strtolower(trim(wp_strip_all_tags($user_msg)), 'UTF-8');
+            if ($blob === '' || $project_id === '') {
+                return '';
+            }
+            $ordinal = self::resolve_entity_ordinal_from_manifest($user_msg, $project_id, $history);
+            if ($ordinal !== '') {
+                return $ordinal;
+            }
+            $best = '';
+            $best_len = 0;
+            foreach (self::catalog_manifest_entity_names($project_id, $history) as $name) {
+                $slug = sanitize_title($name);
+                $name_l = mb_strtolower($name, 'UTF-8');
+                if ($slug !== '' && (mb_strpos($blob, $slug) !== false || mb_strpos($blob, str_replace('-', ' ', $slug)) !== false)) {
+                    if (mb_strlen($name, 'UTF-8') > $best_len) {
+                        $best = $name;
+                        $best_len = mb_strlen($name, 'UTF-8');
+                    }
+                    continue;
+                }
+                if (mb_strlen($name_l, 'UTF-8') >= 4 && mb_strpos($blob, $name_l) !== false) {
+                    if (mb_strlen($name, 'UTF-8') > $best_len) {
+                        $best = $name;
+                        $best_len = mb_strlen($name, 'UTF-8');
+                    }
+                }
+            }
+
+            return $best;
+        }
+
+        /**
+         * Entidad citada en turnos anteriores (historial POST + sesión).
+         *
+         * @param list<array{role?: string, content?: string}> $history
+         */
+        public static function resolve_entity_from_conversation_history(array $history, string $project_id): string
+        {
+            for ($i = count($history) - 1; $i >= 0; --$i) {
+                if (!is_array($history[$i]) || ($history[$i]['role'] ?? '') !== 'user') {
+                    continue;
+                }
+                $content = trim((string) ($history[$i]['content'] ?? ''));
+                if ($content === '') {
+                    continue;
+                }
+                $named = self::resolve_named_entity_from_user_message($content);
+                if ($named !== '') {
+                    $manifest_named = self::resolve_manifest_entity_reference($content, $project_id, $named, $history);
+                    if ($manifest_named !== '') {
+                        return $manifest_named;
+                    }
+                    if (!self::is_manifest_ordinal_phrase($named)) {
+                        return $named;
+                    }
+                }
+                $manifest_named = self::resolve_manifest_entity_reference($content, $project_id, '', $history);
+                if ($manifest_named !== '') {
+                    return $manifest_named;
+                }
+                if ($project_id !== '') {
+                    $named = self::resolve_entity_from_catalog_manifest($content, $project_id, $history);
+                    if ($named !== '') {
+                        return $named;
+                    }
+                }
+            }
+            for ($i = count($history) - 1; $i >= 0; --$i) {
+                if (!is_array($history[$i]) || ($history[$i]['role'] ?? '') !== 'assistant') {
+                    continue;
+                }
+                $name = self::extract_primary_entity_name_from_assistant_text((string) ($history[$i]['content'] ?? ''));
+                if ($name !== '') {
+                    return $name;
+                }
+            }
+
+            return '';
+        }
+
+        /**
+         * @param list<array{role?: string, content?: string}> $history
+         */
+        public static function resolve_entity_anchor_from_history(string $user_msg, array $history, string $last_entity = '', string $project_id = ''): string
+        {
+            if (self::resolve_named_entity_from_user_message($user_msg) !== '') {
+                return '';
+            }
+            if (self::query_implies_assent_followup($user_msg)) {
+                $from_hist = self::resolve_entity_from_conversation_history($history, $project_id);
+                if ($from_hist !== '') {
+                    return $from_hist;
+                }
+                if ($last_entity !== '') {
+                    return $last_entity;
+                }
+            }
+            if (self::query_implies_entity_utility_request($user_msg) || self::query_references_prior_entity($user_msg)) {
+                if ($last_entity !== '') {
+                    return $last_entity;
+                }
+                if ($project_id !== '') {
+                    $from_hist = self::resolve_entity_from_conversation_history($history, $project_id);
+                    if ($from_hist !== '') {
+                        return $from_hist;
+                    }
+                }
+            }
+            if (!self::query_references_prior_entity($user_msg)) {
+                return '';
+            }
+            if ($last_entity !== '') {
+                return $last_entity;
+            }
+            for ($i = count($history) - 1; $i >= 0; --$i) {
+                if (!is_array($history[$i]) || ($history[$i]['role'] ?? '') !== 'assistant') {
+                    continue;
+                }
+                $name = self::extract_primary_entity_name_from_assistant_text((string) ($history[$i]['content'] ?? ''));
+                if ($name !== '') {
+                    return $name;
+                }
+                break;
+            }
+
+            return '';
+        }
+
+        public static function extract_primary_entity_name_from_assistant_text(string $text): string
+        {
+            $plain = trim(wp_strip_all_tags((string) $text));
+            if ($plain === '') {
+                return '';
+            }
+            if (preg_match('/\[Entidad:\s*([^\]]+)\]/iu', $plain, $em)) {
+                $title = trim((string) ($em[1] ?? ''));
+                if ($title !== '' && !self::entity_name_extract_candidate_rejected($title)) {
+                    return $title;
+                }
+            }
+            if (preg_match('/(?:^|\n)\s*(Casa\s+[A-Za-zÀ-ÿ][A-Za-zÀ-ÿ0-9\s\-]{1,35})\s*:/imu', $plain, $cm)) {
+                $name = trim((string) preg_replace('/\s+/u', ' ', (string) ($cm[1] ?? '')));
+                if ($name !== '' && !self::entity_name_extract_candidate_rejected($name)) {
+                    return $name;
+                }
+            }
+            if (preg_match('/\brecomendar(?:\s+|:)[^\n]*\n?\s*(?:Casa\s+)?([A-Za-zÀ-ÿ][A-Za-zÀ-ÿ0-9\s\-]{2,35})\s*:/iu', $plain, $rm)) {
+                $name = trim((string) preg_replace('/\s+/u', ' ', (string) ($rm[1] ?? '')));
+                if ($name !== '' && !self::entity_name_extract_candidate_rejected($name)) {
+                    return str_starts_with(mb_strtolower($name, 'UTF-8'), 'casa ') ? $name : ('Casa ' . $name);
+                }
+            }
+            if (preg_match('/\bempresa\s*:\s*([^|\n]+)/iu', $plain, $m)) {
+                $name = trim($m[1]);
+                if ($name !== '') {
+                    return $name;
+                }
+            }
+            if (preg_match('/\bdatos de contacto de\s+([^:\n*]+)/iu', $plain, $m)) {
+                $name = trim((string) preg_replace('/[?¿!.,;:]+$/u', '', trim($m[1])));
+                if (mb_strlen($name, 'UTF-8') >= 3 && mb_strlen($name, 'UTF-8') <= 120) {
+                    return $name;
+                }
+            }
+            if (preg_match('/\b(?:buscar|busca|encuentra|localiza)\s+[«""\']([^«""\'\n]{3,120})[«""\']/iu', $plain, $m)) {
+                $name = trim((string) preg_replace('/[?¿!.,;:]+$/u', '', trim($m[1])));
+                if (mb_strlen($name, 'UTF-8') >= 3 && mb_strlen($name, 'UTF-8') <= 120) {
+                    return $name;
+                }
+            }
+            if (preg_match('/\b"([^"\n]{3,120})"/u', $plain, $m)) {
+                $name = trim((string) preg_replace('/[?¿!.,;:]+$/u', '', trim($m[1])));
+                if (mb_strlen($name, 'UTF-8') >= 3 && mb_strlen($name, 'UTF-8') <= 120
+                    && !self::entity_name_extract_candidate_rejected($name)) {
+                    return $name;
+                }
+            }
+            if (preg_match('/\bcontacto de\s+([^:\n*]+)/iu', $plain, $m)) {
+                $name = trim((string) preg_replace('/[?¿!.,;:]+$/u', '', trim($m[1])));
+                if (mb_strlen($name, 'UTF-8') >= 3 && mb_strlen($name, 'UTF-8') <= 120) {
+                    return $name;
+                }
+            }
+            if (preg_match('/\brecomiendo\s+(?:el|la|los|las)\s+([^,\.\n]+)/iu', $plain, $m)) {
+                $name = trim(preg_replace('/\s+/', ' ', $m[1]));
+                if (mb_strlen($name) >= 3 && mb_strlen($name) <= 120) {
+                    return $name;
+                }
+            }
+            if (preg_match('/\bte\s+sugiero\s+(?:el|la|los|las)\s+([^,\.\n]+)/iu', $plain, $m)) {
+                $name = trim(preg_replace('/\s+/', ' ', $m[1]));
+                if (mb_strlen($name) >= 3 && mb_strlen($name) <= 120) {
+                    return $name;
+                }
+            }
+            if (preg_match('/\*\*([^*]+)\*\*/u', $plain, $m) || preg_match('/\*([^*\n]+)\*/u', $plain, $m)) {
+                $name = trim($m[1]);
+                if (mb_strlen($name) >= 3 && mb_strlen($name) <= 120) {
+                    return $name;
+                }
+            }
+
+            return '';
+        }
+
+        /**
+         * Rechaza candidatos a nombre de ente que son URLs, dominios o ruido genérico (extensible por filtro).
+         */
+        private static function entity_name_extract_candidate_rejected(string $name): bool
+        {
+            $name = trim($name);
+            if ($name === '') {
+                return true;
+            }
+            if (preg_match('#\b(?:https?://|www\.)#iu', $name)) {
+                return true;
+            }
+            if (preg_match('/@/u', $name)) {
+                return true;
+            }
+            $patterns = apply_filters('xabia_entity_name_reject_patterns', [
+                '/^\s*(?:web|http|https|www)\s*$/iu',
+            ], $name);
+            if (!is_array($patterns)) {
+                return false;
+            }
+            foreach ($patterns as $pattern) {
+                if (is_string($pattern) && $pattern !== '' && @preg_match($pattern, $name) === 1) {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        /**
+         * «Háblame de Marmitako Selling» / chips «¿Qué me puedes contar sobre «Título»?» → término RAG exacto.
+         */
+        public static function resolve_named_entity_from_user_message(string $user_msg): string
+        {
+            $plain = trim(wp_strip_all_tags((string) $user_msg));
+            if ($plain === '') {
+                return '';
+            }
+            // Prioridad: título entre comillas tipográficas (chips de starter questions).
+            if (preg_match('/[«“\"„]([^»”\"]{3,160})[»”\"]/u', $plain, $qm)) {
+                $quoted = self::normalize_resolved_entity_name((string) ($qm[1] ?? ''));
+                if ($quoted !== '') {
+                    return $quoted;
+                }
+            }
+            $patterns = [
+                '/\b(qu[eé]\s+me\s+puedes\s+contar)\s+(?:de|sobre|acerca\s+de)\s+(.+)$/iu',
+                '/\b(h[aá]blame|hablame|cu[eé]ntame|cuentame|dime|expl[ií]came)\s+(?:de|sobre|acerca\s+de)\s+(.+)$/iu',
+                '/\b(informaci[oó]n|info)\s+(?:de|sobre|acerca\s+de)\s+(.+)$/iu',
+                '/\b(qu[eé]\s+sabes|sabes\s+algo)\s+(?:de|sobre)\s+(.+)$/iu',
+                '/\b(presenta|presentame|conoce|con[oó]ceme|describe)\s+(?:la\s+empresa\s+)?(.+)$/iu',
+                '/\b(?:c[oó]mo\s+)?(?:contacto|contactar|contactarme|llamo|llamar)\s+(?:con|a|al?)\s+(.+)$/iu',
+                '/\b(?:tienes|tiene|me\s+das|dame|busco|necesito|muéstrame|muestrame|mostrar|ense[nñ]ame|enseña)\s+(?:el\s+|la\s+|alguna\s+|algunas\s+|un\s+|una\s+)?(?:contacto|tel[eé]fono|email|correo|web|fotos?|im[aá]gen(?:es)?|imágenes?|logo|logotipo)\s+(?:de|del|de\s+la|con)\s+(.+)$/iu',
+                '/\b(?:alguna\s+|algunas\s+|un\s+|una\s+)?(?:fotos?|im[aá]gen(?:es)?|imágenes?|logo|logotipo|contacto|tel[eé]fono|email|correo|web)\s+(?:de|del|de\s+la|con|la|el)\s+(.+)$/iu',
+                '/\b(?:quiero decir|me refiero a|digo)\s+(?:el\s+)?(?:contacto|fotos?|im[aá]gen(?:es)?|imágenes?)\s+(?:de|del|con)\s+(.+)$/iu',
+            ];
+            foreach ($patterns as $re) {
+                if (!preg_match($re, $plain, $m)) {
+                    continue;
+                }
+                $name = self::normalize_resolved_entity_name((string) ($m[count($m) - 1] ?? ''));
+                if ($name !== '') {
+                    return $name;
+                }
+            }
+
+            return self::resolve_bare_entity_name_query($plain);
+        }
+
+        /**
+         * Nombre propio suelto («Acme Norte?»), sin patrón «háblame de».
+         */
+        private static function resolve_bare_entity_name_query(string $plain): string
+        {
+            $plain = self::normalize_resolved_entity_name($plain);
+            if ($plain === '') {
+                return '';
+            }
+            $words = preg_split('/\s+/u', $plain) ?: [];
+            if (count($words) < 2 || count($words) > 5) {
+                return '';
+            }
+            if (preg_match('/\b(empresas?|actividades?|d[oó]nde|qu[eé]|c[oó]mo|cu[aá]ndo|hay|busco|quiero|opciones)\b/iu', $plain)) {
+                return '';
+            }
+
+            return $plain;
+        }
+
+        private static function normalize_resolved_entity_name(string $name): string
+        {
+            $name = trim($name);
+            $name = trim($name, " \t\n\r\0\x0B«»\"“”„'");
+            $name = trim((string) preg_replace('/[?¿!.,;:]+$/u', '', $name));
+            if ($name === '') {
+                return '';
+            }
+            $len = function_exists('mb_strlen') ? mb_strlen($name, 'UTF-8') : strlen($name);
+            if ($len < 3 || $len > 160) {
+                return '';
+            }
+
+            return $name;
+        }
+
+        /** @deprecated Refuerzo léxico vertical eliminado; conservado por compatibilidad de API pública. */
+        public static function query_matches_equestrian_lexical_boost(string $search_term): bool
+        {
+            unset($search_term);
+
+            return false;
+        }
+
+        /**
+         * Stop-words genéricas (ES/EN) para extracción agnóstica de términos clave RAG.
+         *
+         * @return list<string>
+         */
+        private static function default_rag_keyword_stop_words(): array {
+            return [
+                'para', 'como', 'esta', 'este', 'estos', 'estas', 'esto', 'esas', 'esos', 'esa', 'ese',
+                'aqui', 'allí', 'alli', 'donde', 'cuando', 'quien', 'qué', 'que', 'cual', 'cuales',
+                'tiene', 'tienen', 'hay', 'ninguna', 'ninguno', 'alguna', 'alguno', 'algunas', 'algunos',
+                'solo', 'sola', 'más', 'mas', 'muy', 'por', 'con', 'sin', 'una', 'uno', 'unas', 'unos',
+                'del', 'los', 'las', 'les', 'the', 'and', 'for', 'with', 'from', 'that', 'this', 'what',
+                'which', 'have', 'has', 'are', 'was', 'were', 'any', 'some', 'about', 'into', 'your',
+                'their', 'there', 'here', 'would', 'could', 'should', 'quiero', 'busco', 'necesito',
+                'dime', 'dame', 'mostrar', 'muestra', 'empresas', 'empresa', 'opciones', 'actividad',
+                'actividades', 'servicio', 'servicios', 'ningun', 'ningún', 'algun', 'algún',
+                'salidas', 'salida', 'rutas', 'ruta', 'paseos', 'paseo', 'tours', 'tour', 'excursiones',
+                'excursion', 'experiencias', 'experiencia', 'ofrece', 'ofrecen', 'hacéis', 'haceis', 'hacen',
+                'tenéis', 'teneis', 'tienen', 'disfrutar', 'disfruta',
+                'porque', 'porqué', 'según', 'segun', 'sobre', 'desde', 'hasta', 'entre', 'hacia',
+                'también', 'tambien', 'pero', 'aunque', 'mientras', 'después', 'despues', 'antes',
+                'siempre', 'nunca', 'ahora', 'entonces', 'ella', 'ello', 'ellas', 'ellos',
+                'usted', 'ustedes', 'nosotros', 'vosotros', 'nuestro', 'nuestra', 'vuestro', 'vuestra',
+                'mismo', 'misma', 'mismos', 'mismas', 'puede', 'pueden', 'podría', 'podria',
+                'algo', 'alguien', 'mediante', 'durante', 'contra', 'través', 'traves', 'esto',
+            ];
+        }
+
+        /**
+         * Comparación de stop-words sin tildes: «cómo» y «cuándo» no pueden ser agujas.
+         */
+        private static function fold_rag_keyword_token(string $word): string {
+            $word = mb_strtolower(trim($word), 'UTF-8');
+            if ($word === '') {
+                return '';
+            }
+
+            return strtr($word, [
+                'á' => 'a', 'é' => 'e', 'í' => 'i', 'ó' => 'o', 'ú' => 'u', 'ü' => 'u',
+                'à' => 'a', 'è' => 'e', 'ì' => 'i', 'ò' => 'o', 'ù' => 'u',
+            ]);
+        }
+
+        private static function rag_keyword_is_function_word(string $word): bool {
+            $folded = self::fold_rag_keyword_token($word);
+            if ($folded === '') {
+                return true;
+            }
+            static $map = null;
+            if ($map === null) {
+                $map = [];
+                foreach (self::default_rag_keyword_stop_words() as $stop) {
+                    $key = self::fold_rag_keyword_token((string) $stop);
+                    if ($key !== '') {
+                        $map[$key] = true;
+                    }
+                }
+            }
+
+            return isset($map[$folded]);
+        }
+
+        /**
+         * Extrae términos clave agnósticos de la pregunta (≥4 caracteres, sin stop-words).
+         *
+         * @return list<string>
+         */
+        public static function extract_rag_keyword_needles(string $text): array {
+            $raw_text = trim(wp_strip_all_tags((string) $text));
+            $text = mb_strtolower($raw_text, 'UTF-8');
+            if ($text === '') {
+                return [];
+            }
+
+            $stop = apply_filters('xabia_rag_keyword_stop_words', self::default_rag_keyword_stop_words(), $text);
+            $stop_map = [];
+            foreach ((array) $stop as $word) {
+                $word = self::fold_rag_keyword_token((string) $word);
+                if ($word !== '') {
+                    $stop_map[$word] = true;
+                }
+            }
+
+            $needles = [];
+            if ($raw_text !== '' && preg_match_all('/\b[\p{Lu}]{2,12}\b/u', $raw_text, $acro_matches)) {
+                foreach ($acro_matches[0] as $acro) {
+                    $acro = mb_strtolower((string) $acro, 'UTF-8');
+                    if ($acro === '' || isset($stop_map[self::fold_rag_keyword_token($acro)]) || self::rag_keyword_is_function_word($acro)) {
+                        continue;
+                    }
+                    $needles[] = $acro;
+                }
+            }
+
+            if (preg_match_all('/\p{L}[\p{L}\p{M}\'-]{2,}/u', $text, $matches)) {
+                foreach ($matches[0] as $raw) {
+                    $word = trim((string) $raw, "'-");
+                    if ($word === '' || mb_strlen($word, 'UTF-8') < 4) {
+                        continue;
+                    }
+                    if (isset($stop_map[self::fold_rag_keyword_token($word)]) || self::rag_keyword_is_function_word($word)) {
+                        continue;
+                    }
+                    $needles[] = $word;
+                }
+            }
+
+            $needles = array_values(array_unique($needles));
+            if (class_exists('Xabia_Rag_Language_Bridge', false)) {
+                $needles = Xabia_Rag_Language_Bridge::expand_keyword_needles($needles, $raw_text);
+                $needles = Xabia_Rag_Language_Bridge::drop_near_stopword_needles($needles, array_keys($stop_map));
+            }
+
+            return apply_filters('xabia_rag_keyword_needles', $needles, $text);
+        }
+
+        /**
+         * Texto léxico para refuerzo híbrido (Hub o SQL local).
+         */
+        private static function build_rag_lexical_query_text(string $user_msg, string $search_term): string {
+            $source = trim(wp_strip_all_tags($user_msg !== '' ? $user_msg : $search_term));
+            $needles = self::extract_rag_keyword_needles($source);
+            $parts = [];
+            $st = trim(wp_strip_all_tags($search_term));
+            if ($st !== '') {
+                $parts[] = $st;
+            }
+            foreach ($needles as $needle) {
+                $parts[] = $needle;
+            }
+            $parts = array_values(array_unique($parts));
+            $out = trim(implode(' ', $parts));
+            if ($out === '') {
+                return '';
+            }
+
+            return mb_substr($out, 0, 2000);
+        }
+
+        /**
+         * Prefijo agnóstico para la línea de ente matriz en bloques RAG (marca blanca).
+         *
+         * @param array<string, mixed> $config
+         */
+        private static function resolve_entity_field_prefix(array $config): string {
+            $label = trim((string) ($config['rules']['entity_label'] ?? ''));
+            $label = apply_filters('xabia_entity_field_prefix_label', $label, $config);
+            if ($label !== '') {
+                return rtrim($label, ': ') . ':';
+            }
+            if (class_exists('Xabia_Knowledge_Ingest', false)) {
+                $singular = trim((string) Xabia_Knowledge_Ingest::resolve_catalog_entity_singular_label($config));
+                if ($singular !== '') {
+                    $generic_ente = __('ente', 'xabia-intelligence');
+                    $generic_entes = __('entes', 'xabia-intelligence');
+                    if ($singular !== $generic_ente && $singular !== $generic_entes) {
+                        if (function_exists('mb_convert_case')) {
+                            return mb_convert_case($singular, MB_CASE_TITLE, 'UTF-8') . ':';
+                        }
+
+                        return ucfirst($singular) . ':';
+                    }
+                }
+            }
+
+            return 'ENTIDAD:';
+        }
+
+        private static function infer_parent_title_from_chunk_body(string $chunk_body): string {
+            $chunk_body = trim($chunk_body);
+            if ($chunk_body === ''
+                || !preg_match('/^([A-ZÁÉÍÓÚÜÑ][A-ZÁÉÍÓÚÜÑa-záéíóúüñ\s]{0,40}):\s*([^|\n]+)/u', $chunk_body, $match)) {
+                return '';
+            }
+            $label = mb_strtoupper(trim((string) ($match[1] ?? '')), 'UTF-8');
+            $candidate = trim((string) ($match[2] ?? ''));
+            // Etiquetas de ficha/atributo: no son el nombre del ente.
+            $field_labels = [
+                'CATEGORÍA', 'CATEGORIA', 'SUBCATEGORÍAS', 'SUBCATEGORIAS', 'SUBCATEGORÍA', 'SUBCATEGORIA',
+                'EXPERIENCIAS', 'PROPUESTAS', 'DESCRIPCIÓN', 'DESCRIPCION', 'DESCRIPCIÓN GENERAL', 'DESCRIPCION GENERAL',
+                'LOCALIDAD', 'UBICACIÓN', 'UBICACION', 'MUNICIPIO', 'ZONA', 'TERRITORIO', 'DATOS', 'DATOS RECUPERADOS',
+            ];
+            if ($candidate === '' || in_array($label, $field_labels, true)) {
+                return '';
+            }
+
+            return $candidate;
+        }
+
+        /**
+         * Nombre legible a partir de slug ente_id (marmitako-sailing → Marmitako Sailing).
+         */
+        private static function humanize_ente_id_slug(string $ente_id): string {
+            $ente_id = trim($ente_id);
+            if ($ente_id === '' || $ente_id === 'global') {
+                return '';
+            }
+            $human = str_replace(['-', '_'], ' ', $ente_id);
+            $human = preg_replace('/\s+/u', ' ', $human);
+            $human = trim((string) $human);
+            if ($human === '') {
+                return '';
+            }
+            if (function_exists('mb_convert_case')) {
+                return mb_convert_case($human, MB_CASE_TITLE, 'UTF-8');
+            }
+
+            return ucwords($human);
+        }
+
+        /**
+         * Resuelve el nombre del ente para el prompt: ente_id (autoritativo) → parent_title limpio → heurística.
+         *
+         * @param array<string, mixed> $chunk
+         */
+        private static function resolve_chunk_entity_display_name(array $chunk, string $chunk_body = ''): string {
+            $enteId = trim((string) ($chunk['ente_id'] ?? ''));
+            $fromSlug = self::humanize_ente_id_slug($enteId);
+            // ente_id es la identidad canónica en el Hub; parent_title a menudo se infiere mal de «CATEGORÍA: Agua».
+            if ($fromSlug !== '') {
+                return $fromSlug;
+            }
+            $parent = trim((string) ($chunk['parent_title'] ?? ''));
+            if ($parent !== ''
+                && mb_strtolower($parent, 'UTF-8') !== 'global'
+                && !self::looks_like_catalog_field_value($parent, $chunk_body !== '' ? $chunk_body : (string) ($chunk['content'] ?? ''))) {
+                return $parent;
+            }
+            if ($chunk_body === '') {
+                $chunk_body = trim((string) ($chunk['content'] ?? ''));
+            }
+
+            return self::infer_parent_title_from_chunk_body($chunk_body);
+        }
+
+        /**
+         * True si el «título» es en realidad el valor de un campo de ficha (p. ej. Agua tras CATEGORÍA:).
+         */
+        private static function looks_like_catalog_field_value(string $title, string $chunk_body): bool {
+            $title = trim($title);
+            $chunk_body = trim($chunk_body);
+            if ($title === '' || $chunk_body === '') {
+                return false;
+            }
+            if (preg_match('/^(CATEGOR[ÍI]A|SUBCATEGOR[ÍI]AS?|EXPERIENCIAS|PROPUESTAS|LOCALIDAD|UBICACI[ÓO]N)\s*:\s*'
+                . preg_quote($title, '/') . '\b/iu', $chunk_body)) {
+                return true;
+            }
+
+            return (bool) preg_match('/\bCATEGOR[ÍI]A\s*:\s*' . preg_quote($title, '/') . '\b/iu', $chunk_body);
+        }
+
+        /**
+         * @param array<string, mixed> $config
+         */
+        private static function format_rag_data_block_with_parent(string $chunk_body, string $parent_title, array $config): string {
+            $body = trim($chunk_body);
+            if ($body === '') {
+                return '';
+            }
+            // Identidad ya sellada por el Hub (ENTIDAD:/EMPRESA:…): no duplicar cabecera.
+            if (preg_match('/^(?:EMPRESA|ENTIDAD|PROVEEDOR|FICHA|HOTEL|PRODUCTO)\s*:\s*\S/iu', $body)) {
+                return $body;
+            }
+            $title = trim($parent_title);
+            if ($title === '') {
+                $title = self::infer_parent_title_from_chunk_body($body);
+            }
+            if ($title === '') {
+                return $body;
+            }
+            $prefix = '[Entidad:';
+            $header = '[Entidad: ' . $title . ']';
+            if (preg_match('/^' . preg_quote($prefix, '/') . '\s*' . preg_quote($title, '/') . '/iu', $body)) {
+                return $body;
+            }
+
+            return $header . "\nDATOS: " . $body;
+        }
+
+        /**
+         * @param list<array<string, mixed>> $chunks
+         * @param array<string, mixed>       $config
+         */
+        private static function format_hub_rag_chunks_for_prompt(array $chunks, array $config): string {
+            $chunks = self::prioritize_entity_hub_chunks($chunks);
+            $blocks = [];
+            foreach ($chunks as $chunk) {
+                if (!is_array($chunk)) {
+                    continue;
+                }
+                $content = trim((string) ($chunk['content'] ?? ''));
+                if ($content === '') {
+                    continue;
+                }
+                $title = self::resolve_chunk_entity_display_name($chunk, $content);
+                $block = self::format_rag_data_block_with_parent($content, $title, $config);
+                if ($block !== '') {
+                    $blocks[] = $block;
+                }
+            }
+
+            return implode("\n\n", $blocks);
+        }
+
+        /**
+         * @param list<array<string, mixed>> $chunks
+         *
+         * @return list<array<string, mixed>>
+         */
+        private static function prioritize_entity_hub_chunks(array $chunks): array {
+            if ($chunks === []) {
+                return $chunks;
+            }
+            usort($chunks, static function (array $a, array $b): int {
+                $ae = self::is_entity_record_hub_chunk($a);
+                $be = self::is_entity_record_hub_chunk($b);
+
+                return (int) $be <=> (int) $ae;
+            });
+
+            return $chunks;
+        }
+
+        private static function is_entity_record_hub_chunk(array $chunk): bool {
+            $enteId = trim((string) ($chunk['ente_id'] ?? ''));
+
+            return $enteId !== '' && $enteId !== 'global';
+        }
+
+        /**
+         * True si ninguna aguja clave aparece en el contexto (disparar refuerzo).
+         *
+         * @param list<string> $needles
+         */
+        private static function context_lacks_keyword_needles(string $context, array $needles): bool {
+            if ($needles === []) {
+                return false;
+            }
+            $ctx = mb_strtolower((string) $context, 'UTF-8');
+            if (trim($ctx) === '') {
+                return true;
+            }
+            foreach ($needles as $needle) {
+                $needle = mb_strtolower(trim((string) $needle), 'UTF-8');
+                if ($needle === '' || mb_strlen($needle, 'UTF-8') < 4) {
+                    continue;
+                }
+                if (mb_strpos($ctx, $needle) !== false) {
+                    return false;
+                }
+                if (class_exists('Xabia_Rag_Language_Bridge', false)
+                    && Xabia_Rag_Language_Bridge::tokens_soft_match($needle, $ctx)) {
+                    return false;
+                }
+            }
+
+            return true;
+        }
+
+        /**
+         * True si alguna aguja clave no aparece en el contexto.
+         *
+         * @param list<string> $needles
+         */
+        private static function context_misses_keyword_needles(string $context, array $needles): bool {
+            if ($needles === []) {
+                return false;
+            }
+            $ctx = mb_strtolower((string) $context, 'UTF-8');
+            if (trim($ctx) === '') {
+                return true;
+            }
+            foreach ($needles as $needle) {
+                $needle = mb_strtolower(trim((string) $needle), 'UTF-8');
+                if ($needle === '' || mb_strlen($needle, 'UTF-8') < 4) {
+                    continue;
+                }
+                if (mb_strpos($ctx, $needle) === false) {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        /**
+         * Añade sinónimos de rules.keyword_expansions al hint de preferencia del trim
+         * (p. ej. «caballo» → también prioriza fichas con «hípica»).
+         *
+         * @param array<string, mixed> $config
+         */
+        /**
+         * Enriquece la consulta RAG con sinónimos de rules.keyword_expansions (match por token o subcadena).
+         *
+         * @param array<string, mixed> $config
+         */
+        /**
+         * @return list<string>
+         */
+        private static function matched_keyword_expansion_terms(string $text, array $config): array {
+            $text = trim($text);
+            if ($text === '') {
+                return [];
+            }
+            $expansions = self::resolve_rag_keyword_expansions($config);
+            if ($expansions === []) {
+                return [];
+            }
+            $blob = mb_strtolower(
+                function_exists('remove_accents') ? remove_accents($text) : $text,
+                'UTF-8'
+            );
+            $extra = [];
+            foreach ($expansions as $key => $pattern) {
+                $key_l = mb_strtolower((string) $key, 'UTF-8');
+                $key_flat = function_exists('remove_accents') ? remove_accents($key_l) : $key_l;
+                $matched = false;
+                if (
+                    mb_strpos($blob, $key_l, 0, 'UTF-8') !== false
+                    || mb_strpos($blob, $key_flat, 0, 'UTF-8') !== false
+                ) {
+                    $matched = true;
+                } else {
+                    foreach (preg_split('/\s+/u', $blob) ?: [] as $tok) {
+                        $tok = trim((string) $tok, " \t\n\r\0\x0B.,;:¿?¡!");
+                        if ($tok === $key_l || $tok === $key_flat) {
+                            $matched = true;
+                            break;
+                        }
+                    }
+                }
+                if (! $matched) {
+                    continue;
+                }
+                foreach (preg_split('/\|/', (string) $pattern) ?: [] as $part) {
+                    $part = trim((string) $part);
+                    if ($part !== '' && mb_strlen($part, 'UTF-8') >= 3) {
+                        $extra[] = $part;
+                    }
+                }
+            }
+
+            return array_values(array_unique($extra));
+        }
+
+        /**
+         * @param array<string, mixed> $config
+         *
+         * @return list<string>
+         */
+        private static function collect_keyword_expansion_needles_for_text(string $text, array $config): array {
+            return self::matched_keyword_expansion_terms($text, $config);
+        }
+
+        private static function expand_rag_lexical_text_with_keyword_expansions(string $text, array $config): string
+        {
+            $text = trim($text);
+            if ($text === '') {
+                return '';
+            }
+            $extra = self::matched_keyword_expansion_terms($text, $config);
+            if ($extra === []) {
+                return $text;
+            }
+
+            return trim($text . ' ' . implode(' ', $extra));
+        }
+
+        private static function expand_prefer_hint_with_keyword_expansions(string $prefer, array $config): string {
+            $prefer = trim($prefer);
+            if ($prefer === '') {
+                return '';
+            }
+            $expansions = self::resolve_rag_keyword_expansions($config);
+            if ($expansions === []) {
+                return $prefer;
+            }
+            $extra = [];
+            $tokens = preg_split('/\s+/u', mb_strtolower(function_exists('remove_accents') ? remove_accents($prefer) : $prefer, 'UTF-8')) ?: [];
+            foreach ($tokens as $tok) {
+                $tok = trim((string) $tok, " \t\n\r\0\x0B.,;:¿?¡!");
+                if ($tok === '' || mb_strlen($tok, 'UTF-8') < 3) {
+                    continue;
+                }
+                // Match exact key or accent-folded key.
+                foreach ($expansions as $key => $pattern) {
+                    $key_l = mb_strtolower((string) $key, 'UTF-8');
+                    $key_flat = function_exists('remove_accents') ? remove_accents($key_l) : $key_l;
+                    if ($tok !== $key_l && $tok !== $key_flat) {
+                        continue;
+                    }
+                    foreach (preg_split('/\|/', (string) $pattern) ?: [] as $part) {
+                        $part = trim((string) $part);
+                        if ($part !== '' && mb_strlen($part, 'UTF-8') >= 3) {
+                            $extra[] = $part;
+                        }
+                    }
+                }
+            }
+            if ($extra === []) {
+                return $prefer;
+            }
+
+            return trim($prefer . ' ' . implode(' ', array_values(array_unique($extra))));
+        }
+
+        /**
+         * Mapa aguja → patrón REGEXP para rescate RAG (rules.keyword_expansions). Agnóstico de dominio.
+         *
+         * @param array<string, mixed> $config
+         *
+         * @return array<string, string>
+         */
+        private static function resolve_rag_keyword_expansions(array $config): array {
+            $raw = $config['rules']['keyword_expansions'] ?? null;
+            if (!is_array($raw)) {
+                return [];
+            }
+            $out = [];
+            foreach ($raw as $key => $pattern) {
+                $key = mb_strtolower(trim(sanitize_text_field((string) $key)), 'UTF-8');
+                $pattern = trim(sanitize_text_field((string) $pattern));
+                if ($key === '' || $pattern === '' || mb_strlen($key, 'UTF-8') < 2) {
+                    continue;
+                }
+                if (mb_strlen($pattern, 'UTF-8') > 500) {
+                    $pattern = mb_substr($pattern, 0, 500);
+                }
+                if (preg_match('/[\r\n]/', $pattern)) {
+                    continue;
+                }
+                $out[$key] = $pattern;
+            }
+
+            return (array) apply_filters('xabia_rag_keyword_expansions', $out, $config);
+        }
+
+        /**
+         * Escenarios / sedes principales del proyecto (rules.priority_venues). Agnóstico de dominio.
+         *
+         * @param array<string, mixed> $config
+         * @return list<string>
+         */
+        private static function resolve_rag_priority_venues(array $config): array {
+            $raw = $config['rules']['priority_venues'] ?? null;
+            $out = [];
+            if (class_exists('Xabia_Rag_Hybrid_Ranker', false)) {
+                $out = Xabia_Rag_Hybrid_Ranker::normalize_priority_venues($raw);
+            } elseif (is_array($raw)) {
+                $out = array_values(array_filter(array_map(static function ($v) {
+                    return trim((string) $v);
+                }, $raw)));
+            } elseif (is_string($raw) && trim($raw) !== '') {
+                $parts = preg_split('/[\n,;|]+/u', $raw) ?: [];
+                $out = array_values(array_filter(array_map('trim', $parts)));
+            }
+
+            return array_values(array_filter(array_map('strval', (array) apply_filters('xabia_rag_priority_venues', $out, $config))));
+        }
+
+        /**
+         * @param array<string, mixed> $config
+         */
+        private static function keyword_expansion_regexp_for_needle(string $needle, array $config): ?string {
+            $expansions = self::resolve_rag_keyword_expansions($config);
+            $nl = mb_strtolower(trim($needle), 'UTF-8');
+
+            return isset($expansions[$nl]) ? $expansions[$nl] : null;
+        }
+
+        /**
+         * Términos que satisfacen una aguja de refuerzo (expansiones de rules + filtro opcional).
+         *
+         * @param array<string, mixed> $config
+         *
+         * @return list<string>
+         */
+        private static function keyword_needle_match_terms(string $needle, string $project_id = '', array $config = []): array {
+            $needle = mb_strtolower(trim($needle), 'UTF-8');
+            if ($needle === '') {
+                return [];
+            }
+            $terms = [ $needle ];
+            $regexp = self::keyword_expansion_regexp_for_needle($needle, $config);
+            if ($regexp !== null) {
+                foreach (preg_split('/\|/', $regexp) as $part) {
+                    $part = mb_strtolower(trim((string) $part), 'UTF-8');
+                    if ($part !== '' && mb_strlen($part, 'UTF-8') >= 3) {
+                        $terms[] = $part;
+                    }
+                }
+            }
+            $aliases = apply_filters('xabia_rag_needle_rescue_aliases', [], $needle, $project_id, $config);
+            if (is_array($aliases)) {
+                foreach ($aliases as $alias) {
+                    $alias = mb_strtolower(trim((string) $alias), 'UTF-8');
+                    if ($alias !== '') {
+                        $terms[] = $alias;
+                    }
+                }
+            }
+
+            return array_values(array_unique(array_filter($terms)));
+        }
+
+        private static function text_contains_any_needle_term(string $haystack, string $needle, string $project_id = '', array $config = []): bool {
+            foreach (self::keyword_needle_match_terms($needle, $project_id, $config) as $term) {
+                if ($term !== '' && mb_stripos($haystack, $term) !== false) {
+                    return true;
+                }
+            }
+            $regexp = self::keyword_expansion_regexp_for_needle($needle, $config);
+            if ($regexp !== null && @preg_match('/' . $regexp . '/iu', $haystack)) {
+                return true;
+            }
+
+            return false;
+        }
+
+        /**
+         * Refuerzo por coincidencia exacta de palabras clave (SQL local o Hub cloud).
+         *
+         * @param list<string>         $needles
+         * @param array<string, mixed> $config
+         */
+        private static function fetch_keyword_boost_context(
+            string $project_id,
+            array $needles,
+            string $ente_scope,
+            bool $strict_ente,
+            int $max_chunks,
+            array $config = [],
+            float $similarity_threshold = 0.2,
+            string $context_so_far = '',
+            ?array $query_vector = null
+        ): string {
+            if (!class_exists('Xabia_Brain', false) || $needles === []) {
+                return '';
+            }
+
+            $can_local = !self::is_hub_rag_enabled_for_project($project_id)
+                || (class_exists('Xabia_DB', false) && Xabia_DB::uses_co_located_hub_store($project_id));
+            if ($can_local) {
+                return self::fetch_keyword_boost_local(
+                    $project_id,
+                    self::select_keyword_needles_for_boost($needles, $context_so_far),
+                    $ente_scope,
+                    $strict_ente,
+                    $max_chunks,
+                    $config
+                );
+            }
+            if (self::is_hub_rag_enabled_for_project($project_id)) {
+                $hub_hit = self::fetch_keyword_boost_via_hub(
+                    $project_id,
+                    self::select_keyword_needles_for_boost($needles, $context_so_far),
+                    $ente_scope,
+                    $strict_ente,
+                    $max_chunks,
+                    $config,
+                    $similarity_threshold,
+                    $context_so_far,
+                    $query_vector
+                );
+                if ($hub_hit !== '') {
+                    return $hub_hit;
+                }
+
+                $local_rescue = self::fetch_keyword_boost_local(
+                    $project_id,
+                    self::select_keyword_needles_for_boost($needles, $context_so_far),
+                    $ente_scope,
+                    $strict_ente,
+                    $max_chunks,
+                    $config
+                );
+                if ($local_rescue !== '') {
+                    self::$last_rag_debug['keyword_boost_status'] = 'executed_local_rescue';
+                    if (function_exists('xabia_trace')) {
+                        xabia_trace('[XABIA_CORE] keyword boost hub empty; local LIKE rescue', [
+                            'project_id' => $project_id,
+                        ]);
+                    }
+                }
+
+                return $local_rescue;
+            }
+
+            return '';
+        }
+
+        /**
+         * Agujas aún ausentes del contexto. Hasta 3: un typo de stop-word no puede
+         * monopolizar el refuerzo (p. ej. «emprea» no debe tapar un topónimo de 4 letras).
+         *
+         * @param list<string> $needles
+         *
+         * @return list<string>
+         */
+        private static function select_keyword_needles_for_boost(array $needles, string $context_so_far): array {
+            $stop = self::default_rag_keyword_stop_words();
+            $missing = [];
+            foreach ($needles as $needle) {
+                $needle = self::sanitize_rag_search_term((string) $needle);
+                if ($needle === '' || mb_strlen($needle, 'UTF-8') < 4 || self::rag_keyword_is_function_word($needle)) {
+                    continue;
+                }
+                if (class_exists('Xabia_Rag_Language_Bridge', false)
+                    && Xabia_Rag_Language_Bridge::is_near_stopword($needle, $stop)) {
+                    continue;
+                }
+                if (self::context_misses_keyword_needles($context_so_far, [$needle])) {
+                    $missing[] = $needle;
+                }
+            }
+            $missing = array_values(array_unique($missing));
+            if ($missing === []) {
+                return [];
+            }
+            usort($missing, static function (string $a, string $b): int {
+                return mb_strlen($b, 'UTF-8') <=> mb_strlen($a, 'UTF-8');
+            });
+
+            return array_slice($missing, 0, 3);
+        }
+
+        /**
+         * @param list<string>         $needles
+         * @param array<string, mixed> $config
+         */
+        private static function fetch_keyword_boost_local(
+            string $project_id,
+            array $needles,
+            string $ente_scope,
+            bool $strict_ente,
+            int $max_chunks,
+            array $config = []
+        ): string {
+            $merged = '';
+            $limit_per = max(2, min(6, (int) ceil($max_chunks / max(1, count($needles)))));
+            foreach ($needles as $needle) {
+                $needle = self::sanitize_rag_search_term((string) $needle);
+                if ($needle === '') {
+                    continue;
+                }
+                $search_terms = self::keyword_needle_match_terms($needle, $project_id, $config);
+                foreach ($search_terms as $search_term) {
+                    if ($search_term === '' || mb_strlen($search_term, 'UTF-8') < 4) {
+                        continue;
+                    }
+                    try {
+                        $hit = trim((string) Xabia_Brain::search_knowledge(
+                            $project_id,
+                            $search_term,
+                            $ente_scope,
+                            $strict_ente,
+                            $limit_per
+                        ));
+                    } catch (\Throwable $e) {
+                        if (function_exists('xabia_trace')) {
+                            xabia_trace('[XABIA_CORE] keyword boost search failed', [
+                                'message' => $e->getMessage(),
+                                'needle'  => substr($search_term, 0, 80),
+                            ]);
+                        }
+                        continue;
+                    }
+                    if ($hit === '' || strlen($hit) < 10) {
+                        continue;
+                    }
+                    if (!self::text_contains_any_needle_term($hit, $needle, $project_id, $config)) {
+                        continue;
+                    }
+                    $block = self::format_rag_data_block_with_parent($hit, '', $config);
+                    $probe = mb_substr($block, 0, 120);
+                    if ($probe !== '' && mb_stripos($merged, $probe) !== false) {
+                        continue 2;
+                    }
+                    $merged .= ($merged === '' ? '' : "\n\n") . $block;
+                    continue 2;
+                }
+            }
+
+            return trim($merged);
+        }
+
+        /**
+         * Segunda pasada Hub por aguja cuando el top-k vectorial omitió términos literales (p. ej. «velero»).
+         *
+         * @param list<string>         $needles
+         * @param array<string, mixed> $config
+         */
+        private static function fetch_keyword_boost_via_hub(
+            string $project_id,
+            array $needles,
+            string $ente_scope,
+            bool $strict_ente,
+            int $max_chunks,
+            array $config,
+            float $similarity_threshold,
+            string $context_so_far,
+            ?array $query_vector = null
+        ): string {
+            if (!class_exists('Xabia_Hub_Knowledge', false) || !Xabia_Hub_Knowledge::is_hub_rag_enabled($project_id)) {
+                return '';
+            }
+
+            $needles = self::select_keyword_needles_for_boost($needles, $context_so_far);
+            $rescue = [];
+            foreach ($needles as $needle) {
+                $needle = self::sanitize_rag_search_term((string) $needle);
+                if ($needle === '' || self::rag_keyword_is_function_word($needle) || mb_strlen($needle, 'UTF-8') <= 4) {
+                    continue;
+                }
+                $rescue[] = $needle;
+            }
+            // Una sola búsqueda remota. Sin sustantivo de más de 4 letras, ningún HTTP de rescate.
+            $needles = array_slice($rescue, 0, 1);
+            if ($needles === []) {
+                return '';
+            }
+
+            $merged = '';
+            foreach ($needles as $needle) {
+                $needle = self::sanitize_rag_search_term((string) $needle);
+                if ($needle === '' || mb_strlen($needle, 'UTF-8') < 4) {
+                    continue;
+                }
+                $hay = trim($context_so_far . "\n" . $merged);
+                if ($hay !== '' && !self::context_misses_keyword_needles($hay, [$needle])) {
+                    continue;
+                }
+                $hit = self::fetch_one_hub_keyword_needle(
+                    $project_id,
+                    $needle,
+                    $ente_scope,
+                    $strict_ente,
+                    $max_chunks,
+                    $config,
+                    $similarity_threshold,
+                    $query_vector
+                );
+                if ($hit === '') {
+                    continue;
+                }
+                $probe = mb_substr($hit, 0, 120);
+                if ($probe !== '' && mb_stripos($merged, $probe) !== false) {
+                    continue;
+                }
+                $merged .= ($merged === '' ? '' : "\n\n") . $hit;
+            }
+
+            return trim($merged);
+        }
+
+        /**
+         * Una pasada Hub por una aguja léxica.
+         *
+         * @param array<string, mixed> $config
+         */
+        private static function fetch_one_hub_keyword_needle(
+            string $project_id,
+            string $needle,
+            string $ente_scope,
+            bool $strict_ente,
+            int $max_chunks,
+            array $config,
+            float $similarity_threshold,
+            ?array $query_vector = null
+        ): string {
+            $limit = max(Xabia_Brain::PROMPT_CHUNK_MIN, min(Xabia_Brain::PROMPT_CHUNK_MAX, $max_chunks));
+            $threshold = 0.01;
+
+            $query_vector = self::get_query_embedding($needle, $config, $project_id);
+            self::digixop_absorb_query_embedding_usage($project_id, $config);
+            if (class_exists('Xabia_Digixop_Client') && Xabia_Digixop_Client::was_insufficient_balance()) {
+                return '';
+            }
+            if (!is_array($query_vector) || $query_vector === []) {
+                return '';
+            }
+
+            $hub_opts = [
+                'lexical_query_text' => $needle,
+                'keyword_boost_only' => true,
+            ];
+            $keyword_expansions = self::resolve_rag_keyword_expansions($config);
+            if ($keyword_expansions !== []) {
+                $hub_opts['keyword_expansions'] = $keyword_expansions;
+            }
+
+            try {
+                if (class_exists('Xabia_Hub_Knowledge', false) && Xabia_Hub_Knowledge::is_hub_rag_enabled($project_id)) {
+                    $out = Xabia_Hub_Knowledge::search_vector(
+                        $project_id,
+                        $query_vector,
+                        $ente_scope,
+                        $strict_ente,
+                        $limit,
+                        $threshold,
+                        $needle,
+                        $hub_opts
+                    );
+                } else {
+                    $out = Xabia_Brain::search_knowledge_vector(
+                        $project_id,
+                        $needle,
+                        $ente_scope,
+                        $strict_ente,
+                        $limit,
+                        $threshold,
+                        $query_vector,
+                        $hub_opts
+                    );
+                }
+            } catch (\Throwable $e) {
+                if (function_exists('xabia_trace')) {
+                    xabia_trace('[XABIA_CORE] hub keyword boost failed', [
+                        'message' => $e->getMessage(),
+                        'needle'  => substr($needle, 0, 80),
+                    ]);
+                }
+
+                return '';
+            }
+
+            if (isset($out['_hub_meta']) && is_array($out['_hub_meta']) && empty($out['_hub_meta']['ok'])) {
+                self::log_hub_rag_transport_failure(
+                    $project_id,
+                    'keyword_boost',
+                    [
+                        'ok'       => false,
+                        'code'     => (int) ($out['_hub_meta']['http_code'] ?? 0),
+                        'raw'      => (string) ($out['_hub_meta']['raw'] ?? ''),
+                        'wp_error' => isset($out['_hub_meta']['wp_error']) && is_array($out['_hub_meta']['wp_error'])
+                            ? $out['_hub_meta']['wp_error']
+                            : null,
+                        'body'     => $out['_hub_meta']['body'] ?? null,
+                    ],
+                    (string) ($out['_hub_meta']['url'] ?? '')
+                );
+            }
+
+            $formatted = self::format_hub_keyword_boost_hit($out, $needle, $config, $project_id);
+            if ($formatted !== '') {
+                return $formatted;
+            }
+
+            $alias_needles = apply_filters('xabia_rag_needle_rescue_aliases', [], $needle, $project_id, $config);
+            if (is_array($alias_needles)) {
+                foreach ($alias_needles as $alias) {
+                    $alias = self::sanitize_rag_search_term((string) $alias);
+                    if ($alias === '' || $alias === $needle || mb_strlen($alias, 'UTF-8') < 4) {
+                        continue;
+                    }
+                    $alias_opts = $hub_opts;
+                    $alias_opts['lexical_query_text'] = $alias;
+                    $alias_out = Xabia_Hub_Knowledge::search_vector(
+                        $project_id,
+                        self::get_query_embedding($alias, $config, $project_id) ?: $query_vector,
+                        $ente_scope,
+                        $strict_ente,
+                        $limit,
+                        $threshold,
+                        $alias,
+                        $alias_opts
+                    );
+                    $alias_hit = self::format_hub_keyword_boost_hit(is_array($alias_out) ? $alias_out : [], $needle, $config, $project_id);
+                    if ($alias_hit !== '' && self::text_contains_any_needle_term($alias_hit, $needle, $project_id, $config)) {
+                        return $alias_hit;
+                    }
+                    $alias_hit = self::format_hub_keyword_boost_hit(is_array($alias_out) ? $alias_out : [], $alias, $config, $project_id);
+                    if ($alias_hit !== '') {
+                        return $alias_hit;
+                    }
+                }
+            }
+
+            if (self::should_log_rag_context_chivato($config)) {
+                $chunks = isset($out['chunks']) && is_array($out['chunks']) ? $out['chunks'] : [];
+                if ($chunks !== []) {
+                    error_log(
+                        '[XABIA RAG HUB RESCUE NEEDLE MISS] project=' . $project_id
+                        . ' needle=' . $needle
+                        . ' chunk_count=' . count($chunks)
+                    );
+                }
+            }
+
+            $hit = trim((string) ($out['context'] ?? ''));
+            if ($hit === '' || strlen($hit) < 10 || !self::text_contains_any_needle_term($hit, $needle, $project_id, $config)) {
+                if (self::should_log_rag_context_chivato($config)) {
+                    $hub_meta = isset($out['_hub_meta']) && is_array($out['_hub_meta']) ? $out['_hub_meta'] : [];
+                    $hub_url = (string) ($hub_meta['url'] ?? '');
+                    if ($hub_url === '' && class_exists('Xabia_Digixop_Client', false)) {
+                        $hub_url = (string) apply_filters(
+                            'xabia_hub_knowledge_search_url',
+                            Xabia_Digixop_Client::default_knowledge_search_url(),
+                            $project_id
+                        );
+                    }
+                    $hub_body = $hub_meta['body'] ?? $out;
+                    $hub_json = wp_json_encode($hub_body);
+                    if (!is_string($hub_json)) {
+                        $hub_json = '{}';
+                    }
+                    error_log(
+                        '[XABIA RAG HUB RESCUE EMPTY] project=' . $project_id
+                        . ' needle=' . $needle
+                        . ' url=' . $hub_url
+                        . ' http_code=' . (int) ($hub_meta['http_code'] ?? 0)
+                        . ' chunk_count=' . (int) ($out['chunk_count'] ?? 0)
+                        . ' response=' . substr($hub_json, 0, 1800)
+                    );
+                }
+
+                return '';
+            }
+
+            return self::format_rag_data_block_with_parent($hit, '', $config);
+        }
+
+        /**
+         * @param array<string, mixed> $out
+         * @param array<string, mixed> $config
+         */
+        private static function format_hub_keyword_boost_hit(array $out, string $needle, array $config, string $project_id = ''): string {
+            $chunks = isset($out['chunks']) && is_array($out['chunks']) ? $out['chunks'] : [];
+            if ($chunks !== []) {
+                $formatted = self::format_hub_rag_chunks_for_prompt($chunks, $config);
+                if ($formatted !== '' && self::text_contains_any_needle_term($formatted, $needle, $project_id, $config)) {
+                    return $formatted;
+                }
+            }
+            $hit = trim((string) ($out['context'] ?? ''));
+            if ($hit !== '' && strlen($hit) >= 10 && self::text_contains_any_needle_term($hit, $needle, $project_id, $config)) {
+                return self::format_rag_data_block_with_parent($hit, '', $config);
+            }
+
+            return '';
+        }
+
+        /**
+         * Si el vector/RAG recuperó chunks genéricos pero la pregunta incluye términos inequívocos que no
+         * aparecen en el contexto, devuelve true para disparar un refuerzo por LIKE (mismo catálogo en WP).
+         * Filtrable: `xabia_rag_query_signal_terms`. Sin filtro, usa extracción agnóstica de palabras clave.
+         */
+        public static function rag_context_misses_query_signal_terms(string $search_term, string $context): bool
+        {
+            $terms = apply_filters(
+                'xabia_rag_query_signal_terms',
+                [],
+                $search_term,
+                $context
+            );
+            if (!is_array($terms) || $terms === []) {
+                $terms = self::extract_rag_keyword_needles((string) $search_term);
+            }
+            $q = mb_strtolower(wp_strip_all_tags((string) $search_term), 'UTF-8');
+            $c = mb_strtolower((string) $context, 'UTF-8');
+            $any_signal_in_query = false;
+            $any_signal_missing_in_context = false;
+            foreach ($terms as $t) {
+                $t = trim((string) $t);
+                if ($t === '' || mb_strlen($t, 'UTF-8') < 3) {
+                    continue;
+                }
+                $tl = mb_strtolower($t, 'UTF-8');
+                if (mb_strpos($q, $tl) === false) {
+                    continue;
+                }
+                $any_signal_in_query = true;
+                if (mb_strpos($c, $tl) === false) {
+                    if (class_exists('Xabia_Rag_Language_Bridge', false)
+                        && Xabia_Rag_Language_Bridge::context_contains_term_variant($tl, (string) $context)) {
+                        continue;
+                    }
+                    $any_signal_missing_in_context = true;
+                }
+            }
+
+            return $any_signal_in_query && $any_signal_missing_in_context;
+        }
+
+        /**
+         * Turnos ya intercambiados (usuario o asistente). El saludo inicial de la UI no cuenta.
+         *
+         * @param list<array<string, mixed>> $history
+         */
+        private static function conversation_turn_count(array $history): int {
+            $count = 0;
+            foreach ($history as $msg) {
+                if (!is_array($msg)) {
+                    continue;
+                }
+                $role = (string) ($msg['role'] ?? '');
+                if ($role !== 'user' && $role !== 'assistant') {
+                    continue;
+                }
+                if (trim((string) ($msg['content'] ?? '')) === '') {
+                    continue;
+                }
+                $count++;
+            }
+
+            return $count;
+        }
+
+        /**
+         * Saludo, agradecimiento o acuse sin ningún término de búsqueda.
+         * «hola» no debe arrastrar chunks ni el catálogo de descubrimiento.
+         * Con historial, «Sí», «Ok», «Vale», «Fotos» o «Quiero» siguen la conversación.
+         */
+        private static function is_knowledge_free_utterance(string $msg, int $history_count = 0): bool {
+            if ($history_count > 0) {
+                return false;
+            }
+            $t = mb_strtolower(trim(wp_strip_all_tags($msg)), 'UTF-8');
+            $t = preg_replace('/[!?¿¡.,;:]+/u', ' ', $t) ?? $t;
+            $t = trim((string) preg_replace('/\s+/u', ' ', $t));
+            if ($t === '') {
+                return true;
+            }
+            $phatic = [
+                'hola', 'holaa', 'hello', 'hi', 'hey', 'ei', 'ey',
+                'kaixo', 'aupa', 'agur', 'buenas', 'bueno', 'buena',
+                'buenos', 'dias', 'días', 'tardes', 'noches',
+                'gracias', 'thanks', 'thank', 'you', 'vale', 'ok', 'okay', 'genial',
+                'que', 'qué', 'tal',
+            ];
+            $parts = preg_split('/\s+/u', $t) ?: [];
+            foreach ($parts as $part) {
+                $part = trim((string) $part, "'-");
+                if ($part === '' || in_array($part, $phatic, true)) {
+                    continue;
+                }
+                if (mb_strlen($part, 'UTF-8') < 4) {
+                    continue;
+                }
+                return false;
+            }
+
+            return true;
+        }
+
+        /**
+         * El Hub ya aplica similarity_threshold. Si aun así llegan scores por debajo, no entran al prompt.
+         * La búsqueda léxica no usa coseno: sus scores son de ranking y no se descartan aquí.
+         *
+         * @param array<string, mixed> $out
+         * @return array<string, mixed>
+         */
+        private static function discard_subthreshold_vector_chunks(array $out, float $threshold): array {
+            if (($out['retrieval'] ?? '') === 'lexical') {
+                return $out;
+            }
+            $threshold = max(0.0, min(1.0, $threshold));
+            $chunks = isset($out['chunks']) && is_array($out['chunks']) ? $out['chunks'] : [];
+            if ($chunks === []) {
+                $avg = $out['similarity_avg'] ?? null;
+                if (is_numeric($avg) && (float) $avg < $threshold) {
+                    $out['context'] = '';
+                    $out['chunk_count'] = 0;
+                    $out['chunks'] = [];
+                }
+
+                return $out;
+            }
+            $kept = [];
+            $saw_score = false;
+            foreach ($chunks as $chunk) {
+                if (!is_array($chunk)) {
+                    continue;
+                }
+                $score = null;
+                foreach (['score', 'similarity', 'similarity_score'] as $key) {
+                    if (isset($chunk[$key]) && is_numeric($chunk[$key])) {
+                        $score = (float) $chunk[$key];
+                        break;
+                    }
+                }
+                if ($score === null) {
+                    $kept[] = $chunk;
+                    continue;
+                }
+                $saw_score = true;
+                if ($score >= $threshold) {
+                    $kept[] = $chunk;
+                }
+            }
+            if (!$saw_score) {
+                return $out;
+            }
+            $out['chunks'] = $kept;
+            $out['chunk_count'] = count($kept);
+            if ($kept === []) {
+                $out['context'] = '';
+            }
+
+            return $out;
+        }
+
+        /**
+         * Diagnóstico temporal de tokens. Quitar cuando el consumo de un saludo quede acotado.
+         *
+         * @param list<array<string, mixed>> $messages
+         * @param list<array<string, mixed>> $tools
+         */
+        private static function log_llm_payload_diagnostics(string $system_prompt, string $context, array $messages, array $tools): void {
+            $estimate = static function (string $text): int {
+                $chars = strlen($text);
+
+                return $chars === 0 ? 0 : (int) ceil($chars / 4);
+            };
+            $discovery = '';
+            $rag = $context;
+            $marker = '### ADDON DISCOVERY ###';
+            $pos = strpos($context, $marker);
+            if ($pos !== false) {
+                $rag = substr($context, 0, $pos);
+                $discovery = substr($context, $pos);
+            }
+            $history_bits = [];
+            $history_chars = 0;
+            foreach ($messages as $i => $msg) {
+                if (!is_array($msg) || (($msg['role'] ?? '') === 'system')) {
+                    continue;
+                }
+                $content = (string) ($msg['content'] ?? '');
+                $chars = strlen($content);
+                $history_chars += $chars;
+                $history_bits[] = '#' . $i . ' role=' . (string) ($msg['role'] ?? '') . ' chars=' . $chars . ' tokens~' . $estimate($content);
+            }
+            $tools_json = $tools === [] ? '' : (string) wp_json_encode($tools, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+            $part_bits = [];
+            foreach (self::$last_prompt_parts as $part_name => $part_chars) {
+                $part_chars = (int) $part_chars;
+                $part_bits[] = $part_name . '=' . $part_chars . ' tokens~' . ($part_chars === 0 ? 0 : (int) ceil($part_chars / 4));
+            }
+            error_log('[XABIA_TOKEN_DIAG] TEMP system_prompt chars=' . strlen($system_prompt) . ' tokens~' . $estimate($system_prompt)
+                . ($part_bits !== [] ? ' parts ' . implode(' ', $part_bits) : ''));
+            error_log('[XABIA_TOKEN_DIAG] TEMP rag_context chars=' . strlen($rag) . ' tokens~' . $estimate($rag));
+            error_log('[XABIA_TOKEN_DIAG] TEMP rag_context_body=' . $rag);
+            error_log('[XABIA_TOKEN_DIAG] TEMP addon_discovery chars=' . strlen($discovery) . ' tokens~' . $estimate($discovery));
+            error_log('[XABIA_TOKEN_DIAG] TEMP addon_discovery_body=' . $discovery);
+            error_log('[XABIA_TOKEN_DIAG] TEMP history_count=' . count($history_bits) . ' chars=' . $history_chars . ' tokens~' . ($history_chars === 0 ? 0 : (int) ceil($history_chars / 4)) . ' ' . implode(' | ', $history_bits));
+            error_log('[XABIA_TOKEN_DIAG] TEMP tools_count=' . count($tools) . ' chars=' . strlen($tools_json) . ' tokens~' . $estimate($tools_json));
+            if ($tools_json !== '') {
+                error_log('[XABIA_TOKEN_DIAG] TEMP tools_schema=' . $tools_json);
+            }
+        }
+
+        /**
+         * Mensaje muy corto o de continuación («más empresas», «¿y hípica?») que debe anclarse al último
+         * criterio de búsqueda de la sesión para no degradar el embedding ni el LIKE.
+         */
+        private static function is_rag_topic_followup_utterance(string $msg): bool
+        {
+            if (self::resolve_named_entity_from_user_message($msg) !== '') {
+                return false;
+            }
+            $t = mb_strtolower(trim(wp_strip_all_tags($msg)), 'UTF-8');
+            if ($t === '') {
+                return false;
+            }
+            if (preg_match('/^(hola|kaixo|aupa|buenas|hey|hi|hello|gracias|thanks|thank\s+you|vale|ok|genial|agur)\b/u', $t)) {
+                return false;
+            }
+            if (preg_match('/\b(m[aá]s|otras?|otros?|algun[ao]s?\s+m[aá]s|adem[aá]s|tambi[eé]n|siguiente|contin[uú]a|algo\s+m[aá]s)\s+/u', $t)) {
+                return true;
+            }
+            if (preg_match('/\b(m[aá]s\s+(empresas|opci|resultados|datos|informaci[oó]n))\b/u', $t)) {
+                return true;
+            }
+            if (preg_match('/\b(more|other|others|another|additional)\s+/u', $t)) {
+                return true;
+            }
+            if (preg_match('/^(si|sí|yes|bai|ba|au|vale|ok)\.?!?$/u', $t)) {
+                return true;
+            }
+            if (mb_strlen($t) <= 36) {
+                if (preg_match('/[?¿]/u', $t) || preg_match('/^(y|and)\s+/u', $t)) {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        /** @deprecated Enrutamiento delegado al LLM; conservado por compatibilidad de API pública. */
+        public static function query_is_negated_catalog_discovery(string $text): bool
+        {
+            unset($text);
+
+            return false;
+        }
+
+        /** @deprecated Enrutamiento delegado al LLM; conservado por compatibilidad de API pública. */
+        public static function query_implies_catalog_subset_followup(
+            string $text,
+            string $last_search = '',
+            array $prior_manifest = []
+        ): bool {
+            unset($text, $last_search, $prior_manifest);
+
+            return false;
+        }
+
+        /** @deprecated Preferir resolve_catalog_list_intent; se mantiene para listado nativo. */
+        public static function query_implies_activity_catalog_discovery(string $text): bool
+        {
+            return self::query_implies_catalog_listing($text);
+        }
+
+        /** @deprecated Preferir is_rag_topic_followup_utterance. */
+        public static function query_implies_activity_catalog_followup(string $text, string $last_search = ''): bool
+        {
+            return self::is_rag_topic_followup_utterance($text) && $last_search !== '';
+        }
+
+        /**
+         * Preguntas del tipo «qué empresas hacen X» / listados por actividad.
+         */
+        public static function query_expects_multiple_catalog_companies(string $user_msg, string $search_term = ''): bool
+        {
+            $blob = mb_strtolower(trim(wp_strip_all_tags($user_msg !== '' ? $user_msg : $search_term)), 'UTF-8');
+            if ($blob === '') {
+                return false;
+            }
+            if (preg_match('/\bempresas?\b/u', $blob)) {
+                return true;
+            }
+            $canonical = self::distill_activity_search_term($user_msg !== '' ? $user_msg : $search_term);
+
+            return $canonical !== '';
+        }
+
+        /**
+         * Perfil de actividad para listado nativo / filtro de catálogo.
+         * Agnóstico: sin vocabularios de vertical en Core. Perfiles opcionales vía
+         * `xabia_rag_catalog_activity_profiles`; si no hay, se construye desde palabras de la pregunta.
+         *
+         * @return array<string, mixed>
+         */
+        private static function resolve_catalog_activity_profile(string $search_term, string $user_msg = ''): array
+        {
+            $canonical = self::distill_activity_search_term($user_msg);
+            if ($canonical === '') {
+                $canonical = self::distill_activity_search_term($search_term);
+            }
+            if ($canonical === '' && class_exists('Xabia_Catalog_List', false)
+                && method_exists('Xabia_Catalog_List', 'distill_canonical_activity')) {
+                $canonical = (string) Xabia_Catalog_List::distill_canonical_activity($user_msg, $search_term);
+            }
+
+            $profiles = apply_filters('xabia_rag_catalog_activity_profiles', [], $search_term, $user_msg);
+            if (!is_array($profiles)) {
+                $profiles = [];
+            }
+            if ($canonical !== '' && !empty($profiles[$canonical]) && is_array($profiles[$canonical])) {
+                return self::slice_catalog_activity_profile($profiles[$canonical]);
+            }
+
+            $dynamic = self::catalog_needles_from_query_text($user_msg, $search_term);
+            if ($canonical !== '' && !in_array($canonical, $dynamic, true)) {
+                array_unshift($dynamic, $canonical);
+            }
+            if ($dynamic === []) {
+                return [];
+            }
+
+            return self::slice_catalog_activity_profile([
+                'match_in_header'     => $dynamic,
+                'match_subcategory'   => $dynamic,
+                'exclude_in_category' => [],
+                'exclude_ente_slugs'  => [],
+            ]);
+        }
+
+        /**
+         * @param array<string, mixed> $profile
+         *
+         * @return array<string, mixed>
+         */
+        private static function slice_catalog_activity_profile(array $profile): array
+        {
+            $out = [
+                'match_in_header'     => array_values(array_filter(array_map('strval', $profile['match_in_header'] ?? []))),
+                'exclude_in_category' => array_values(array_filter(array_map('strval', $profile['exclude_in_category'] ?? []))),
+                'exclude_ente_slugs'  => array_values(array_filter(array_map('strval', $profile['exclude_ente_slugs'] ?? []))),
+                'match_category'      => array_values(array_filter(array_map('strval', $profile['match_category'] ?? []))),
+                'match_subcategory'   => array_values(array_filter(array_map('strval', $profile['match_subcategory'] ?? []))),
+            ];
+            $regexp = trim((string) ($profile['match_regexp'] ?? ''));
+            if ($regexp !== '') {
+                $out['match_regexp'] = $regexp;
+            }
+
+            return $out;
+        }
+
+        /**
+         * @return list<string>
+         */
+        private static function catalog_needles_from_query_text(string $user_msg, string $search_term): array
+        {
+            $text = mb_strtolower(trim(wp_strip_all_tags($user_msg !== '' ? $user_msg : $search_term)), 'UTF-8');
+            if ($text === '') {
+                return [];
+            }
+            $stop = [
+                'empresas', 'empresa', 'compañía', 'compania', 'company', 'companies',
+                'qué', 'que', 'cuales', 'cuáles', 'which', 'what',
+                'hacen', 'hace', 'hacéis', 'haceis', 'do', 'does',
+                'ofrecen', 'ofreceis', 'ofrecéis', 'offer', 'offers',
+                'teneis', 'tenéis', 'hay', 'alguna', 'alguno', 'algunas', 'algunos', 'any',
+                'más', 'mas', 'otras', 'otros', 'todas', 'todos', 'listado', 'lista', 'list',
+                'opciones', 'option', 'options', 'actividades', 'actividad', 'activity', 'activities',
+                'experiencias', 'experiencia', 'experience', 'experiences',
+                'para', 'con', 'sin', 'del', 'las', 'los', 'the', 'tipo', 'categoria', 'categoría',
+                'category', 'en', 'de', 'por', 'una', 'uno', 'un',
+            ];
+            $stop = apply_filters('xabia_catalog_query_stop_words', $stop, $user_msg, $search_term);
+            if (!is_array($stop)) {
+                $stop = [];
+            }
+            $stop_flip = array_flip($stop);
+            $needles = [];
+            foreach (preg_split('/\s+/u', $text, -1, PREG_SPLIT_NO_EMPTY) as $tok) {
+                $tok = trim((string) preg_replace('/^[\p{P}\p{Z}]+|[\p{P}\p{Z}]+$/u', '', $tok));
+                if ($tok === '' || mb_strlen($tok, 'UTF-8') < 4) {
+                    continue;
+                }
+                if (isset($stop_flip[$tok])) {
+                    continue;
+                }
+                $needles[$tok] = $tok;
+            }
+
+            return array_values($needles);
+        }
+
+        private static function catalog_activity_session_key(string $search_term, string $user_msg): string
+        {
+            $canonical = self::distill_activity_search_term($user_msg);
+            if ($canonical === '') {
+                $canonical = self::distill_activity_search_term($search_term);
+            }
+            if ($canonical !== '') {
+                return $canonical;
+            }
+            $needles = self::catalog_needles_from_query_text($user_msg, $search_term);
+            if ($needles !== []) {
+                sort($needles);
+
+                return implode('|', $needles);
+            }
+
+            return mb_strtolower(trim($search_term !== '' ? $search_term : $user_msg), 'UTF-8');
+        }
+
+        /**
+         * @param list<string> $manifest
+         */
+        private static function build_deterministic_catalog_list_response(array $manifest): string
+        {
+            $items = [];
+            foreach ($manifest as $line) {
+                $line = trim((string) $line);
+                if ($line === '') {
+                    continue;
+                }
+                $html = preg_replace('/\*\*([^*]+)\*\*/u', '<strong>$1</strong>', $line);
+                $items[] = '• ' . $html;
+            }
+            if ($items === []) {
+                return '';
+            }
+
+            return implode("\n", $items) . '.';
+        }
+
+        /**
+         * Listado instantáneo vía WP nativo (sin RAG/Hub/LLM).
+         *
+         * @param array<string, mixed>                       $config
+         * @param array<string, mixed>                       $activity_profile
+         * @param list<array{role: string, content: string}> $history
+         */
+        private static function maybe_send_native_catalog_list_response(
+            string $project_id,
+            array $config,
+            string $user_msg,
+            string $user_msg_clean,
+            string $search_term,
+            array $activity_profile,
+            bool $skip_response_cache,
+            array $history
+        ): bool {
+            unset($skip_response_cache);
+            if ($activity_profile === [] || !class_exists('Xabia_Catalog_List', false)) {
+                return false;
+            }
+            if (self::rag_query_signals_distinct_catalog_activity($user_msg_clean)) {
+                return false;
+            }
+            if (self::query_implies_entity_utility_request($user_msg_clean)) {
+                return false;
+            }
+            if (self::query_implies_single_item_depth($user_msg_clean)) {
+                return false;
+            }
+            if (self::resolve_named_entity_from_user_message($user_msg_clean) !== '') {
+                return false;
+            }
+            if (self::resolve_entity_from_catalog_manifest($user_msg_clean, $project_id, $history) !== '') {
+                return false;
+            }
+            if (self::query_implies_availability_or_booking_intent($user_msg_clean)) {
+                return false;
+            }
+
+            $native = Xabia_Catalog_List::fetch_native_list(
+                $project_id,
+                $config,
+                $activity_profile,
+                $user_msg_clean,
+                $search_term
+            );
+            if ($native === null) {
+                return false;
+            }
+
+            $manifest = is_array($native['manifest'] ?? null) ? $native['manifest'] : [];
+            $debug = is_array($native['debug'] ?? null) ? $native['debug'] : [];
+            // Sin filas nativas: dejar pasar al RAG/Hub (no afirmar vacío aquí).
+            if ($manifest === [] || (int) ($debug['matched'] ?? 0) === 0) {
+                self::$last_rag_debug['native_catalog'] = 'empty_fallback_rag';
+                self::$last_rag_debug['native_catalog_debug'] = $debug;
+
+                return false;
+            }
+
+            $response = self::build_deterministic_catalog_list_response($manifest);
+            $response = self::format_chat_markdown_for_display((string) $response);
+            if (trim($response) === '') {
+                return false;
+            }
+
+            if (!session_id() && !headers_sent()) {
+                session_start();
+            }
+            if (!isset($_SESSION['xabia_chat_history']) || !is_array($_SESSION['xabia_chat_history'])) {
+                $_SESSION['xabia_chat_history'] = [];
+            }
+            if (!isset($_SESSION['xabia_chat_history'][$project_id]) || !is_array($_SESSION['xabia_chat_history'][$project_id])) {
+                $_SESSION['xabia_chat_history'][$project_id] = [];
+            }
+            $_SESSION['xabia_chat_history'][$project_id][] = ['role' => 'user', 'content' => $user_msg];
+            $_SESSION['xabia_chat_history'][$project_id][] = ['role' => 'assistant', 'content' => $response];
+            $_SESSION['xabia_chat_history'][$project_id] = array_slice($_SESSION['xabia_chat_history'][$project_id], -24);
+            $_SESSION['xabia_last_response_meta'][$project_id] = [
+                'truncated'     => false,
+                'finish_reason' => 'native_catalog',
+                'response'      => $response,
+            ];
+            $_SESSION['xabia_last_search'][$project_id] = $search_term;
+            $activity_key = self::catalog_activity_session_key($search_term, $user_msg_clean);
+            $_SESSION['xabia_catalog_manifest'][$project_id] = [
+                'activity' => $activity_key,
+                'manifest' => $manifest,
+            ];
+            session_write_close();
+
+            if ($response !== '' && class_exists('Xabia_DB', false)) {
+                global $wpdb;
+                $table_logs = Xabia_DB::table('logs');
+                // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+                if ($wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $table_logs)) === $table_logs) {
+                    $wpdb->insert($table_logs, [
+                        'project_id'    => $project_id,
+                        'ente_id'       => 'global',
+                        'user_question' => $user_msg,
+                        'ai_response'   => $response,
+                        'timestamp'     => current_time('mysql'),
+                    ]);
+                }
+            }
+
+            self::digixop_report_chat_session_if_needed($project_id);
+            self::log_usage_metrics($project_id, $user_msg);
+
+            $user_turns = 0;
+            foreach ($history as $hist_row) {
+                if (is_array($hist_row) && (($hist_row['role'] ?? '') === 'user')) {
+                    $user_turns++;
+                }
+            }
+            if (class_exists('Xabia_Analytics', false)) {
+                $ch = Xabia_Analytics::detect_channel($project_id, '');
+                if ($user_turns === 0) {
+                    Xabia_Analytics::record_chat_event($project_id, [
+                        'event_type' => 'conversation_start',
+                        'source'     => $ch['source'],
+                        'qr_id'      => $ch['qr_id'],
+                        'tokens_used'=> 0,
+                    ]);
+                }
+                Xabia_Analytics::record_chat_event($project_id, [
+                    'event_type' => 'message',
+                    'source'     => $ch['source'],
+                    'qr_id'      => $ch['qr_id'],
+                    'rag_source' => 'native_wp_catalog',
+                    'rag_hit'    => true,
+                    'tokens_used'=> 0,
+                ]);
+            }
+
+            self::$last_generation_finish_reason = 'native_catalog';
+            self::$last_rag_debug['native_catalog'] = 'yes';
+            self::$last_rag_debug['native_catalog_matches'] = count($manifest);
+            self::$last_rag_debug['keyword_boost_status'] = 'native_catalog_shortcircuit';
+
+            $payload = [
+                'response'      => $response,
+                'finish_reason' => 'native_catalog',
+                'truncated'     => false,
+            ];
+            if (!empty($_POST['xabia_rag_debug']) || current_user_can('manage_options')) {
+                $payload['rag_debug'] = self::$last_rag_debug;
+            }
+
+            self::log_early_exit('native_catalog', 'ROUTE_KNOWLEDGE', $user_msg, $response);
+            self::send_chat_json_success($payload);
+
+            return true;
+        }
+
+        /**
+         * Reduce utterances largas a término canónico para embedding (extensible vía filtro; sin mapa vertical en Core).
+         */
+        private static function strip_leading_greeting_for_rag(string $text): string
+        {
+            $t = trim(wp_strip_all_tags((string) $text));
+            if ($t === '') {
+                return '';
+            }
+            $stripped = preg_replace('/^(hola|kaixo|aupa|buenas|hey|hi|hello)\s*,?\s*/iu', '', $t);
+
+            return is_string($stripped) && trim($stripped) !== '' ? trim($stripped) : $t;
+        }
+
+        private static function distill_activity_search_term(string $text): string
+        {
+            $q = mb_strtolower(trim(wp_strip_all_tags((string) self::strip_leading_greeting_for_rag($text))), 'UTF-8');
+            if ($q === '') {
+                return '';
+            }
+            // Vacío por defecto: el vertical aporta aliases con el filtro.
+            $map = apply_filters('xabia_distill_activity_search_term_map', [], $text);
+            if (!is_array($map)) {
+                $map = [];
+            }
+            foreach ($map as $needle => $canonical) {
+                if ($needle === '' || $canonical === '') {
+                    continue;
+                }
+                if (mb_strpos($q, (string) $needle) !== false) {
+                    return (string) $canonical;
+                }
+            }
+
+            return '';
+        }
+
+        /**
+         * @param string $user_msg_clean  Mensaje actual ya recortado (sin HTML).
+         * @param string $last_search     Valor previo de xabia_last_search (turno anterior).
+         */
+        /**
+         * Señales léxicas de actividad distinta (p. ej. hípica) para no reusar last_search de otro vertical.
+         */
+        private static function rag_query_signals_distinct_catalog_activity(string $msg): bool
+        {
+            $t = mb_strtolower(trim(wp_strip_all_tags((string) $msg)), 'UTF-8');
+            if ($t === '') {
+                return false;
+            }
+
+            return (bool) preg_match(
+                '/\b(h[ií]pica|caballos?|equitaci[oó]n|montar\s+a\s+caballo|montar\s+caballo|paseo[s]?\s+a\s+caballo|rutas?\s+a\s+caballo|centro[s]?\s+h[ií]pic)\b/u',
+                $t
+            );
+        }
+
+        private static function augment_rag_search_term(string $user_msg_clean, string $last_search): string
+        {
+            $user_msg_clean = trim($user_msg_clean);
+            $last_search = trim(wp_strip_all_tags((string) $last_search));
+            if ($last_search === '') {
+                $seed = self::distill_activity_search_term($user_msg_clean);
+
+                return $seed !== '' ? $seed : ($user_msg_clean !== '' ? $user_msg_clean : '');
+            }
+            if ($user_msg_clean === '') {
+                $seed = self::distill_activity_search_term($last_search);
+
+                return $seed !== '' ? $seed : $last_search;
+            }
+            if (self::query_implies_entity_utility_request($user_msg_clean)
+                && !self::resolve_named_entity_from_user_message($user_msg_clean)
+                && !self::query_implies_entity_utility_request($last_search)) {
+                return self::sanitize_rag_search_term($last_search);
+            }
+            if ($last_search !== '' && self::rag_query_signals_distinct_catalog_activity($user_msg_clean)) {
+                $merged = trim($user_msg_clean . ' ' . $last_search);
+                $from_merged = self::distill_activity_search_term($merged);
+                if ($from_merged !== '') {
+                    return self::sanitize_rag_search_term($from_merged);
+                }
+                $only_user = self::distill_activity_search_term($user_msg_clean);
+                if ($only_user !== '') {
+                    return self::sanitize_rag_search_term($only_user);
+                }
+                $pivot_early = trim((string) preg_replace('/^(y|and)\s+/iu', '', $user_msg_clean));
+                if ($pivot_early !== '') {
+                    $from_pivot = self::distill_activity_search_term($pivot_early);
+                    if ($from_pivot !== '') {
+                        return self::sanitize_rag_search_term($from_pivot);
+                    }
+                }
+
+                return self::sanitize_rag_search_term($user_msg_clean);
+            }
+            if (!self::is_rag_topic_followup_utterance($user_msg_clean)) {
+                $seed = self::distill_activity_search_term($user_msg_clean);
+                if ($seed !== '' && mb_strlen($user_msg_clean, 'UTF-8') > mb_strlen($seed, 'UTF-8') + 6) {
+                    return $seed;
+                }
+
+                return $user_msg_clean;
+            }
+            // «y actividades a caballo» → nuevo pivote temático, no «hacéis hípica + …» (rompe embedding y dispara LIKE local).
+            $pivot = trim((string) preg_replace('/^(y|and)\s+/iu', '', $user_msg_clean));
+            if ($pivot !== '' && $pivot !== $user_msg_clean) {
+                $seed = self::distill_activity_search_term($pivot);
+
+                return $seed !== '' ? $seed : $pivot;
+            }
+            $seed = self::distill_activity_search_term($user_msg_clean);
+            if ($seed !== '') {
+                return $seed;
+            }
+            if (mb_stripos($last_search, $user_msg_clean) !== false) {
+                return self::sanitize_rag_search_term($last_search);
+            }
+
+            // Nunca concatenar utterances: un solo término destilado (evita LIKE multi-palabra en WP).
+            $fallback = self::distill_activity_search_term($user_msg_clean);
+            if ($fallback !== '') {
+                return self::sanitize_rag_search_term($fallback);
+            }
+
+            return self::sanitize_rag_search_term($last_search !== '' ? $last_search : $user_msg_clean);
+        }
+
+        /**
+         * Tras un embedding de consulta (RAG vector), suma tokens al mismo informe de sesión que el chat.
+         *
+         * @param array<string, mixed> $config
+         */
+        private static function digixop_absorb_query_embedding_usage(string $project_id, array $config): void {
+            if (!class_exists('Xabia_Digixop_Client') || !Xabia_Digixop_Client::should_use_openai_proxy($project_id, $config)) {
+                return;
+            }
+            $t = Xabia_Digixop_Client::get_last_embedding_total_tokens();
+            if ($t === null || $t < 1) {
+                return;
+            }
+            self::$digixop_session_proxy_used = true;
+            self::$digixop_session_usage['total'] += $t;
+        }
+
+        /**
+         * @param array<string, mixed> $config Config del proyecto (claves locales / driver).
+         */
+        private static function call_openai($messages, $max_tokens, $model, $temperature, $project_id = '', $config = []) {
+            $r = self::openai_chat_request($messages, (int) $max_tokens, (string) $model, (float) $temperature, (string) $project_id, is_array($config) ? $config : [], null);
+            if (!empty($r['insufficient'])) {
+                return Xabia_Digixop_Client::get_insufficient_balance_user_message();
+            }
+            if (!empty($r['error'])) {
+                return (string) $r['error'];
+            }
+            if (!empty($r['tool_calls'])) {
+                return 'Error de respuesta (tool_calls inesperadas).';
+            }
+            if (($r['content'] ?? null) === null) {
+                return 'Error de respuesta.';
+            }
+
+            return (string) $r['content'];
+        }
+
+        /**
+         * Si el REST ya abrió el stream, la salida sigue en SSE. Si no, JSON.
+         *
+         * @param array<string, mixed> $data
+         */
+        private static function send_chat_json_success(array $data): void {
+            if (class_exists('Xabia_Chat_Stream', false) && (Xabia_Chat_Stream::is_open() || Xabia_Chat_Stream::is_primed())) {
+                Xabia_Chat_Stream::complete($data);
+            }
+            wp_send_json_success($data);
+        }
+
+        /**
+         * @param array<string, mixed> $data
+         */
+        private static function send_chat_json_error(array $data): void {
+            if (class_exists('Xabia_Chat_Stream', false) && (Xabia_Chat_Stream::is_open() || Xabia_Chat_Stream::is_primed())) {
+                $message = isset($data['message']) ? (string) $data['message'] : 'Error';
+                Xabia_Chat_Stream::fail($message);
+            }
+            wp_send_json_error($data);
+        }
+
+        /**
+         * @param array<string, mixed> $data
+         */
+        private static function deliver_chat_success(array $data): void {
+            self::send_chat_json_success($data);
+        }
+
+        /**
+         * @param array<string, mixed> $result
+         */
+        private static function remember_stream_metrics(string $model, array $result, bool $via_proxy): void {
+            $finish = strtolower(trim((string) ($result['finish_reason'] ?? '')));
+            self::$last_generation_finish_reason = $finish;
+            $usage = is_array($result['usage'] ?? null) ? $result['usage'] : [];
+            $pt = (int) ($usage['prompt_tokens'] ?? 0);
+            $ct = (int) ($usage['completion_tokens'] ?? 0);
+            if ($ct < 1) {
+                $ct = (int) max(1, floor(strlen((string) ($result['text'] ?? '')) / 4));
+            }
+            if ($pt < 1) {
+                $pt = 1;
+            }
+            $usage['prompt_tokens'] = $pt;
+            $usage['completion_tokens'] = $ct;
+            self::digixop_note_chat_usage($usage, $via_proxy);
+            self::$last_generation_metrics = [
+                'prompt_tokens'     => $pt,
+                'completion_tokens' => $ct,
+                'model'             => $model,
+                'estimated_cost'    => self::estimate_cost_usd($model, $pt, $ct),
+            ];
+        }
+
+        /**
+         * null: Vertex no abrió stream y hay que usar generateContent.
+         *
+         * @param array<int, array<string, mixed>> $messages
+         * @param array<string, mixed> $config
+         */
+        private static function try_stream_vertex(array $messages, $max_tokens, array $config, float $temperature): ?string {
+            if (!class_exists('Xabia_Llm_Stream', false) || !class_exists('Xabia_Chat_Stream', false)) {
+                return null;
+            }
+            $auth = self::get_google_vertex_auth($config);
+            if ($auth === null) {
+                return null;
+            }
+            $max_tokens = self::chat_max_tokens($max_tokens);
+            $model_id = self::resolve_chat_model($config);
+            if (strpos($model_id, 'gemini-') !== 0) {
+                $model_id = self::VERTEX_LOCAL_CHAT_MODEL;
+            }
+            $url = "https://{$auth['location']}-aiplatform.googleapis.com/v1/projects/{$auth['project_id']}/locations/{$auth['location']}/publishers/google/models/{$model_id}:streamGenerateContent?alt=sse";
+            $payload = self::vertex_build_gemini_body_from_openai_messages($messages, $config, [
+                'temperature'     => (float) $temperature,
+                'maxOutputTokens' => (int) $max_tokens,
+                'candidateCount'  => 1,
+            ]);
+            if (empty($payload['contents']) || !is_array($payload['contents'])) {
+                return null;
+            }
+            $body = wp_json_encode($payload);
+            if (!is_string($body)) {
+                return null;
+            }
+            $result = Xabia_Llm_Stream::post($url, [
+                'Authorization' => 'Bearer ' . $auth['access_token'],
+                'Content-Type'  => 'application/json',
+                'Accept'        => 'text/event-stream',
+            ], $body, 'vertex', static function (string $delta): void {
+                Xabia_Chat_Stream::delta($delta);
+            });
+            if (!empty($result['streamed'])) {
+                self::remember_stream_metrics($model_id, $result, false);
+
+                return (string) $result['text'];
+            }
+            $json = is_array($result['json'] ?? null) ? $result['json'] : null;
+            if (is_array($json) && isset($json['error']['message'])) {
+                $code = $json['error']['code'] ?? ($result['http_code'] ?? 0);
+
+                return 'Error Google (' . $code . '): ' . (string) $json['error']['message'];
+            }
+            $buffered = self::vertex_text_from_stream_json($json);
+            if ($buffered !== '') {
+                $result['text'] = $buffered;
+                self::remember_stream_metrics($model_id, $result, false);
+
+                return $buffered;
+            }
+
+            return null;
+        }
+
+        /**
+         * @param array<string, mixed>|null $json
+         */
+        private static function vertex_text_from_stream_json(?array $json): string {
+            if ($json === null) {
+                return '';
+            }
+            if (isset($json['candidates'])) {
+                return self::vertex_extract_text_from_candidate($json);
+            }
+            $text = '';
+            foreach ($json as $item) {
+                if (is_array($item)) {
+                    $text .= self::vertex_extract_text_from_candidate($item);
+                }
+            }
+
+            return $text;
+        }
+
+        /**
+         * null: el proxy o OpenAI no abrieron stream y hay que repetir sin stream.
+         *
+         * @param array<int, array<string, mixed>> $messages
+         * @param array<string, mixed> $config
+         */
+        private static function try_stream_openai(array $messages, $max_tokens, string $model, float $temperature, string $project_id, array $config): ?string {
+            if (!class_exists('Xabia_Llm_Stream', false) || !class_exists('Xabia_Chat_Stream', false) || !class_exists('Xabia_Digixop_Client', false)) {
+                return null;
+            }
+            $max_tokens = self::chat_max_tokens($max_tokens);
+            $token_limits = self::openai_chat_token_limit_fields($max_tokens);
+            $payload = [
+                'model'                 => $model,
+                'messages'              => $messages,
+                'temperature'           => $temperature,
+                'max_tokens'            => $token_limits['max_tokens'],
+                'max_completion_tokens' => $token_limits['max_completion_tokens'],
+                'stream'                => true,
+                'user'                  => 'xabia_user_' . get_current_user_id(),
+            ];
+            $ul = isset($config['_xabia_proxy_user_lang']) ? (string) $config['_xabia_proxy_user_lang'] : '';
+            if ($ul !== '') {
+                $payload['user_lang'] = $ul;
+            }
+            $via_proxy = Xabia_Digixop_Client::should_use_openai_proxy($project_id, $config);
+            if ($via_proxy) {
+                $payload = apply_filters('xabia_digixop_proxy_payload', $payload, $project_id, $config, $messages);
+                if (!is_array($payload)) {
+                    return null;
+                }
+                $payload['stream'] = true;
+                $req = Xabia_Digixop_Client::proxy_openai_http_request($payload, $project_id, $config);
+                $headers = $req['headers'];
+                $headers['Accept'] = 'text/event-stream';
+                $headers['Stream'] = '1';
+                $headers['X-Xabia-Stream'] = '1';
+                $url = $req['url'];
+                $body = $req['body'];
+            } else {
+                $api_key = Xabia_Digixop_Client::get_effective_openai_key($project_id, $config);
+                if ($api_key === '') {
+                    return null;
+                }
+                if (preg_match('/^(o1|o3|o4|gpt-5)/i', $model)) {
+                    unset($payload['max_tokens']);
+                } else {
+                    unset($payload['max_completion_tokens']);
+                }
+                $body = wp_json_encode($payload);
+                if (!is_string($body)) {
+                    return null;
+                }
+                $url = 'https://api.openai.com/v1/chat/completions';
+                $headers = [
+                    'Authorization' => 'Bearer ' . $api_key,
+                    'Content-Type'  => 'application/json',
+                    'Accept'        => 'text/event-stream',
+                ];
+            }
+            $result = Xabia_Llm_Stream::post($url, $headers, $body, 'openai', static function (string $delta): void {
+                Xabia_Chat_Stream::delta($delta);
+            });
+            if (!empty($result['streamed'])) {
+                self::remember_stream_metrics($model, $result, $via_proxy);
+
+                return (string) $result['text'];
+            }
+            $json = is_array($result['json'] ?? null) ? $result['json'] : null;
+            if (is_array($json) && Xabia_Digixop_Client::is_insufficient_proxy_response([
+                'code' => (int) ($result['http_code'] ?? 0),
+                'body' => $json,
+            ])) {
+                Xabia_Digixop_Client::mark_insufficient_balance();
+
+                return Xabia_Digixop_Client::get_insufficient_balance_user_message();
+            }
+            if (is_array($json) && isset($json['error']['message'])) {
+                $prefix = $via_proxy ? 'Error API (proxy): ' : 'Error API: ';
+
+                return $prefix . (string) $json['error']['message'];
+            }
+            $parsed = self::parse_chat_completion_response_full($json);
+            if ($parsed !== null && ($parsed['content'] ?? null) !== null) {
+                $result['text'] = (string) $parsed['content'];
+                $result['finish_reason'] = (string) ($parsed['finish_reason'] ?? '');
+                $result['usage'] = is_array($parsed['usage'] ?? null) ? $parsed['usage'] : [];
+                self::remember_stream_metrics($model, $result, $via_proxy);
+
+                return (string) $parsed['content'];
+            }
+
+            return null;
+        }
+
+        /**
+         * Resuelve la ruta del JSON de Google Cloud: proyecto tiene prioridad; si está vacía, usa la global.
+         */
+        private static function resolve_gcloud_json_path($config) {
+            $path = $config['gcloud_json_path'] ?? '';
+            if ($path !== '' && $path !== null) return $path;
+            return (string) get_option('xabia_gcloud_json_path', '');
+        }
+
+        /**
+         * MOTOR 2: GOOGLE CLOUD VERTEX AI (Gemini 2.5 Flash vía {@see self::VERTEX_LOCAL_CHAT_MODEL}).
+         * Sin herramientas: systemInstruction + contents (roles user/model) para prefijo cacheable.
+         * Con nodos federados: generateContent con functionDeclarations (ask_federated_node) y bucle functionCall → functionResponse.
+         *
+         * @param array  $messages
+         * @param int    $max_tokens
+         * @param array  $config
+         * @param float  $temperature
+         * @param string $wp_project_id ID del proyecto WordPress (ask_federated_node).
+         * @param bool   $enable_vertex_federation_tools Activar bucle de herramientas solo si hay nodos amigos.
+         */
+        private static function call_google_vertex($messages, $max_tokens, $config, $temperature, $wp_project_id = '', $enable_vertex_federation_tools = false) {
+            self::$last_generation_finish_reason = '';
+            $max_tokens = self::chat_max_tokens($max_tokens);
+            if ($enable_vertex_federation_tools && self::merged_chat_tools((string) $wp_project_id) !== []) {
+                return self::call_google_vertex_federation_tool_loop($messages, (int) $max_tokens, $config, (float) $temperature, (string) $wp_project_id);
+            }
+
+            $json_path = self::resolve_gcloud_json_path($config);
+
+            
+            if (empty($json_path) || !file_exists($json_path)) {
+                return "Error Config: No encuentro el archivo JSON en: " . $json_path;
+            }
+
+            
+            $engine_root = dirname(dirname($json_path));
+            $vendor_path = $engine_root . '/vendor/autoload.php';
+
+            if (!file_exists($vendor_path)) {
+                $plugin_vendor = plugin_dir_path(dirname(dirname(__FILE__))) . 'vendor/autoload.php';
+                if(file_exists($plugin_vendor)) {
+                    $vendor_path = $plugin_vendor;
+                } else {
+                    return "Error Crítico: No encuentro las librerías de Google (vendor/autoload.php).";
+                }
+            }
+            
+            require_once $vendor_path;
+            putenv('GOOGLE_APPLICATION_CREDENTIALS=' . $json_path);
+
+            try {
+                $content_json = file_get_contents($json_path);
+                $project_data = json_decode($content_json, true);
+                
+                if (!isset($project_data['project_id'])) return "Error: JSON inválido.";
+                
+                $project_id = $project_data['project_id'];
+                
+                $location = self::VERTEX_LOCAL_LOCATION;
+
+                if (!class_exists('Google\Auth\Credentials\ServiceAccountCredentials')) return "Error: Librería Google Auth no cargada.";
+                
+                $creds = new \Google\Auth\Credentials\ServiceAccountCredentials('https://www.googleapis.com/auth/cloud-platform', $json_path);
+                $token_data = $creds->fetchAuthToken();
+                $access_token = $token_data['access_token'] ?? '';
+
+                if(empty($access_token)) return "Error: Autenticación fallida.";
+
+                $model_id = self::resolve_chat_model(is_array($config) ? $config : []);
+                if (strpos($model_id, 'gemini-') !== 0) {
+                    $model_id = self::VERTEX_LOCAL_CHAT_MODEL;
+                }
+                $url = "https://{$location}-aiplatform.googleapis.com/v1/projects/{$project_id}/locations/{$location}/publishers/google/models/{$model_id}:generateContent";
+
+                // systemInstruction + contents (roles user/model): prefijo estable cacheable por Vertex.
+                $generation_config = [
+                    'temperature'     => (float) $temperature,
+                    'maxOutputTokens' => (int) $max_tokens,
+                    'candidateCount'  => 1,
+                ];
+                $payload = self::vertex_build_gemini_body_from_openai_messages(
+                    is_array($messages) ? $messages : [],
+                    is_array($config) ? $config : [],
+                    $generation_config
+                );
+                if (empty($payload['contents']) || !is_array($payload['contents'])) {
+                    return 'Error: no hay contenido de usuario para Vertex.';
+                }
+                $body = wp_json_encode($payload);
+                if ($body === false) return "Error: no se pudo preparar la petición a la IA (encoding).";
+
+                $response = wp_remote_post($url, [
+                    'headers' => [
+                        'Authorization' => 'Bearer ' . $access_token,
+                        'Content-Type' => 'application/json'
+                    ],
+                    'body' => $body,
+                    'timeout' => 45
+                ]);
+
+                if (is_wp_error($response)) return "Error Conexión: " . $response->get_error_message();
+
+                $raw_body = wp_remote_retrieve_body($response);
+                $data = json_decode($raw_body, true);
+                
+                if (isset($data['candidates'][0]['content']['parts'][0]['text'])) {
+                    $textOut = self::vertex_extract_text_from_candidate(is_array($data) ? $data : []);
+                    if ($textOut === '') {
+                        $textOut = (string) $data['candidates'][0]['content']['parts'][0]['text'];
+                    }
+                    self::$last_generation_finish_reason = strtolower(trim((string) ($data['candidates'][0]['finishReason'] ?? '')));
+                    $usage = is_array($data['usageMetadata'] ?? null) ? $data['usageMetadata'] : [];
+                    $promptTokensApprox = (int) ($usage['promptTokenCount'] ?? 0);
+                    $completionTokensApprox = (int) ($usage['candidatesTokenCount'] ?? 0);
+                    if ($promptTokensApprox < 1) {
+                        $promptTokensApprox = (int) max(1, floor(strlen($body) / 4));
+                    }
+                    if ($completionTokensApprox < 1) {
+                        $completionTokensApprox = (int) max(1, floor(strlen($textOut) / 4));
+                    }
+                    self::$last_generation_metrics = [
+                        'prompt_tokens' => $promptTokensApprox,
+                        'completion_tokens' => $completionTokensApprox,
+                        'model' => $model_id,
+                        'estimated_cost' => self::estimate_cost_usd('flash', $promptTokensApprox, $completionTokensApprox),
+                    ];
+                    return $textOut;
+                } elseif (isset($data['error'])) {
+                    return "Error Google ({$data['error']['code']}): " . $data['error']['message'];
+                } else {
+                    return "Respuesta vacía. Raw: " . substr($raw_body, 0, 150);
+                }
+
+            } catch (Exception $e) { 
+                return "Excepción PHP: " . $e->getMessage(); 
+            }
+        }
+
+        /**
+         * Convierte tools OpenAI (type function) a functionDeclarations de Vertex.
+         *
+         * @param array<int, array<string, mixed>> $tools
+         * @return array<int, array<string, mixed>>
+         */
+        private static function vertex_openai_tools_to_declarations($tools) {
+            $declarations = [];
+            if (!is_array($tools)) {
+                return $declarations;
+            }
+            foreach ($tools as $tool) {
+                if (!is_array($tool) || ($tool['type'] ?? '') !== 'function') {
+                    continue;
+                }
+                $fn = $tool['function'] ?? null;
+                if (!is_array($fn)) {
+                    continue;
+                }
+                $name = isset($fn['name']) ? (string) $fn['name'] : '';
+                if ($name === '') {
+                    continue;
+                }
+                $desc = isset($fn['description']) ? (string) $fn['description'] : '';
+                $params = $fn['parameters'] ?? null;
+                if (!is_array($params)) {
+                    $params = ['type' => 'object', 'properties' => []];
+                }
+                $declarations[] = [
+                    'name'        => $name,
+                    'description' => $desc,
+                    'parameters'  => $params,
+                ];
+            }
+            return $declarations;
+        }
+
+        /**
+         * @param array<int, array<string, mixed>> $messages
+         * @return array<string, mixed>
+         */
+        private static function vertex_build_gemini_body_from_openai_messages(array $messages, array $config, array $generation_config) {
+            $system_parts = [];
+            $system_parts[] = [
+                'text' => self::xabia_polyglot_language_rule($config['_xabia_proxy_user_lang'] ?? null)
+                    . (class_exists('Xabia_Voice', false) ? "\n\n" . Xabia_Voice::spoken_format_directive() : ''),
+            ];
+
+            $contents = [];
+            foreach ($messages as $msg) {
+                if (!is_array($msg)) {
+                    continue;
+                }
+                $role = $msg['role'] ?? '';
+                $text = isset($msg['content']) ? (string) $msg['content'] : '';
+                if (function_exists('mb_convert_encoding')) {
+                    $text = mb_convert_encoding($text, 'UTF-8', 'UTF-8');
+                }
+                if ($role === 'system') {
+                    if ($text !== '') {
+                        $system_parts[] = ['text' => $text];
+                    }
+                    continue;
+                }
+                if ($role === 'user' || $role === 'assistant') {
+                    $gem_role = $role === 'assistant' ? 'model' : 'user';
+                    if ($text === '') {
+                        continue;
+                    }
+                    $contents[] = [
+                        'role'  => $gem_role,
+                        'parts' => [['text' => $text]],
+                    ];
+                }
+            }
+
+            $out = [
+                'contents'         => $contents,
+                'generationConfig' => $generation_config,
+            ];
+            if ($system_parts !== []) {
+                $out['systemInstruction'] = ['parts' => $system_parts];
+            }
+            return $out;
+        }
+
+        /**
+         * @param array<string, mixed> $data
+         * @return array<int, array{name: string, args: array<string, mixed>}>
+         */
+        private static function vertex_extract_function_calls(array $data) {
+            $calls = [];
+            $parts = $data['candidates'][0]['content']['parts'] ?? null;
+            if (!is_array($parts)) {
+                return $calls;
+            }
+            foreach ($parts as $part) {
+                if (!is_array($part) || !isset($part['functionCall']) || !is_array($part['functionCall'])) {
+                    continue;
+                }
+                $fc = $part['functionCall'];
+                $name = isset($fc['name']) ? (string) $fc['name'] : '';
+                if ($name === '') {
+                    continue;
+                }
+                $args = $fc['args'] ?? [];
+                if (!is_array($args)) {
+                    $args = [];
+                }
+                $calls[] = ['name' => $name, 'args' => $args];
+            }
+            return $calls;
+        }
+
+        /**
+         * @param array<string, mixed> $data
+         */
+        private static function vertex_extract_text_from_candidate(array $data) {
+            $parts = $data['candidates'][0]['content']['parts'] ?? null;
+            if (!is_array($parts)) {
+                return '';
+            }
+            $buf = '';
+            foreach ($parts as $part) {
+                if (is_array($part) && isset($part['text'])) {
+                    $buf .= (string) $part['text'];
+                }
+            }
+            return $buf;
+        }
+
+        /**
+         * Bucle Vertex: functionCall → xabia_federation_ask_node → functionResponse → siguiente generateContent.
+         *
+         * @param array<int, array<string, mixed>> $messages
+         */
+        private static function call_google_vertex_federation_tool_loop(array $messages, int $max_tokens, array $config, float $temperature, string $wp_project_id) {
+            self::$last_generation_finish_reason = '';
+            $max_tokens = self::chat_max_tokens($max_tokens);
+            $auth = self::get_google_vertex_auth($config);
+            if ($auth === null) {
+                return 'Error: credenciales Vertex no disponibles (JSON o vendor).';
+            }
+
+            $msgs = array_values($messages);
+            $conscious = class_exists('Xabia_Federation_Nexus', false) ? Xabia_Federation_Nexus::federation_vertex_consciousness_block() : '';
+            $instr = self::chat_tool_instruction_block($wp_project_id);
+            $extra = [];
+            if ($conscious !== '') {
+                $extra[] = $conscious;
+            }
+            if ($instr !== '') {
+                $extra[] = $instr;
+            }
+            $extra_s = implode("\n\n", array_filter($extra, 'strlen'));
+            if ($extra_s !== '') {
+                $system_i = null;
+                foreach ($msgs as $i => $m) {
+                    if (is_array($m) && (($m['role'] ?? '') === 'system')) {
+                        $system_i = $i;
+                        break;
+                    }
+                }
+                if ($system_i !== null) {
+                    $msgs[$system_i]['content'] = trim((string) ($msgs[$system_i]['content'] ?? '')) . "\n\n" . $extra_s;
+                } else {
+                    array_unshift($msgs, ['role' => 'system', 'content' => $extra_s]);
+                }
+            }
+
+            $model = self::resolve_chat_model(is_array($config) ? $config : []);
+            if (strpos($model, 'gemini-') !== 0) {
+                $model = self::VERTEX_LOCAL_CHAT_MODEL;
+            }
+            $url = "https://{$auth['location']}-aiplatform.googleapis.com/v1/projects/{$auth['project_id']}/locations/{$auth['location']}/publishers/google/models/{$model}:generateContent";
+
+            $tools_ai = self::merged_chat_tools($wp_project_id);
+            $decls = self::vertex_openai_tools_to_declarations($tools_ai);
+            $tool_block = [];
+            if ($decls !== []) {
+                $tool_block['tools'] = [['functionDeclarations' => $decls]];
+                $tool_block['toolConfig'] = ['functionCallingConfig' => ['mode' => 'AUTO']];
+            }
+
+            $generation_config = [
+                'temperature'     => (float) $temperature,
+                'maxOutputTokens' => $max_tokens,
+                'candidateCount'  => 1,
+            ];
+
+            $body = self::vertex_build_gemini_body_from_openai_messages($msgs, $config, $generation_config);
+            $body = array_merge($body, $tool_block);
+
+            for ($step = 0; $step < 3; $step++) {
+                $json_body = wp_json_encode($body, JSON_UNESCAPED_UNICODE);
+                if ($json_body === false) {
+                    return 'Error al codificar el cuerpo de la petición Vertex.';
+                }
+
+                $response = wp_remote_post($url, [
+                    'headers' => [
+                        'Authorization' => 'Bearer ' . $auth['access_token'],
+                        'Content-Type'  => 'application/json',
+                    ],
+                    'body'    => $json_body,
+                    'timeout' => 90,
+                ]);
+
+                if (is_wp_error($response)) {
+                    return 'Error de conexión con Google Vertex: ' . $response->get_error_message();
+                }
+
+                $code = wp_remote_retrieve_response_code($response);
+                $raw_body = wp_remote_retrieve_body($response);
+
+                if ($code !== 200) {
+                    $err = json_decode($raw_body, true);
+                    $msg = is_array($err) && isset($err['error']['message']) ? (string) $err['error']['message'] : $raw_body;
+                    return 'Error Google Vertex (' . (string) $code . '): ' . $msg;
+                }
+
+                $data = json_decode($raw_body, true);
+                if (!is_array($data)) {
+                    return 'Respuesta JSON inválida de Vertex.';
+                }
+                if (isset($data['error']['message'])) {
+                    return 'Error Google Vertex: ' . (string) $data['error']['message'];
+                }
+
+                $calls = self::vertex_extract_function_calls($data);
+                $text_out = self::vertex_extract_text_from_candidate($data);
+                self::$last_generation_finish_reason = strtolower(trim((string) ($data['candidates'][0]['finishReason'] ?? '')));
+
+                if ($calls === []) {
+                    return $text_out !== '' ? $text_out : __('Sin respuesta del modelo.', 'xabia-intelligence');
+                }
+
+                $cand0 = $data['candidates'][0] ?? null;
+                if (!is_array($cand0) || empty($cand0['content']['parts']) || !is_array($cand0['content']['parts'])) {
+                    return $text_out !== '' ? $text_out : __('Respuesta incompleta de Vertex.', 'xabia-intelligence');
+                }
+
+                $body['contents'][] = [
+                    'role'  => 'model',
+                    'parts' => $cand0['content']['parts'],
+                ];
+
+                $fr_parts = [];
+                foreach ($calls as $fc) {
+                    $name = $fc['name'];
+                    $args = $fc['args'];
+                    $tool_text = self::dispatch_chat_tool($name, is_array($args) ? $args : [], $wp_project_id, $config);
+                    $fr_parts[] = [
+                        'functionResponse' => [
+                            'name'     => $name,
+                            'response' => ['result' => $tool_text],
+                        ],
+                    ];
+                }
+                if ($fr_parts !== []) {
+                    $body['contents'][] = [
+                        'role'  => 'user',
+                        'parts' => $fr_parts,
+                    ];
+                }
+            }
+
+            return __('Demasiadas rondas de herramientas (Vertex).', 'xabia-intelligence');
+        }
+
+        /**
+         * Devuelve access_token, project_id y location para Vertex (reutilizable para chat y embeddings).
+         * @return array{access_token: string, project_id: string, location: string}|null
+         */
+        private static function get_google_vertex_auth($config) {
+            $json_path = self::resolve_gcloud_json_path($config);
+            if (empty($json_path) || !file_exists($json_path)) {
+                return null;
+            }
+
+            $transient_key = 'xabia_vertex_auth_' . md5($json_path);
+            $cached = get_transient($transient_key);
+            if (is_array($cached) && !empty($cached['access_token']) && !empty($cached['project_id'])) {
+                return [
+                    'access_token' => (string) $cached['access_token'],
+                    'project_id'   => (string) $cached['project_id'],
+                    'location'     => (string) ($cached['location'] ?? self::VERTEX_LOCAL_LOCATION),
+                ];
+            }
+
+            $engine_root = dirname(dirname($json_path));
+            $vendor_path = $engine_root . '/vendor/autoload.php';
+            if (!file_exists($vendor_path)) {
+                $plugin_vendor = plugin_dir_path(dirname(dirname(__FILE__))) . 'vendor/autoload.php';
+                if (file_exists($plugin_vendor)) {
+                    $vendor_path = $plugin_vendor;
+                } else {
+                    return null;
+                }
+            }
+            require_once $vendor_path;
+            putenv('GOOGLE_APPLICATION_CREDENTIALS=' . $json_path);
+            $content = file_get_contents($json_path);
+            $project_data = json_decode($content, true);
+            if (!isset($project_data['project_id'])) {
+                return null;
+            }
+            if (!class_exists('Google\Auth\Credentials\ServiceAccountCredentials')) {
+                return null;
+            }
+            $creds = new \Google\Auth\Credentials\ServiceAccountCredentials('https://www.googleapis.com/auth/cloud-platform', $json_path);
+            $token_data = $creds->fetchAuthToken();
+            $access_token = $token_data['access_token'] ?? '';
+            if (empty($access_token)) {
+                return null;
+            }
+            $auth_data = [
+                'access_token' => $access_token,
+                'project_id'   => $project_data['project_id'],
+                'location'     => self::VERTEX_LOCAL_LOCATION,
+            ];
+            // Tokens GCP ~3600s; refrescar con margen.
+            $expires_in = isset($token_data['expires_in']) ? (int) $token_data['expires_in'] : 3600;
+            $ttl = max(60, min(3000, $expires_in - 600));
+            set_transient($transient_key, $auth_data, $ttl);
+
+            return $auth_data;
+        }
+
+        /**
+         * Embedding con Vertex AI (gemini-embedding-001). Mismo proveedor que el chat cuando ai_driver es google_cloud.
+         * @return array|null Vector de floats o null si falla.
+         */
+        private static function get_vertex_embedding($text, $config) {
+            if (class_exists('Xabia_Knowledge_Text', false)) {
+                $text = Xabia_Knowledge_Text::embedding_input((string) $text);
+            } else {
+                $text = trim(strip_tags((string) $text));
+            }
+            if ($text === '') return null;
+            $auth = self::get_google_vertex_auth($config);
+            if ($auth === null) return null;
+            $url = "https://{$auth['location']}-aiplatform.googleapis.com/v1/projects/{$auth['project_id']}/locations/{$auth['location']}/publishers/google/models/" . self::VERTEX_EMBEDDING_MODEL . ':predict';
+            $body = json_encode([
+                'instances' => [['content' => $text]],
+            ]);
+            if ($body === false) return null;
+            $response = wp_remote_post($url, [
+                'headers' => [
+                    'Authorization' => 'Bearer ' . $auth['access_token'],
+                    'Content-Type'  => 'application/json',
+                ],
+                'body'    => $body,
+                'timeout' => 20,
+            ]);
+            if (is_wp_error($response)) return null;
+            $data = json_decode(wp_remote_retrieve_body($response), true);
+            if (isset($data['predictions'][0]['embeddings']['values'])) {
+                return $data['predictions'][0]['embeddings']['values'];
+            }
+            if (isset($data['predictions'][0]['embeddings'])) {
+                $emb = $data['predictions'][0]['embeddings'];
+                return isset($emb['values']) ? $emb['values'] : (is_array($emb) ? array_values($emb) : null);
+            }
+            return null;
+        }
+
+        /**
+         * Embedding según ai_driver del proyecto: Google Vertex o OpenAI.
+         * Usado por la API en búsqueda vectorial y por Admin en entrenar.
+         * @param array $config Config del proyecto (debe incluir ai_driver y, si google_cloud, gcloud_json_path).
+         * @return array|null Vector de floats o null.
+         */
+        public static function get_query_embedding($text, $config, $project_id = '') {
+            if (class_exists('Xabia_Knowledge_Text', false)) {
+                $text = Xabia_Knowledge_Text::embedding_input((string) $text);
+            } else {
+                $text = trim(strip_tags((string) $text));
+            }
+            if ($text === '') {
+                return null;
+            }
+            $model = self::resolve_embedding_model(is_array($config) ? $config : [], (string) $project_id);
+            if (class_exists('Xabia_Embedding_Cache', false)) {
+                $cached = Xabia_Embedding_Cache::get($model, $text);
+                if ($cached !== null) {
+                    return $cached;
+                }
+            }
+            $vector = null;
+            if (($config['ai_driver'] ?? '') === 'google_cloud' && class_exists('Xabia_Digixop_Client') && Xabia_Digixop_Client::should_use_local_vertex($config)) {
+                $vector = self::get_vertex_embedding($text, $config);
+            } else {
+                if (!class_exists('Xabia_Brain')) {
+                    $brain_path = plugin_dir_path(dirname(__FILE__)) . 'core/class-xabia-brain.php';
+                    if (file_exists($brain_path)) {
+                        require_once $brain_path;
+                    }
+                }
+                $vector = class_exists('Xabia_Brain') ? Xabia_Brain::get_embedding($text, $project_id) : null;
+            }
+            if (is_array($vector) && $vector !== [] && class_exists('Xabia_Embedding_Cache', false)) {
+                Xabia_Embedding_Cache::set($model, $text, $vector);
+            }
+
+            return $vector;
+        }
+
+        /**
+         * Modelo de embeddings usado en la ruta actual (clave de caché).
+         */
+        private static function resolve_query_embedding_model(array $config): string {
+            return self::resolve_embedding_model($config, '');
+        }
+
+        /**
+         * Para Admin/entrenar: obtiene el embedding según el proveedor configurado en el proyecto.
+         */
+        public static function get_embedding_for_project($text, $project_id) {
+            $projects = get_option('xabia_projects_config', []);
+            $config = $projects[$project_id] ?? [];
+            return self::get_query_embedding($text, $config, $project_id);
+        }
     }
+    Xabia_API::init();
 }

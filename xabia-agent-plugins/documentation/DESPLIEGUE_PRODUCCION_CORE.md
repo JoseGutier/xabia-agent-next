@@ -1,6 +1,6 @@
 # Despliegue completo en producción — Xabia Agent Core + Hub
 
-Checklist operativo para publicar **Xabia Agent Core v1.0.368** (lanzador, páginas del idioma original, saludo en el primer turno, assets versionados para CDN) y **Xabia Woo v1.0.24** (hasta cuatro fichas con precio, también en preguntas siguientes), junto al **Hub central** en `xabia.ai`.
+Checklist operativo para publicar **Xabia Agent Core v1.0.407** (ver también [RELEASE_NOTES_1.0.407.md](./RELEASE_NOTES_1.0.407.md)) (lanzador, páginas del idioma original, saludo en el primer turno, assets versionados para CDN) y **Xabia Woo v1.0.24** (hasta cuatro fichas con precio, también en preguntas siguientes), junto al **Hub central** en `xabia.ai`.
 
 Use este documento como **lista de verificación** antes de dar por cerrado un despliegue.
 

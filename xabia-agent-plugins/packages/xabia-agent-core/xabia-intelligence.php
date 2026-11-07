@@ -3,7 +3,7 @@
  * Plugin Name: Xabia Agent Core
  * Plugin URI: https://xabia.ai
  * Description: Agente de Inteligencia Artificial de última generación con voz, texto y acciones en la web. Perfecciona la UX mediante interacciones conversacionales inteligentes, hiperpersonalizadas y políglotas. Smart QRs integrados, addons para Woo, MEC, Amelia, etc.
- * Version: 1.0.381
+ * Version: 1.0.407
  * Author: Digixop
  * Author URI: https://digixop.com
  */
@@ -129,6 +129,7 @@ require_once XABIA_PATH . 'core/class-xabia-rag-hybrid-ranker.php';
 require_once XABIA_PATH . 'core/class-xabia-rag-query-rewriter.php';
 require_once XABIA_PATH . 'core/class-xabia-knowledge-relations.php';
 require_once XABIA_PATH . 'core/class-xabia-relation-entity-catalog.php';
+require_once XABIA_PATH . 'core/class-xabia-catalog-token-match.php';
 require_once XABIA_PATH . 'core/class-xabia-catalog-list.php';
 require_once XABIA_PATH . 'core/class-xabia-mec-public-link.php';
 require_once XABIA_PATH . 'core/class-xabia-db-bridge.php';
@@ -378,6 +379,43 @@ add_filter('xabia_router_action_response', static function ($response, $project_
     unset($project_id, $message, $config, $request);
     return $response;
 }, 1, 5);
+
+add_filter('xabia_router_action_response', static function ($response, $project_id, $message, $config, $request) {
+    if ($response !== null && (!is_string($response) || trim((string) $response) !== '')) {
+        return $response;
+    }
+    if (!class_exists('Xabia_API')) {
+        return $response;
+    }
+    $cfg = is_array($config) ? $config : [];
+    $hit = Xabia_API::match_strict_condition_for_message((string) $message, $cfg, (string) $project_id);
+    if (!is_array($hit) || ($hit['response'] ?? '') === '') {
+        return $response;
+    }
+    if (function_exists('xabia_trace')) {
+        xabia_trace('[XABIA_ROUTER_MATCH]', [
+            'project_id' => (string) $project_id,
+            'trigger'    => (string) ($hit['trigger'] ?? ''),
+            'query'      => function_exists('mb_substr') ? mb_substr((string) $message, 0, 500) : substr((string) $message, 0, 500),
+            'response'   => function_exists('mb_substr') ? mb_substr((string) $hit['response'], 0, 800) : substr((string) $hit['response'], 0, 800),
+            'via'        => 'xabia_router_action_response',
+        ]);
+    }
+
+    return Xabia_API::sanitize_chat_response_for_output((string) $hit['response']);
+}, 15, 5);
+
+add_filter('xabia_chat_response_postprocess', static function ($text, $args) {
+    unset($args);
+    if (!class_exists('Xabia_API')) {
+        return $text;
+    }
+    if (!is_string($text) || $text === '') {
+        return $text;
+    }
+
+    return Xabia_API::strip_leaked_empty_action_tags($text);
+}, 5, 2);
 
 /**
  * Respuesta del asistente que parece cortada a mitad de frase (sin punto final, etc.).

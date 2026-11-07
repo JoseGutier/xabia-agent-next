@@ -1172,6 +1172,188 @@ class Xabia_Knowledge_Ingest {
     }
 
     /**
+     * Columnas del mapeo de atributos → claves normalizadas del catálogo nativo.
+     *
+     * @param array<string, mixed> $config
+     *
+     * @return array{title: string, location: string, url: string, website_url: string, image: list<string>}
+     */
+    public static function resolve_catalog_native_semantic_columns(array $config): array {
+        $entity_meta = self::resolve_catalog_entity_meta_keys($config);
+        $title_col = trim((string) ($entity_meta['title_meta'] ?? ''));
+        if ($title_col === '') {
+            $title_col = 'post_title';
+        }
+        $location_col = trim((string) ($entity_meta['location_meta'] ?? ''));
+
+        $website_col = '';
+        $ficha_col = '';
+        $website_roles = array_map(
+            'strtolower',
+            (array) apply_filters('xabia_catalog_website_visual_roles', ['web', 'website', 'external', 'external_url'], $config)
+        );
+        $ficha_roles = array_map(
+            'strtolower',
+            (array) apply_filters('xabia_catalog_ficha_visual_roles', ['link', 'ficha', 'permalink', 'view'], $config)
+        );
+        foreach (self::catalog_attributes_mapping($config) as $attr) {
+            if (!is_array($attr)) {
+                continue;
+            }
+            $col = ltrim(trim((string) ($attr['csv_col'] ?? '')), '@');
+            if ($col === '') {
+                continue;
+            }
+            $role = strtolower(trim((string) ($attr['visual_role'] ?? '')));
+            if ($website_col === '' && $role !== '' && in_array($role, $website_roles, true)
+                && !self::catalog_column_is_post_field($col)) {
+                $website_col = $col;
+            }
+            if ($ficha_col === '' && $role !== '' && in_array($role, $ficha_roles, true)) {
+                $ficha_col = $col;
+            }
+        }
+
+        return (array) apply_filters('xabia_catalog_native_semantic_columns', [
+            'title'        => $title_col,
+            'location'     => $location_col,
+            'url'          => $ficha_col,
+            'website_url'  => $website_col,
+            'image'        => self::resolve_catalog_image_meta_keys($config),
+        ], $config);
+    }
+
+    public static function read_catalog_post_field_value(int $post_id, string $column): string {
+        $column = ltrim(trim($column), '@');
+        if ($post_id < 1 || $column === '') {
+            return '';
+        }
+        if (self::catalog_column_is_post_field($column) || strcasecmp($column, 'post_title') === 0) {
+            $field = strcasecmp($column, 'post_title') === 0 ? 'post_title' : $column;
+            if (function_exists('get_post_field')) {
+                return trim((string) get_post_field($field, $post_id));
+            }
+        }
+        if (function_exists('get_field')) {
+            $acf = get_field($column, $post_id, false);
+            if (is_string($acf) || is_numeric($acf)) {
+                return trim((string) $acf);
+            }
+        }
+        if (function_exists('get_post_meta')) {
+            $meta = get_post_meta($post_id, $column, true);
+
+            return is_string($meta) || is_numeric($meta) ? trim((string) $meta) : '';
+        }
+
+        return '';
+    }
+
+    public static function normalize_catalog_native_url(string $raw): string {
+        $raw = trim($raw);
+        if ($raw === '') {
+            return '';
+        }
+        if (preg_match('#^https?://#i', $raw)) {
+            return function_exists('esc_url_raw') ? trim((string) esc_url_raw($raw)) : $raw;
+        }
+        if (str_starts_with($raw, '//')) {
+            $raw = 'https:' . $raw;
+        }
+
+        return function_exists('esc_url_raw') ? trim((string) esc_url_raw($raw)) : $raw;
+    }
+
+    /**
+     * Entidad normalizada para catálogo nativo (solo field mapping del proyecto).
+     *
+     * @param array<string, mixed> $config
+     *
+     * @return array<string, mixed>
+     */
+    public static function map_catalog_native_entity_from_post(int $post_id, array $config, string $taxonomy = ''): array {
+        if ($post_id < 1) {
+            return [];
+        }
+        $cols = self::resolve_catalog_native_semantic_columns($config);
+        $post_title = function_exists('get_post_field') ? trim((string) get_post_field('post_title', $post_id)) : '';
+        $title = self::read_catalog_post_field_value($post_id, (string) ($cols['title'] ?? 'post_title'));
+        if ($title === '') {
+            $title = $post_title;
+        }
+        $location = trim((string) ($cols['location'] ?? '')) !== ''
+            ? self::read_catalog_post_field_value($post_id, (string) $cols['location'])
+            : '';
+        $website_url = '';
+        if (trim((string) ($cols['website_url'] ?? '')) !== '') {
+            $website_url = self::normalize_catalog_native_url(
+                self::read_catalog_post_field_value($post_id, (string) $cols['website_url'])
+            );
+        }
+        $url = '';
+        if (trim((string) ($cols['url'] ?? '')) !== '') {
+            $url = self::normalize_catalog_native_url(
+                self::read_catalog_post_field_value($post_id, (string) $cols['url'])
+            );
+        }
+        if ($url === '' && function_exists('get_permalink')) {
+            $url = self::normalize_catalog_native_url((string) get_permalink($post_id));
+        }
+        $image = '';
+        $image_cols = is_array($cols['image'] ?? null) ? $cols['image'] : [];
+        foreach ($image_cols as $image_col) {
+            $image_col = trim((string) $image_col);
+            if ($image_col === '') {
+                continue;
+            }
+            $raw = self::read_catalog_post_field_value($post_id, $image_col);
+            $image = self::resolve_media_value_to_absolute_url($raw, [
+                'project_config' => $config,
+                'sql_config'     => is_array($config['sql_config'] ?? null) ? $config['sql_config'] : [],
+            ]);
+            if ($image !== '') {
+                break;
+            }
+        }
+
+        $categoria = '';
+        $term_names = '';
+        if ($taxonomy !== '' && function_exists('wp_get_post_terms')) {
+            $terms = wp_get_post_terms($post_id, $taxonomy, ['fields' => 'all', 'suppress_filters' => false]);
+            if (!is_wp_error($terms) && is_array($terms)) {
+                $names = [];
+                foreach ($terms as $term) {
+                    if (!$term instanceof WP_Term) {
+                        continue;
+                    }
+                    $names[] = (string) $term->name;
+                    if ($categoria === '' && (int) $term->parent === 0) {
+                        $categoria = (string) $term->name;
+                    }
+                }
+                $term_names = implode(', ', $names);
+            }
+        }
+
+        return [
+            'ID'           => $post_id,
+            'title'        => $title,
+            'name'         => $title,
+            'empresa'      => $title,
+            'post_title'   => $post_title !== '' ? $post_title : $title,
+            'location'     => $location,
+            'address'      => $location,
+            'localidad'    => $location,
+            'url'          => $url,
+            'permalink'    => $url,
+            'website_url'  => $website_url,
+            'image'        => $image,
+            'categoria'    => $categoria,
+            'term_names'   => $term_names,
+        ];
+    }
+
+    /**
      * Meta keys de contacto (teléfono, email, web…) desde visual_role / etiqueta del mapeo.
      *
      * @param array<string, mixed> $config

@@ -12,7 +12,7 @@ class Xabia_Knowledge_Relations {
 
     private const MAX_TITLES = 20;
 
-    /** @var array<string, array{forward: array<int, list<string>>, reverse: array<int, list<string>>, source_pt: string, connected_pt: string, warmed: bool}> */
+    /** @var array<string, array{forward: array<int, list<string>>, reverse: array<int, list<string>>, forward_details: array<int, list<string>>, reverse_details: array<int, list<string>>, source_pt: string, connected_pt: string, warmed: bool}> */
     private static $caches = [];
 
     /**
@@ -28,14 +28,16 @@ class Xabia_Knowledge_Relations {
         $relations = self::normalize_relations_config($config['rules']['knowledge_relations'] ?? null);
         if ($relations === []) {
             self::$caches[$project_id] = [
-                'forward'         => [],
-                'reverse'         => [],
-                'source_pt'       => '',
-                'connected_pt'    => '',
-                'source_label'    => '',
-                'connected_label' => '',
-                'catalog_pt'      => sanitize_key((string) ($config['catalog_post_type'] ?? '')),
-                'warmed'          => true,
+                'forward'          => [],
+                'reverse'          => [],
+                'forward_details'  => [],
+                'reverse_details'  => [],
+                'source_pt'        => '',
+                'connected_pt'     => '',
+                'source_label'     => '',
+                'connected_label'  => '',
+                'catalog_pt'       => sanitize_key((string) ($config['catalog_post_type'] ?? '')),
+                'warmed'           => true,
             ];
 
             return;
@@ -47,6 +49,8 @@ class Xabia_Knowledge_Relations {
 
         $forward = [];
         $reverse = [];
+        $forward_details = [];
+        $reverse_details = [];
         $source_pt = '';
         $connected_pt = '';
 
@@ -59,6 +63,7 @@ class Xabia_Knowledge_Relations {
                 if ($source_id < 1 || !is_array($target_ids)) {
                     continue;
                 }
+                $target_ids = array_values(array_unique(array_map('intval', $target_ids)));
                 if (!isset($forward[$source_id])) {
                     $forward[$source_id] = [];
                 }
@@ -72,6 +77,21 @@ class Xabia_Knowledge_Relations {
                         $reverse[$tid] = [];
                     }
                     $reverse[$tid][$source_id] = true;
+                }
+                $detail_lines = self::build_related_detail_lines($target_ids, $map, $sql_config);
+                if ($detail_lines !== []) {
+                    if (!isset($forward_details[$source_id])) {
+                        $forward_details[$source_id] = [];
+                    }
+                    foreach ($detail_lines as $line) {
+                        if (in_array($line, $forward_details[$source_id], true)) {
+                            continue;
+                        }
+                        if (count($forward_details[$source_id]) >= self::MAX_TITLES) {
+                            break;
+                        }
+                        $forward_details[$source_id][] = $line;
+                    }
                 }
             }
         }
@@ -120,14 +140,16 @@ class Xabia_Knowledge_Relations {
         }
 
         self::$caches[$project_id] = [
-            'forward'         => $forward_titles,
-            'reverse'         => $reverse_titles,
-            'source_pt'       => $source_pt,
-            'connected_pt'    => $connected_pt,
-            'source_label'    => self::post_type_display_label($source_pt),
-            'connected_label' => self::post_type_display_label($connected_pt),
-            'catalog_pt'      => sanitize_key((string) ($config['catalog_post_type'] ?? '')),
-            'warmed'          => true,
+            'forward'          => $forward_titles,
+            'reverse'          => $reverse_titles,
+            'forward_details'  => $forward_details,
+            'reverse_details'  => $reverse_details,
+            'source_pt'        => $source_pt,
+            'connected_pt'     => $connected_pt,
+            'source_label'     => self::post_type_display_label($source_pt),
+            'connected_label'  => self::post_type_display_label($connected_pt),
+            'catalog_pt'       => sanitize_key((string) ($config['catalog_post_type'] ?? '')),
+            'warmed'           => true,
         ];
     }
 
@@ -189,9 +211,13 @@ class Xabia_Knowledge_Relations {
         $role = self::resolve_row_role($row, $project_config, $cache);
         $title = self::row_display_title($row);
 
-        if ($role === 'entity' || ($role === '' && !empty($cache['forward'][$post_id]))) {
+        if ($role === 'entity' || ($role === '' && (!empty($cache['forward'][$post_id]) || !empty($cache['forward_details'][$post_id])))) {
             $related = $cache['forward'][$post_id] ?? [];
-            if ($related === [] && $title === '') {
+            $related_details = $cache['forward_details'][$post_id] ?? [];
+            if ($related_details === [] && $related !== []) {
+                $related_details = self::titles_to_detail_lines($related, $connected_label);
+            }
+            if ($related_details === [] && $related === [] && $title === '') {
                 return $text_blob;
             }
 
@@ -200,13 +226,18 @@ class Xabia_Knowledge_Relations {
                 $title !== '' ? $title : __('Sin nombre', 'xabia-intelligence'),
                 $connected_label,
                 $related,
+                $related_details,
                 $text_blob
             );
         }
 
-        if ($role === 'activity' || ($role === '' && !empty($cache['reverse'][$post_id]))) {
+        if ($role === 'activity' || ($role === '' && (!empty($cache['reverse'][$post_id]) || !empty($cache['reverse_details'][$post_id])))) {
             $related = $cache['reverse'][$post_id] ?? [];
-            if ($related === [] && $title === '') {
+            $related_details = $cache['reverse_details'][$post_id] ?? [];
+            if ($related_details === [] && $related !== []) {
+                $related_details = self::titles_to_detail_lines($related, $source_label);
+            }
+            if ($related_details === [] && $related === [] && $title === '') {
                 return $text_blob;
             }
 
@@ -215,6 +246,7 @@ class Xabia_Knowledge_Relations {
                 $title !== '' ? $title : __('Sin nombre', 'xabia-intelligence'),
                 $source_label,
                 $related,
+                $related_details,
                 $text_blob
             );
         }
@@ -224,16 +256,25 @@ class Xabia_Knowledge_Relations {
 
     /**
      * @param list<string> $related_titles
+     * @param list<string> $related_details Líneas [Tipo relacionada: título | Categorías: …]
      */
     private static function format_related_chunk(
         string $self_label,
         string $self_title,
         string $related_label,
         array $related_titles,
+        array $related_details,
         string $original_blob
     ): string {
         $parts = [$self_label . ': ' . $self_title];
-        if ($related_titles !== [] && $related_label !== '') {
+        if ($related_details !== []) {
+            foreach ($related_details as $line) {
+                $line = trim((string) $line);
+                if ($line !== '') {
+                    $parts[] = $line;
+                }
+            }
+        } elseif ($related_titles !== [] && $related_label !== '') {
             $parts[] = $related_label . ': ' . implode(', ', $related_titles);
         } elseif ($related_titles !== []) {
             $parts[] = implode(', ', $related_titles);
@@ -241,6 +282,27 @@ class Xabia_Knowledge_Relations {
         $parts[] = $original_blob;
 
         return implode(' | ', $parts);
+    }
+
+    /**
+     * @param list<string> $titles
+     * @return list<string>
+     */
+    private static function titles_to_detail_lines(array $titles, string $type_label): array {
+        $type_label = trim($type_label);
+        if ($type_label === '') {
+            $type_label = 'Item';
+        }
+        $out = [];
+        foreach ($titles as $t) {
+            $t = trim((string) $t);
+            if ($t === '') {
+                continue;
+            }
+            $out[] = '[' . $type_label . ' relacionada: ' . $t . ']';
+        }
+
+        return $out;
     }
 
     /**
@@ -342,6 +404,10 @@ class Xabia_Knowledge_Relations {
      * @return array<int, list<int>>
      */
     private static function fetch_meta_key_edges(array $map, array $sql_config): array {
+        if (self::can_use_local_wp_meta($sql_config)) {
+            return self::fetch_meta_key_edges_local($map);
+        }
+
         $prefix = self::resolve_prefix($sql_config);
         $posts = $prefix . 'posts';
         $meta = $prefix . 'postmeta';
@@ -366,6 +432,11 @@ class Xabia_Knowledge_Relations {
                 continue;
             }
             $ids = self::parse_related_ids((string) ($row['related_raw'] ?? ''));
+            $ids = self::filter_related_ids_by_post_type(
+                $ids,
+                sanitize_key((string) ($map['connected_post_type'] ?? '')),
+                $sql_config
+            );
             if ($ids === []) {
                 continue;
             }
@@ -376,6 +447,292 @@ class Xabia_Knowledge_Relations {
                 $out[$sid][] = $tid;
             }
             $out[$sid] = array_values(array_unique($out[$sid]));
+        }
+
+        return $out;
+    }
+
+    /**
+     * @param array<string, string> $map
+     * @return array<int, list<int>>
+     */
+    private static function fetch_meta_key_edges_local(array $map): array {
+        if (!function_exists('get_posts')) {
+            return [];
+        }
+        $source_pt = sanitize_key((string) ($map['source_post_type'] ?? ''));
+        $meta_key = sanitize_text_field((string) ($map['relation_key'] ?? ''));
+        $connected_pt = sanitize_key((string) ($map['connected_post_type'] ?? ''));
+        if ($source_pt === '' || $meta_key === '') {
+            return [];
+        }
+        $post_ids = get_posts([
+            'post_type'        => $source_pt,
+            'post_status'      => 'publish',
+            'posts_per_page'   => -1,
+            'fields'           => 'ids',
+            'suppress_filters' => true,
+            'no_found_rows'    => true,
+        ]);
+        if (!is_array($post_ids) || $post_ids === []) {
+            return [];
+        }
+        $out = [];
+        foreach ($post_ids as $sid) {
+            $sid = (int) $sid;
+            if ($sid < 1) {
+                continue;
+            }
+            $rel_ids = self::related_ids_from_post_meta($sid, $meta_key);
+            $rel_ids = self::filter_related_ids_by_post_type($rel_ids, $connected_pt, []);
+            if ($rel_ids === []) {
+                continue;
+            }
+            $out[$sid] = $rel_ids;
+        }
+
+        return $out;
+    }
+
+    /**
+     * @param array<int, list<int>> $a
+     * @param array<int, list<int>> $b
+     * @return array<int, list<int>>
+     */
+    private static function merge_relation_edge_maps(array $a, array $b): array {
+        foreach ($b as $sid => $ids) {
+            $sid = (int) $sid;
+            if ($sid < 1 || !is_array($ids)) {
+                continue;
+            }
+            if (!isset($a[$sid])) {
+                $a[$sid] = [];
+            }
+            $a[$sid] = array_values(array_unique(array_merge($a[$sid], array_map('intval', $ids))));
+        }
+
+        return $a;
+    }
+
+    /**
+     * @param array<string, mixed> $sql_config
+     */
+    private static function can_use_local_wp_meta(array $sql_config): bool {
+        if (!function_exists('get_post_meta')) {
+            return false;
+        }
+        $host = trim((string) ($sql_config['host'] ?? ''));
+        if ($host === '') {
+            return true;
+        }
+        if (in_array(strtolower($host), ['localhost', '127.0.0.1', '::1'], true)) {
+            return true;
+        }
+        if (defined('DB_HOST')) {
+            $db_host = strtolower((string) DB_HOST);
+            $h = strtolower($host);
+            if ($db_host === $h || str_starts_with($db_host, $h . ':') || str_starts_with($h, $db_host)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * ACF relationship/post_object: IDs crudos (get_field tercer arg false) o postmeta serializado.
+     *
+     * @return list<int>
+     */
+    private static function related_ids_from_post_meta(int $post_id, string $meta_key): array {
+        if ($post_id < 1 || $meta_key === '') {
+            return [];
+        }
+        $raw = null;
+        if (function_exists('get_field')) {
+            $raw = get_field($meta_key, $post_id, false);
+        }
+        if ($raw === null || $raw === false || $raw === '' || $raw === []) {
+            $raw = get_post_meta($post_id, $meta_key, true);
+        }
+        if (is_object($raw) && isset($raw->ID)) {
+            return self::parse_related_ids_from_value($raw->ID);
+        }
+
+        return self::parse_related_ids_from_value($raw);
+    }
+
+    /**
+     * @param list<int>            $target_ids
+     * @param array<string, string> $map
+     * @param array<string, mixed>  $sql_config
+     * @return list<string>
+     */
+    private static function build_related_detail_lines(array $target_ids, array $map, array $sql_config): array {
+        $target_ids = array_values(array_unique(array_filter(array_map('intval', $target_ids), static function ($id) {
+            return $id > 0;
+        })));
+        if ($target_ids === []) {
+            return [];
+        }
+        $connected_pt = sanitize_key((string) ($map['connected_post_type'] ?? ''));
+        $target_ids = self::filter_related_ids_by_post_type($target_ids, $connected_pt, $sql_config);
+        if ($target_ids === []) {
+            return [];
+        }
+        $type_label = self::post_type_display_label($connected_pt);
+        if ($type_label === '') {
+            $type_label = 'Item';
+        }
+        $taxonomy = (string) apply_filters(
+            'xabia_knowledge_relation_taxonomy',
+            'categoria-de-actividad',
+            $connected_pt,
+            $map
+        );
+        $taxonomy = sanitize_key($taxonomy);
+
+        $titles = self::fetch_post_titles($target_ids, $sql_config);
+        $terms = $taxonomy !== '' ? self::fetch_term_names_for_posts($target_ids, $taxonomy, $sql_config) : [];
+
+        $lines = [];
+        foreach ($target_ids as $tid) {
+            if (count($lines) >= self::MAX_TITLES) {
+                break;
+            }
+            $title = $titles[$tid] ?? '';
+            if ($title === '' && function_exists('get_the_title')) {
+                $title = trim(wp_strip_all_tags((string) get_the_title($tid)));
+            }
+            if ($title === '') {
+                continue;
+            }
+            $cats = $terms[$tid] ?? [];
+            if ($cats === [] && $taxonomy !== '' && function_exists('get_the_terms')) {
+                $tr = get_the_terms($tid, $taxonomy);
+                if (is_array($tr)) {
+                    foreach ($tr as $term) {
+                        if (is_object($term) && !empty($term->name)) {
+                            $cats[] = trim((string) $term->name);
+                        }
+                    }
+                    $cats = array_values(array_unique($cats));
+                }
+            }
+            $cat_str = $cats !== [] ? implode(', ', $cats) : '';
+            $lines[] = $cat_str !== ''
+                ? '[' . $type_label . ' relacionada: ' . $title . ' | Categorías: ' . $cat_str . ']'
+                : '[' . $type_label . ' relacionada: ' . $title . ']';
+        }
+
+        return $lines;
+    }
+
+    /**
+     * @param list<int>            $ids
+     * @param string               $expected_post_type
+     * @param array<string, mixed> $sql_config
+     * @return list<int>
+     */
+    private static function filter_related_ids_by_post_type(array $ids, string $expected_post_type, array $sql_config): array {
+        $ids = array_values(array_unique(array_filter(array_map('intval', $ids), static function ($id) {
+            return $id > 0;
+        })));
+        $expected_post_type = sanitize_key($expected_post_type);
+        if ($ids === [] || $expected_post_type === '') {
+            return $ids;
+        }
+        if (self::can_use_local_wp_meta($sql_config) && function_exists('get_post_type')) {
+            $out = [];
+            foreach ($ids as $id) {
+                if (get_post_type($id) === $expected_post_type) {
+                    $out[] = $id;
+                }
+            }
+
+            return $out;
+        }
+        $prefix = self::resolve_prefix($sql_config);
+        $posts = $prefix . 'posts';
+        $in = implode(',', $ids);
+        $sql = 'SELECT ID FROM `' . self::esc_ident($posts) . '`
+            WHERE ID IN (' . $in . ')
+              AND post_type = \'' . esc_sql($expected_post_type) . '\'
+              AND post_status = \'publish\'';
+        $out = [];
+        foreach (self::run_query($sql, $sql_config) as $row) {
+            if (!is_array($row)) {
+                continue;
+            }
+            $id = (int) ($row['ID'] ?? 0);
+            if ($id > 0) {
+                $out[] = $id;
+            }
+        }
+
+        return $out !== [] ? $out : $ids;
+    }
+
+    /**
+     * @param list<int>            $post_ids
+     * @param string               $taxonomy
+     * @param array<string, mixed> $sql_config
+     * @return array<int, list<string>>
+     */
+    private static function fetch_term_names_for_posts(array $post_ids, string $taxonomy, array $sql_config): array {
+        $post_ids = array_values(array_unique(array_filter(array_map('intval', $post_ids), static function ($id) {
+            return $id > 0;
+        })));
+        $taxonomy = sanitize_key($taxonomy);
+        if ($post_ids === [] || $taxonomy === '') {
+            return [];
+        }
+        if (self::can_use_local_wp_meta($sql_config) && function_exists('get_the_terms')) {
+            $out = [];
+            foreach ($post_ids as $pid) {
+                $tr = get_the_terms($pid, $taxonomy);
+                if (!is_array($tr)) {
+                    continue;
+                }
+                foreach ($tr as $term) {
+                    if (!is_object($term) || empty($term->name)) {
+                        continue;
+                    }
+                    $out[$pid][] = trim((string) $term->name);
+                }
+                if (isset($out[$pid])) {
+                    $out[$pid] = array_values(array_unique($out[$pid]));
+                }
+            }
+
+            return $out;
+        }
+        $prefix = self::resolve_prefix($sql_config);
+        $tr_tbl = $prefix . 'term_relationships';
+        $tt_tbl = $prefix . 'term_taxonomy';
+        $t_tbl = $prefix . 'terms';
+        $out = [];
+        foreach (array_chunk($post_ids, 150) as $chunk) {
+            $in = implode(',', $chunk);
+            $sql = 'SELECT tr.object_id AS post_id, t.name AS term_name
+                FROM `' . self::esc_ident($tr_tbl) . '` tr
+                INNER JOIN `' . self::esc_ident($tt_tbl) . '` tt ON tt.term_taxonomy_id = tr.term_taxonomy_id
+                INNER JOIN `' . self::esc_ident($t_tbl) . '` t ON t.term_id = tt.term_id
+                WHERE tr.object_id IN (' . $in . ')
+                  AND tt.taxonomy = \'' . esc_sql($taxonomy) . '\'';
+            foreach (self::run_query($sql, $sql_config) as $row) {
+                if (!is_array($row)) {
+                    continue;
+                }
+                $pid = (int) ($row['post_id'] ?? 0);
+                $name = trim((string) ($row['term_name'] ?? ''));
+                if ($pid > 0 && $name !== '') {
+                    $out[$pid][] = $name;
+                }
+            }
+        }
+        foreach ($out as $pid => $names) {
+            $out[$pid] = array_values(array_unique($names));
         }
 
         return $out;
@@ -436,6 +793,17 @@ class Xabia_Knowledge_Relations {
         }));
         if ($ids === []) {
             return [];
+        }
+        if (self::can_use_local_wp_meta($sql_config) && function_exists('get_the_title')) {
+            $titles = [];
+            foreach ($ids as $id) {
+                $title = trim(wp_strip_all_tags((string) get_the_title($id)));
+                if ($title !== '') {
+                    $titles[$id] = $title;
+                }
+            }
+
+            return $titles;
         }
         $prefix = self::resolve_prefix($sql_config);
         $posts = $prefix . 'posts';
@@ -509,6 +877,53 @@ class Xabia_Knowledge_Relations {
      * @return list<int>
      */
     private static function parse_related_ids(string $raw): array {
+        return self::parse_related_ids_from_value($raw);
+    }
+
+    /**
+     * @param mixed $raw
+     * @return list<int>
+     */
+    private static function parse_related_ids_from_value($raw): array {
+        if (is_int($raw) || is_float($raw)) {
+            $id = (int) $raw;
+
+            return $id > 0 ? [$id] : [];
+        }
+        if (is_object($raw)) {
+            if (isset($raw->ID) && is_numeric($raw->ID)) {
+                $id = (int) $raw->ID;
+
+                return $id > 0 ? [$id] : [];
+            }
+            if (isset($raw->id) && is_numeric($raw->id)) {
+                $id = (int) $raw->id;
+
+                return $id > 0 ? [$id] : [];
+            }
+
+            return [];
+        }
+        if (!is_string($raw) && !is_array($raw)) {
+            return [];
+        }
+        if (is_array($raw)) {
+            $ids = [];
+            foreach (self::flatten_related_id_values($raw) as $v) {
+                if (is_object($v) && isset($v->ID) && is_numeric($v->ID)) {
+                    $ids[] = (int) $v->ID;
+                } elseif (is_numeric($v)) {
+                    $ids[] = (int) $v;
+                } elseif (is_string($v) && ctype_digit(trim($v))) {
+                    $ids[] = (int) trim($v);
+                }
+            }
+
+            return array_values(array_unique(array_filter($ids, static function ($id) {
+                return $id > 0;
+            })));
+        }
+
         $raw = trim($raw);
         if ($raw === '') {
             return [];
@@ -526,33 +941,14 @@ class Xabia_Knowledge_Relations {
             $decoded = function_exists('maybe_unserialize')
                 ? maybe_unserialize($raw)
                 : @unserialize($raw, ['allowed_classes' => false]);
+            if (is_array($decoded) || is_object($decoded) || is_numeric($decoded)) {
+                return self::parse_related_ids_from_value($decoded);
+            }
         } elseif (($raw[0] === '[' || $raw[0] === '{') && function_exists('json_decode')) {
             $json = json_decode($raw, true);
             if (json_last_error() === JSON_ERROR_NONE) {
-                $decoded = $json;
+                return self::parse_related_ids_from_value($json);
             }
-        }
-
-        if (is_numeric($decoded)) {
-            $id = (int) $decoded;
-
-            return $id > 0 ? [$id] : [];
-        }
-
-        if (is_array($decoded)) {
-            $ids = [];
-            $flat = self::flatten_related_id_values($decoded);
-            foreach ($flat as $v) {
-                if (is_numeric($v)) {
-                    $ids[] = (int) $v;
-                } elseif (is_string($v) && ctype_digit(trim($v))) {
-                    $ids[] = (int) trim($v);
-                }
-            }
-
-            return array_values(array_unique(array_filter($ids, static function ($id) {
-                return $id > 0;
-            })));
         }
 
         if (preg_match_all('/\d+/', $raw, $m)) {
